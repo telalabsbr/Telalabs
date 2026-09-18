@@ -62,8 +62,13 @@ create table public.publication_destinations (
   publication_id uuid not null references public.publications on delete cascade,
   social_connection_id uuid not null references public.social_connections on delete restrict,
   platform text not null,
+  -- Superfície de publicação, por exemplo feed, reel, story, short ou video.
+  surface text,
   title text,
   text text not null default '',
+  -- Opções específicas validadas pelo provider, como privacidade, comentários,
+  -- capa, thumbnail, localização e outras capacidades expostas pela API.
+  provider_options jsonb not null default '{}'::jsonb,
   status public.publication_status not null default 'draft',
   scheduled_at timestamptz,
   idempotency_key text not null unique,
