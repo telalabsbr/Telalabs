@@ -1,3 +1,4 @@
+import type { PublishingSurface } from "./providers/capabilities";
 import type { SocialPlatform } from "./social";
 
 export const publicationStatuses = ["draft", "scheduled", "processing", "published", "failed", "cancelled"] as const;
@@ -9,9 +10,11 @@ export interface PublicationDestination {
   platform: SocialPlatform;
   status: DestinationStatus;
   connectionId?: string;
+  surface?: PublishingSurface;
   title?: string;
   text: string;
   scheduledAt?: string;
+  providerOptions?: Record<string, unknown>;
   attempts: number;
   lastErrorCode?: string;
   lastError?: string;
