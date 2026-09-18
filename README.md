@@ -68,3 +68,11 @@ O isolamento ocorre por `workspace_id`; políticas RLS verificam membership. Uma
 5. Adicionar testes de unidade, integração/RLS e fluxos end-to-end antes das integrações reais.
 
 Fora desta entrega: cobrança, integrações sociais reais e qualquer edição/transcodificação de vídeo.
+
+
+## Documentação de produto
+
+- [Especificação do MVP](docs/MVP_SPEC.md)
+- [Roadmap de produto](docs/PRODUCT_ROADMAP.md)
+- [Estratégia de IA e UX](docs/AI_UX_STRATEGY.md)
+- [Capacidades de APIs, mídia e conformidade](docs/API_CAPABILITIES_AND_COMPLIANCE.md)
