@@ -9,6 +9,7 @@ export const connections: { platform: SocialPlatform; status: ConnectionStatus; 
   { platform: "youtube", status: "expired", handle: "Aurora Criativa" },
   { platform: "linkedin", status: "disconnected" },
   { platform: "x", status: "error", handle: "@aurorastudio" },
+  { platform: "kwai", status: "disconnected" },
 ];
 export const publications: Publication[] = [
   { id: "pub_1", workspaceId: workspace.id, baseText: "Bastidores da nossa nova identidade visual.", mediaType: "video", status: "scheduled", scheduledAt: "2026-09-18T18:30:00Z", createdAt: "2026-09-16T12:00:00Z", destinations: [
