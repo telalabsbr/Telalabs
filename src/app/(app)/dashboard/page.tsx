@@ -3,12 +3,13 @@ import { ArrowRight, CalendarClock, CheckCircle2, CircleAlert, Link2, Sparkles }
 import { PlatformIcon } from "@/components/ui/platform-icon";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { publications } from "@/data/mock";
+import { socialPlatforms } from "@/domain/social";
 
 export default function DashboardPage() {
   const stats = [
     { title: "Agendadas", value: "4", note: "Próximos 7 dias", Icon: CalendarClock, color: "bg-amber-100 text-amber-700" },
     { title: "Publicadas", value: "18", note: "+12% este mês", Icon: CheckCircle2, color: "bg-emerald-100 text-emerald-700" },
-    { title: "Conexões", value: "2", note: "de 6 disponíveis", Icon: Link2, color: "bg-blue-100 text-blue-700" },
+    { title: "Conexões", value: "2", note: `de ${socialPlatforms.length} disponíveis`, Icon: Link2, color: "bg-blue-100 text-blue-700" },
     { title: "Atenção", value: "1", note: "conexão expirada", Icon: CircleAlert, color: "bg-red-100 text-red-700" },
   ];
   return <div className="space-y-8"><section className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><p className="eyebrow">Sexta, 18 de setembro</p><h1 className="mt-3 text-3xl font-bold tracking-tight md:text-4xl">Bom dia, Marina.</h1><p className="mt-2 text-[#69736e]">Seu conteúdo está pronto para ganhar o mundo.</p></div><div className="rounded-full bg-[#e5eadf] px-4 py-2 text-xs font-semibold text-[#49624f]">● Ambiente de demonstração</div></section>
