@@ -1,0 +1,13 @@
+"use client";
+import { useState } from "react";
+import { CircleAlert, ShieldCheck } from "lucide-react";
+import { connections as initialConnections } from "@/data/mock";
+import { platformLabels } from "@/domain/social";
+import { PlatformIcon } from "@/components/ui/platform-icon";
+
+const statusLabel = { connected: "Conectada", disconnected: "Não conectada", expired: "Expirada", error: "Com erro" };
+export default function ConnectionsPage() {
+ const [connections] = useState(initialConnections); const [notice, setNotice] = useState("");
+ function mockAction(platform: string) { setNotice(`${platformLabels[platform as keyof typeof platformLabels]} ainda não possui integração real. Nenhuma conta foi alterada.`); }
+ return <div className="space-y-7"><div><p className="eyebrow">Configurações</p><h1 className="mt-3 text-3xl font-bold tracking-tight">Conexões sociais</h1><p className="mt-2 max-w-2xl text-[#6d7772]">Gerencie onde seu conteúdo será publicado. As conexões abaixo são dados locais de demonstração.</p></div>{notice && <div role="status" className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"><CircleAlert size={18}/><span className="flex-1">{notice}</span><button className="font-bold" onClick={() => setNotice("")}>Fechar</button></div>}<div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{connections.map(c => <article className="card lift p-5" key={c.platform}><div className="flex items-start justify-between"><PlatformIcon platform={c.platform}/><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${c.status === "connected" ? "bg-emerald-50 text-emerald-700" : c.status === "disconnected" ? "bg-stone-100 text-stone-600" : "bg-red-50 text-red-700"}`}>{statusLabel[c.status]}</span></div><h2 className="mt-5 font-bold">{platformLabels[c.platform]}</h2><p className="mt-1 h-5 text-sm text-[#77817c]">{c.handle ?? "Nenhuma conta vinculada"}</p><button onClick={() => mockAction(c.platform)} className={`focusable mt-6 w-full rounded-xl border px-4 py-2.5 text-sm font-semibold ${c.status === "connected" ? "border-[#dcded7] text-[#4b5650]" : "border-[#315d43] bg-[#315d43] text-white"}`}>{c.status === "connected" ? "Gerenciar" : c.status === "expired" ? "Reconectar" : "Conectar"}</button></article>)}</div><div className="flex gap-3 rounded-xl border border-[#d9dfd9] bg-[#edf3ed] p-4 text-sm text-[#496050]"><ShieldCheck className="shrink-0" size={20}/><p><strong>Seus dados ficam protegidos.</strong> Tokens nunca são enviados ao navegador. A integração OAuth será feita por adapters no backend.</p></div></div>;
+}
