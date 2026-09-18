@@ -5,11 +5,29 @@ export type PublicationStatus = (typeof publicationStatuses)[number];
 export type DestinationStatus = PublicationStatus;
 
 export interface PublicationDestination {
-  id: string; platform: SocialPlatform; status: DestinationStatus;
-  title?: string; text: string; attempts: number; lastError?: string;
+  id: string;
+  platform: SocialPlatform;
+  status: DestinationStatus;
+  connectionId?: string;
+  title?: string;
+  text: string;
+  scheduledAt?: string;
+  attempts: number;
+  lastErrorCode?: string;
+  lastError?: string;
+  nextAttemptAt?: string;
+  externalId?: string;
+  publishedAt?: string;
 }
+
 export interface Publication {
-  id: string; workspaceId: string; baseText: string; mediaType: "image" | "video";
-  mediaUrl?: string; status: PublicationStatus; scheduledAt?: string;
-  createdAt: string; destinations: PublicationDestination[];
+  id: string;
+  workspaceId: string;
+  baseText: string;
+  mediaType: "image" | "video";
+  mediaUrl?: string;
+  status: PublicationStatus;
+  scheduledAt?: string;
+  createdAt: string;
+  destinations: PublicationDestination[];
 }
