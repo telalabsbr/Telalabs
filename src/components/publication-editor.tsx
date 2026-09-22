@@ -127,7 +127,7 @@ export function PublicationEditor() {
       });
     }
 
-    return socialPlatforms.flatMap(platform => {
+    return socialPlatforms.flatMap<DestinationOption>(platform => {
       if (platform === "youtube") {
         return [
           {
