@@ -13,6 +13,7 @@ export interface TenantBrand {
   name: string;
   initials: string;
   organizationId?: string;
+  timezone?: string;
 }
 
 export interface TenantConnection {
@@ -149,7 +150,7 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
     const organizationId = membership.organization_id;
     const [organizationResult, brandsResult, socialResult, commerceResult] = await Promise.all([
       client.from("organizations").select("id,name,plan_code").eq("id", organizationId).maybeSingle(),
-      client.from("brands").select("id,name,organization_id,status").eq("organization_id", organizationId).eq("status", "ACTIVE").order("created_at"),
+      client.from("brands").select("id,name,organization_id,status,timezone").eq("organization_id", organizationId).eq("status", "ACTIVE").order("created_at"),
       client.from("social_connections").select("id,provider,connection_status,display_name,username,brand_id").eq("organization_id", organizationId).order("created_at"),
       client.from("commerce_connections").select("id,provider,connection_status,display_name,brand_id").eq("organization_id", organizationId).order("created_at"),
     ]);
@@ -165,6 +166,7 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
       name: brand.name,
       initials: initials(brand.name),
       organizationId: brand.organization_id,
+      timezone: brand.timezone,
     }));
     setBrands(mappedBrands);
 
