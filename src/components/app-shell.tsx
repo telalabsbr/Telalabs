@@ -119,7 +119,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <div className="shrink-0 border-t border-slate-200 px-3 py-3">
         <div className="space-y-1">
-          <InstallAppButton compact/>
+          {!collapsed && <InstallAppButton compact/>}
           <button title={collapsed ? "Ajuda" : undefined} className={`flex w-full items-center rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-50 ${collapsed ? "justify-center p-2.5" : "gap-3 px-3 py-2.5"}`}>
             <HelpCircle size={18}/>{!collapsed && "Ajuda"}
           </button>
@@ -164,7 +164,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {mobileNav.map(({ href, label, icon: Icon, primary }) => {
         const active = isActive(href);
         const needsAttention = href === "/conexoes" && attentionCount > 0;
-        return <Link key={href} href={href} className={`relative flex min-w-0 flex-col items-center justify-center gap-1 px-1 text-[11px] font-semibold ${active ? "text-indigo-600" : "text-slate-500"}`}>
+        return <Link key={href} href={href} className={`relative flex min-w-0 flex-col items-center justify-center gap-1 px-1 text-xs font-semibold ${active ? "text-indigo-600" : "text-slate-500"}`}>
           <span className={`relative grid h-9 w-9 place-items-center rounded-xl ${primary ? "bg-indigo-600 text-white shadow-sm" : active ? "bg-indigo-50" : ""}`}>
             <Icon size={18}/>
             {needsAttention && <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full border-2 border-white bg-red-500"/>}
