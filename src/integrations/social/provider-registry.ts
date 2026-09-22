@@ -1,5 +1,6 @@
 import "server-only";
 import type { Json } from "@/lib/supabase/database.types";
+import { instagramPublishAdapter } from "./instagram-adapter";
 
 export type WorkerOutcome =
   | "SUCCEEDED"
@@ -36,12 +37,21 @@ export interface PublishAdapter {
 }
 
 /**
- * O registry começa vazio de propósito.
- *
- * Um provider só entra aqui depois que o adapter real estiver implementado,
- * revisado contra a documentação oficial atual e testado com credenciais reais.
- * Isso impede que o worker consuma jobs de uma rede ainda não suportada.
+ * Um provider só entra no registry depois que o adapter existe E uma flag
+ * explícita do ambiente o habilita. Isso impede que o worker consuma jobs de
+ * integrações ainda não validadas com credenciais reais.
  */
 export function getEnabledPublishAdapters(): Map<string, PublishAdapter> {
-  return new Map<string, PublishAdapter>();
+  const adapters = new Map<string, PublishAdapter>();
+
+  if (
+    process.env.INSTAGRAM_PUBLISHING_ADAPTER_ENABLED === "true" &&
+    process.env.META_GRAPH_BASE_URL &&
+    process.env.APP_PUBLIC_URL &&
+    process.env.OAUTH_TOKEN_ENCRYPTION_KEY
+  ) {
+    adapters.set(instagramPublishAdapter.provider, instagramPublishAdapter);
+  }
+
+  return adapters;
 }
