@@ -21,6 +21,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { InstallAppButton } from "@/components/pwa-client";
 import { TenantProvider, useTenantData } from "@/components/tenant-provider";
+import { InitialSetup } from "@/components/initial-setup";
 
 const nav = [
   { href: "/publicacoes/nova", label: "Criar publicação", icon: PenLine },
@@ -171,7 +172,9 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
       <button className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-500 text-xs font-bold text-white">TS</button>
     </header>
 
-    <main className="mx-auto w-full max-w-[1560px] overflow-x-hidden p-3 sm:p-5 md:p-6 lg:p-8">{children}</main>
+    <main className="mx-auto w-full max-w-[1560px] overflow-x-hidden p-3 sm:p-5 md:p-6 lg:p-8">
+      {source === "needs_setup" ? <InitialSetup/> : children}
+    </main>
 
     <nav className="fixed inset-x-0 bottom-0 z-40 grid h-[72px] grid-cols-5 border-t border-slate-200 bg-white/96 px-1 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden" aria-label="Navegação móvel">
       {mobileNav.map(({ href, label, icon: Icon, primary }) => {
