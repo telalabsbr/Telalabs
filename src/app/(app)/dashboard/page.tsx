@@ -1,18 +1,119 @@
 import Link from "next/link";
-import { ArrowRight, CalendarClock, CheckCircle2, CircleAlert, Link2, Sparkles } from "lucide-react";
+import { AlertTriangle, ArrowRight, CalendarDays, CheckCircle2, PenLine, RefreshCw } from "lucide-react";
 import { PlatformIcon } from "@/components/ui/platform-icon";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { publications } from "@/data/mock";
-import { socialPlatforms } from "@/domain/social";
 
 export default function DashboardPage() {
-  const stats = [
-    { title: "Agendadas", value: "4", note: "Próximos 7 dias", Icon: CalendarClock, color: "bg-amber-100 text-amber-700" },
-    { title: "Publicadas", value: "18", note: "+12% este mês", Icon: CheckCircle2, color: "bg-emerald-100 text-emerald-700" },
-    { title: "Conexões", value: "2", note: `de ${socialPlatforms.length} disponíveis`, Icon: Link2, color: "bg-blue-100 text-blue-700" },
-    { title: "Atenção", value: "1", note: "conexão expirada", Icon: CircleAlert, color: "bg-red-100 text-red-700" },
-  ];
-  return <div className="space-y-8"><section className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><p className="eyebrow">Sexta, 18 de setembro</p><h1 className="mt-3 text-3xl font-bold tracking-tight md:text-4xl">Bom dia, Marina.</h1><p className="mt-2 text-[#69736e]">Seu conteúdo está pronto para ganhar o mundo.</p></div><div className="rounded-full bg-[#e5eadf] px-4 py-2 text-xs font-semibold text-[#49624f]">● Ambiente de demonstração</div></section>
-  <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{stats.map(({ title, value, note, Icon, color }) => <article className="card lift p-5" key={title}><div className={`mb-6 flex h-9 w-9 items-center justify-center rounded-xl ${color}`}><Icon size={18}/></div><p className="text-3xl font-bold">{value}</p><div className="mt-1 flex items-center justify-between"><p className="text-sm font-semibold">{title}</p><p className="text-xs text-[#77817c]">{note}</p></div></article>)}</section>
-  <section className="grid gap-6 xl:grid-cols-[1.6fr_1fr]"><div className="card overflow-hidden"><div className="flex items-center justify-between border-b border-[#e5e5df] p-5 md:px-6"><div><h2 className="font-bold">Próximas publicações</h2><p className="mt-1 text-sm text-[#78817c]">Acompanhe o que vem por aí.</p></div><Link className="text-sm font-semibold text-[#426b54]" href="/calendario">Ver calendário</Link></div><div className="divide-y divide-[#e8e8e2]">{publications.slice(0,2).map(pub => <Link href={`/historico#${pub.id}`} className="flex items-center gap-4 p-5 hover:bg-white" key={pub.id}><div className="flex h-14 w-14 items-center justify-center rounded-xl bg-[#e2ddd0] text-xl">{pub.mediaType === "video" ? "▶" : "✦"}</div><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{pub.baseText}</p><p className="mt-1 text-xs text-[#7b847f]">{pub.scheduledAt ? "Hoje · 18:30" : "15 set · 14:00"}</p></div><div className="hidden items-center sm:flex">{pub.destinations.map(d => <PlatformIcon key={d.id} platform={d.platform} small />)}</div><StatusBadge status={pub.status}/></Link>)}</div></div><div className="card relative overflow-hidden bg-[#315d43] p-6 text-white"><Sparkles className="absolute -right-4 -top-4 text-white/10" size={120}/><p className="eyebrow !text-[#bdd1c2]">Comece por aqui</p><h2 className="mt-4 max-w-xs text-2xl font-bold leading-tight">Uma ideia. Várias redes. Menos trabalho.</h2><p className="mt-3 max-w-sm text-sm leading-6 text-[#d6e3d9]">Crie seu conteúdo-base e personalize cada versão antes de publicar.</p><Link href="/publicacoes/nova" className="mt-8 inline-flex items-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-bold text-[#294d37]">Criar publicação <ArrowRight size={16}/></Link></div></section></div>;
+  const upcoming = publications.filter(p => p.status === "scheduled").slice(0, 3);
+  const recent = publications.filter(p => p.status !== "scheduled").slice(0, 3);
+
+  return <div className="space-y-5">
+    <section className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between md:p-6">
+      <div>
+        <p className="text-sm font-medium text-slate-500">Domingo, 21 de setembro</p>
+        <h1 className="mt-1 text-2xl font-black tracking-tight text-slate-950 sm:text-3xl">Bom dia, Thiago.</h1>
+        <p className="mt-1 text-sm text-slate-600">O que precisa ser publicado e o que exige sua atenção hoje.</p>
+      </div>
+      <Link href="/publicacoes/nova" className="btn-primary self-start sm:self-auto"><PenLine size={17}/> Criar publicação</Link>
+    </section>
+
+    <section className="grid gap-5 xl:grid-cols-[1.6fr_.8fr]">
+      <article className="card overflow-hidden">
+        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+          <div>
+            <h2 className="font-bold text-slate-950">Próximas publicações</h2>
+            <p className="mt-0.5 text-xs text-slate-500">Seu conteúdo agendado, sem ruído.</p>
+          </div>
+          <Link href="/calendario" className="flex items-center gap-1 text-xs font-bold text-indigo-600">Ver calendário <ArrowRight size={14}/></Link>
+        </div>
+        <div className="divide-y divide-slate-100">
+          {upcoming.length ? upcoming.map(pub => <Link href={`/historico#${pub.id}`} className="grid grid-cols-[48px_1fr_auto] items-center gap-3 px-5 py-4 hover:bg-slate-50 sm:grid-cols-[52px_1fr_auto_auto]" key={pub.id}>
+            <div className="grid h-12 w-12 place-items-center rounded-xl bg-gradient-to-br from-slate-100 to-indigo-50 text-lg text-slate-700">{pub.mediaType === "video" ? "▶" : "✦"}</div>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-bold text-slate-900">{pub.baseText}</p>
+              <p className="mt-1 text-xs text-slate-500">{pub.scheduledAt ? "Hoje · 18:30" : "Sem horário"}</p>
+            </div>
+            <div className="hidden items-center -space-x-1 sm:flex">{pub.destinations.map(d => <PlatformIcon key={d.id} platform={d.platform} small />)}</div>
+            <StatusBadge status={pub.status}/>
+          </Link>) : <div className="px-5 py-10 text-center">
+            <CheckCircle2 className="mx-auto text-emerald-500" size={26}/>
+            <p className="mt-2 text-sm font-bold text-slate-800">Nenhuma publicação próxima</p>
+            <p className="mt-1 text-xs text-slate-500">Crie um conteúdo quando estiver pronto.</p>
+          </div>}
+        </div>
+      </article>
+
+      <article className="card overflow-hidden">
+        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+          <div>
+            <h2 className="font-bold text-slate-950">Atenção necessária</h2>
+            <p className="mt-0.5 text-xs text-slate-500">Só mostramos o que precisa de ação.</p>
+          </div>
+          <span className="rounded-full bg-red-50 px-2 py-1 text-[11px] font-bold text-red-600">2</span>
+        </div>
+        <div className="space-y-3 p-4">
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="mt-0.5 shrink-0 text-amber-600" size={17}/>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-bold text-amber-950">YouTube precisa reconectar</p>
+                <p className="mt-1 text-xs leading-5 text-amber-800">A conexão expirou e pode bloquear novos envios.</p>
+                <Link href="/conexoes" className="mt-2 inline-flex items-center gap-1 text-xs font-bold text-amber-900"><RefreshCw size={13}/> Reconectar</Link>
+              </div>
+            </div>
+          </div>
+          <div className="rounded-xl border border-red-200 bg-red-50 p-3">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="mt-0.5 shrink-0 text-red-600" size={17}/>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-bold text-red-950">1 destino falhou</p>
+                <p className="mt-1 text-xs leading-5 text-red-800">O restante da publicação não foi cancelado.</p>
+                <Link href="/historico" className="mt-2 inline-flex items-center gap-1 text-xs font-bold text-red-900">Ver detalhes <ArrowRight size={13}/></Link>
+              </div>
+            </div>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <section className="grid gap-5 lg:grid-cols-[1fr_1.5fr]">
+      <article className="card p-5">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="font-bold text-slate-950">Esta semana</h2>
+            <p className="mt-0.5 text-xs text-slate-500">Resumo operacional.</p>
+          </div>
+          <CalendarDays className="text-indigo-500" size={19}/>
+        </div>
+        <div className="mt-4 grid grid-cols-3 gap-2">
+          {[["12","Publicações"],["8","Agendadas"],["1","Falha"]].map(([value,label]) => <div key={label} className="rounded-xl bg-slate-50 p-3">
+            <p className="text-xl font-black text-slate-950">{value}</p>
+            <p className="mt-0.5 text-[11px] font-medium text-slate-500">{label}</p>
+          </div>)}
+        </div>
+        <Link href="/calendario" className="mt-4 inline-flex items-center gap-1 text-xs font-bold text-indigo-600">Abrir calendário <ArrowRight size={13}/></Link>
+      </article>
+
+      <article className="card overflow-hidden">
+        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+          <div>
+            <h2 className="font-bold text-slate-950">Publicações recentes</h2>
+            <p className="mt-0.5 text-xs text-slate-500">Histórico rápido, sem transformar o início em Analytics.</p>
+          </div>
+          <Link href="/historico" className="text-xs font-bold text-indigo-600">Ver todas</Link>
+        </div>
+        <div className="divide-y divide-slate-100">
+          {recent.map(pub => <Link key={pub.id} href={`/historico#${pub.id}`} className="flex items-center gap-3 px-5 py-3.5 hover:bg-slate-50">
+            <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-slate-100 text-sm">{pub.mediaType === "video" ? "▶" : "✦"}</div>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold text-slate-900">{pub.baseText}</p>
+              <div className="mt-1 flex items-center gap-1">{pub.destinations.slice(0,4).map(d => <PlatformIcon key={d.id} platform={d.platform} small />)}</div>
+            </div>
+            <StatusBadge status={pub.status}/>
+          </Link>)}
+        </div>
+      </article>
+    </section>
+  </div>;
 }
