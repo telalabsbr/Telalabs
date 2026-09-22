@@ -1209,6 +1209,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      attach_media_to_post: {
+        Args: { p_media_asset_id: string; p_post_id: string }
+        Returns: number
+      }
       bootstrap_account: {
         Args: { p_brand_name?: string }
         Returns: {
