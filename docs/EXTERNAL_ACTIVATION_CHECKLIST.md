@@ -33,7 +33,14 @@ Já implementado:
 - persistência de conexão;
 - criptografia AES-GCM dos tokens;
 - credenciais privadas em `private.oauth_credentials`;
-- desconexão local segura.
+- desconexão local segura;
+- cliente Graph server-side com classificação de erros;
+- adapter de publicação do Instagram preparado por feature flag;
+- fluxo de container → status → `media_publish` para Instagram;
+- reaproveitamento do mesmo container em retry para reduzir risco de duplicidade;
+- registro de IDs do provider em `provider_assets`;
+- preflight inicial para imagem JPEG e Reels MP4/MOV;
+- adapter permanece DESLIGADO até teste real.
 
 Endpoint de callback criado:
 `/api/oauth/meta/callback`
@@ -46,15 +53,21 @@ Variáveis exigidas:
 - `META_GRAPH_BASE_URL`
 - `META_OAUTH_SCOPES`
 - `OAUTH_TOKEN_ENCRYPTION_KEY`
+- `APP_PUBLIC_URL`
 
-A lista de scopes e URLs fica configurável de propósito. Antes de ativar produção, validar os valores na documentação e no painel atual da Meta e passar pelo processo de revisão/permissões exigido para o aplicativo.
+Feature flag:
+- `INSTAGRAM_PUBLISHING_ADAPTER_ENABLED=false` por padrão.
+
+A lista de scopes, URLs e a versão da Graph API ficam configuráveis de propósito. Antes de ativar produção, validar os valores na documentação e no painel atual da Meta e passar pelo processo de revisão/permissões exigido para o aplicativo.
 
 Ainda pendente:
 - credenciais reais;
 - app Meta configurado;
 - URLs oficiais de callback registradas;
 - permissões/review;
-- adapter de publicação real.
+- teste real do adapter Instagram;
+- adapter de publicação Facebook Pages;
+- reconciliação real com o provider quando o resultado externo ficar incerto.
 
 ## 3. Object storage / Cloudflare R2
 
@@ -67,9 +80,15 @@ Já implementado:
 - vínculo da mídia ao post;
 - limite inicial de 10 GB;
 - pipeline especial interno acima de 2 GB;
-- retenção temporária ou biblioteca.
+- retenção temporária ou biblioteca;
+- Media Delivery Gateway público em `/d/{token}`;
+- token opaco armazenado somente como hash no banco;
+- validade configurável do token;
+- suporte a `Range`, `HEAD` e streaming do objeto privado;
+- revogação dos tokens de delivery após conclusão conhecida da publicação.
 
 Variáveis exigidas:
+- `APP_PUBLIC_URL`
 - `OBJECT_STORAGE_ENDPOINT`
 - `OBJECT_STORAGE_BUCKET`
 - `OBJECT_STORAGE_ACCESS_KEY_ID`
@@ -82,7 +101,7 @@ Configuração CORS necessária no bucket:
 - permitir os headers necessários aos uploads assinados;
 - expor o header `ETag`, pois ele é usado para concluir o multipart upload.
 
-O arquivo grande não passa inteiro pelo servidor Next.js.
+O upload grande do usuário não passa inteiro pelo servidor Next.js. O gateway `/d/{token}` existe para providers que precisam buscar uma URL HTTPS temporária; o fluxo de vídeos muito grandes deve preferir integração específica/resumível com o provider quando disponível.
 
 ## 4. Worker de publicação
 
@@ -96,34 +115,38 @@ Já existe no banco:
 - backoff + jitter;
 - Retry-After;
 - estados de auth/ação necessária;
-- UNKNOWN + reconciliação;
-- retry manual apenas de falhas finais.
+- UNKNOWN + agendamento de reconciliação;
+- retry manual apenas de falhas finais;
+- RPC server-only para carregar contexto completo de publicação sem expor credenciais ao browser.
 
 Já existe no app:
 - endpoint server-only `/api/internal/worker/publications`;
 - proteção por Bearer secret;
 - flag global de ativação;
-- registry de adapters que começa vazio por segurança;
-- nenhum job é consumido se não existir provider adapter real habilitado.
+- registry de adapters por provider;
+- Instagram só entra no registry com feature flag explícita;
+- nenhum job é consumido se não existir provider adapter habilitado.
 
 Variáveis:
 - `PUBLISHING_WORKER_ENABLED=false` por padrão;
-- `WORKER_SECRET`.
+- `WORKER_SECRET`;
+- `INSTAGRAM_PUBLISHING_ADAPTER_ENABLED=false` por padrão.
 
-Não ativar o executor periódico contra as redes até existir pelo menos um provider adapter real, revisado e testado.
+Não ativar o executor periódico contra as redes até o adapter correspondente estar revisado, configurado e testado com uma conta real de teste.
 
 ## 5. Ordem de ativação recomendada
 
 1. validar login/cadastro/recuperação no preview;
 2. configurar Google Auth se desejado;
 3. criar/configurar o bucket R2 e testar upload real;
-4. criar/configurar o app Meta;
-5. testar conexão Instagram;
-6. testar conexão Facebook Pages;
-7. implementar e validar preflight Meta;
-8. implementar primeira publicação real controlada;
-9. ligar o worker somente para o provider validado;
-10. expandir para TikTok, YouTube, LinkedIn, Kwai e X.
+4. validar o Media Delivery Gateway com um arquivo de teste;
+5. criar/configurar o app Meta;
+6. testar conexão Instagram;
+7. deixar `INSTAGRAM_PUBLISHING_ADAPTER_ENABLED=false` durante os testes de OAuth;
+8. validar preflight e publicar um conteúdo controlado em conta de teste;
+9. somente depois habilitar a flag do adapter e o worker;
+10. implementar Facebook Pages;
+11. expandir para TikTok, YouTube, LinkedIn, Kwai e X.
 
 ## 6. Regra de lançamento
 
