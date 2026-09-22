@@ -109,14 +109,15 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
     setUser(currentUser);
 
     if (!currentUser) {
-      setSource("demo");
+      setSource("loading");
       setOrganization(null);
-      setBrands([demoBrand]);
-      setConnections(demoConnections.map((connection, index) => ({
-        id: "demo-" + connection.platform + "-" + index,
-        ...connection,
-      })));
+      setBrands([]);
+      setConnections([]);
       setCommerceConnections([]);
+      if (typeof window !== "undefined" && window.location.pathname !== "/login") {
+        const next = window.location.pathname + window.location.search;
+        window.location.replace("/login?next=" + encodeURIComponent(next));
+      }
       return;
     }
 
