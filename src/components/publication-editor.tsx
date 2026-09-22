@@ -37,6 +37,8 @@ interface DestinationOption {
   handle: string;
   status: ConnectionStatus;
   connectionId?: string;
+  surface?: "short" | "video";
+  contentIntent?: "SHORT_FORM" | "LONG_FORM";
 }
 
 const aiSuffixPlain: Partial<Record<SocialPlatform, string>> = {
@@ -89,23 +91,73 @@ export function PublicationEditor() {
 
   const destinationOptions = useMemo<DestinationOption[]>(() => {
     if (tenant.source === "supabase") {
-      return tenant.connections.map(connection => ({
-        id: connection.id,
-        platform: connection.platform,
-        label: connection.displayName ?? platformLabels[connection.platform],
-        handle: connection.handle ?? platformLabels[connection.platform],
-        status: connection.status,
-        connectionId: connection.id,
-      }));
+      return tenant.connections.flatMap(connection => {
+        const baseOption = {
+          platform: connection.platform,
+          handle: connection.handle ?? connection.displayName ?? platformLabels[connection.platform],
+          status: connection.status,
+          connectionId: connection.id,
+        };
+
+        if (connection.platform === "youtube") {
+          return [
+            {
+              ...baseOption,
+              id: connection.id + ":short",
+              label: "YouTube Shorts",
+              surface: "short" as const,
+              contentIntent: "SHORT_FORM" as const,
+            },
+            {
+              ...baseOption,
+              id: connection.id + ":video",
+              label: "YouTube — Vídeo",
+              surface: "video" as const,
+              contentIntent: "LONG_FORM" as const,
+            },
+          ];
+        }
+
+        return [{
+          ...baseOption,
+          id: connection.id,
+          label: connection.displayName ?? platformLabels[connection.platform],
+        }];
+      });
     }
 
-    return socialPlatforms.map(platform => ({
-      id: "demo:" + platform,
-      platform,
-      label: platformLabels[platform],
-      handle: "@conta",
-      status: "connected",
-    }));
+    return socialPlatforms.flatMap(platform => {
+      if (platform === "youtube") {
+        return [
+          {
+            id: "demo:youtube:short",
+            platform,
+            label: "YouTube Shorts",
+            handle: "@conta",
+            status: "connected" as const,
+            surface: "short" as const,
+            contentIntent: "SHORT_FORM" as const,
+          },
+          {
+            id: "demo:youtube:video",
+            platform,
+            label: "YouTube — Vídeo",
+            handle: "@conta",
+            status: "connected" as const,
+            surface: "video" as const,
+            contentIntent: "LONG_FORM" as const,
+          },
+        ];
+      }
+
+      return [{
+        id: "demo:" + platform,
+        platform,
+        label: platformLabels[platform],
+        handle: "@conta",
+        status: "connected" as const,
+      }];
+    });
   }, [tenant.source, tenant.connections]);
 
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -124,6 +176,7 @@ export function PublicationEditor() {
   const [saving, setSaving] = useState(false);
   const [fileName, setFileName] = useState("");
   const [fileType, setFileType] = useState<"image" | "video" | null>(null);
+  const [fileSize, setFileSize] = useState(0);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [date, setDate] = useState("2026-09-25");
   const [time, setTime] = useState("18:30");
@@ -132,8 +185,12 @@ export function PublicationEditor() {
     if (tenant.loading || initialized.current) return;
     initialized.current = true;
     const preferred = tenant.source === "supabase"
-      ? destinationOptions.filter(option => option.status === "connected").map(option => option.id)
-      : destinationOptions.filter(option => ["instagram", "tiktok", "facebook", "youtube"].includes(option.platform)).map(option => option.id);
+      ? destinationOptions
+          .filter(option => option.status === "connected" && option.contentIntent !== "LONG_FORM")
+          .map(option => option.id)
+      : destinationOptions
+          .filter(option => ["instagram", "tiktok", "facebook", "youtube"].includes(option.platform) && option.contentIntent !== "LONG_FORM")
+          .map(option => option.id);
     setSelectedIds(preferred);
     setActiveId(preferred[0] ?? destinationOptions[0]?.id ?? "");
   }, [tenant.loading, tenant.source, destinationOptions]);
@@ -142,6 +199,8 @@ export function PublicationEditor() {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
   }, [previewUrl]);
 
+  const shortOptions = destinationOptions.filter(option => option.contentIntent !== "LONG_FORM");
+  const longYouTubeOptions = destinationOptions.filter(option => option.contentIntent === "LONG_FORM");
   const selectedOptions = destinationOptions.filter(option => selectedIds.includes(option.id));
   const activeOption = selectedOptions.find(option => option.id === activeId) ?? selectedOptions[0] ?? destinationOptions[0];
 
@@ -150,6 +209,7 @@ export function PublicationEditor() {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setFileName(file.name);
     setFileType(file.type.startsWith("video/") ? "video" : "image");
+    setFileSize(file.size);
     setPreviewUrl(URL.createObjectURL(file));
   }
 
@@ -158,6 +218,7 @@ export function PublicationEditor() {
     setPreviewUrl(null);
     setFileName("");
     setFileType(null);
+    setFileSize(0);
   }
 
   function toggle(option: DestinationOption) {
@@ -179,7 +240,7 @@ export function PublicationEditor() {
     const nextTitles = { ...titles };
     selectedOptions.forEach(option => {
       next[option.id] = base + (suffixes[option.platform] ?? "");
-      if (option.platform === "youtube" && !nextTitles[option.id]) {
+      if (option.platform === "youtube" && option.contentIntent === "LONG_FORM" && !nextTitles[option.id]) {
         nextTitles[option.id] = base.slice(0, 80) || "Novo vídeo";
       }
     });
@@ -194,7 +255,13 @@ export function PublicationEditor() {
   const checks = selectedOptions.map(option => {
     if (!base.trim()) return { option, level: "error" as const, text: "Adicione a descrição base" };
     if (tenant.source === "supabase" && option.status !== "connected") return { option, level: "error" as const, text: "Conta precisa ser reconectada" };
-    if (option.platform === "youtube" && !(titles[option.id]?.trim())) return { option, level: "warning" as const, text: "Título será necessário" };
+
+    if (option.contentIntent === "LONG_FORM") {
+      if (fileType !== "video") return { option, level: "error" as const, text: "Adicione um vídeo para o YouTube" };
+      if (fileSize > 10 * 1024 * 1024 * 1024) return { option, level: "error" as const, text: "O limite inicial é 10 GB" };
+      if (!(titles[option.id]?.trim())) return { option, level: "warning" as const, text: "Adicione um título ao vídeo" };
+    }
+
     if (effectiveText(option).length > 2000) return { option, level: "warning" as const, text: "Revise o tamanho da descrição" };
     return { option, level: "ok" as const, text: "Pronto" };
   });
@@ -243,6 +310,9 @@ export function PublicationEditor() {
         title_override: titles[option.id] ?? "",
         requested_action: intent,
         retention: retention,
+        surface: option.surface ?? null,
+        content_intent: option.contentIntent ?? "AUTO",
+        file_size_bytes: fileSize || null,
       };
     });
 
@@ -324,8 +394,14 @@ export function PublicationEditor() {
               <h2 className="text-base font-bold text-slate-950 sm:text-sm">2. Onde publicar?</h2>
               <p className="mt-1 text-sm text-slate-500 sm:text-xs">{tenant.source === "supabase" ? "Cada conta conectada é um destino independente." : "Modo demonstração: escolha as redes para simular o fluxo."}</p>
             </div>
-            {!!destinationOptions.length && <button onClick={() => setSelectedIds(selectedIds.length === destinationOptions.length ? [] : destinationOptions.map(option => option.id))} className="shrink-0 text-sm font-bold text-indigo-600 sm:text-xs">
-              {selectedIds.length === destinationOptions.length ? "Limpar" : "Selecionar todas"}
+            {!!shortOptions.length && <button onClick={() => {
+              const shortIds = shortOptions.map(option => option.id);
+              const allShortSelected = shortIds.every(id => selectedIds.includes(id));
+              setSelectedIds(current => allShortSelected
+                ? current.filter(id => !shortIds.includes(id))
+                : Array.from(new Set([...current, ...shortIds])));
+            }} className="shrink-0 text-sm font-bold text-indigo-600 sm:text-xs">
+              {shortOptions.every(option => selectedIds.includes(option.id)) ? "Limpar sociais" : "Selecionar todos"}
             </button>}
           </div>
 
@@ -333,19 +409,46 @@ export function PublicationEditor() {
             <p className="text-sm font-bold text-slate-900">Nenhuma conta social conectada ainda.</p>
             <p className="mt-1 text-sm text-slate-500">Conecte pelo menos uma conta antes de criar destinos reais.</p>
             <Link href="/conexoes" className="btn-secondary mt-3">Ir para Contas</Link>
-          </div> : <div className="mt-4 grid w-full max-w-full grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
-            {destinationOptions.map(option => {
-              const active = selectedIds.includes(option.id);
-              const blocked = tenant.source === "supabase" && option.status !== "connected";
-              return <button key={option.id} onClick={() => toggle(option)} aria-pressed={active} className={`focusable flex min-w-0 items-center gap-3 rounded-xl border p-3 text-left transition-colors ${active ? "border-indigo-300 bg-indigo-50" : "border-slate-200 bg-white hover:bg-slate-50"}`}>
-                <PlatformIcon platform={option.platform} small/>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-bold text-slate-900 sm:text-xs">{option.label}</span>
-                  <span className={`block truncate text-sm sm:text-xs ${blocked ? "text-amber-600" : "text-slate-500"}`}>{blocked ? "Reconexão necessária" : option.handle}</span>
-                </span>
-                <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-md border ${active ? "border-indigo-600 bg-indigo-600 text-white" : "border-slate-300"}`}>{active && <Check size={12}/>}</span>
-              </button>;
-            })}
+          </div> : <div className="mt-4 space-y-4">
+            <div>
+              <p className="text-xs font-black uppercase tracking-wide text-slate-400">Conteúdo curto / social</p>
+              <div className="mt-2 grid w-full max-w-full grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+                {shortOptions.map(option => {
+                  const active = selectedIds.includes(option.id);
+                  const blocked = tenant.source === "supabase" && option.status !== "connected";
+                  return <button key={option.id} onClick={() => toggle(option)} aria-pressed={active} className={`focusable flex min-w-0 items-center gap-3 rounded-xl border p-3 text-left transition-colors ${active ? "border-indigo-300 bg-indigo-50" : "border-slate-200 bg-white hover:bg-slate-50"}`}>
+                    <PlatformIcon platform={option.platform} small/>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-bold text-slate-900 sm:text-xs">{option.label}</span>
+                      <span className={`block truncate text-sm sm:text-xs ${blocked ? "text-amber-600" : "text-slate-500"}`}>{blocked ? "Reconexão necessária" : option.handle}</span>
+                    </span>
+                    <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-md border ${active ? "border-indigo-600 bg-indigo-600 text-white" : "border-slate-300"}`}>{active && <Check size={12}/>}</span>
+                  </button>;
+                })}
+              </div>
+            </div>
+
+            {!!longYouTubeOptions.length && <div className="border-t border-slate-200 pt-4">
+              <div className="mb-2">
+                <p className="text-xs font-black uppercase tracking-wide text-slate-400">Vídeo longo</p>
+                <p className="mt-1 text-xs leading-5 text-slate-500">YouTube tradicional fica separado dos destinos curtos. Até <strong>10 GB por vídeo</strong>; arquivos grandes podem levar mais tempo para processar e publicar.</p>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {longYouTubeOptions.map(option => {
+                  const active = selectedIds.includes(option.id);
+                  const blocked = tenant.source === "supabase" && option.status !== "connected";
+                  return <button key={option.id} onClick={() => toggle(option)} aria-pressed={active} className={`focusable flex min-w-0 items-center gap-3 rounded-xl border p-3 text-left transition-colors ${active ? "border-indigo-300 bg-indigo-50" : "border-slate-200 bg-white hover:bg-slate-50"}`}>
+                    <PlatformIcon platform="youtube" small/>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-bold text-slate-900 sm:text-xs">YouTube — Vídeo</span>
+                      <span className={`block truncate text-sm sm:text-xs ${blocked ? "text-amber-600" : "text-slate-500"}`}>{blocked ? "Reconexão necessária" : option.handle}</span>
+                      <span className="mt-0.5 block text-[11px] font-semibold text-slate-400">Até 10 GB</span>
+                    </span>
+                    <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-md border ${active ? "border-indigo-600 bg-indigo-600 text-white" : "border-slate-300"}`}>{active && <Check size={12}/>}</span>
+                  </button>;
+                })}
+              </div>
+            </div>}
           </div>}
         </section>
 
@@ -379,7 +482,7 @@ export function PublicationEditor() {
                 {selectedOptions.map(option => <button key={option.id} onClick={() => setActiveId(option.id)} className={`flex max-w-44 shrink-0 items-center gap-2 border-b-2 px-3 py-2.5 text-sm font-bold sm:text-xs ${activeId === option.id ? "border-indigo-600 text-indigo-700" : "border-transparent text-slate-500"}`}><PlatformIcon platform={option.platform} small/><span className="truncate">{option.label}</span></button>)}
               </div>
               {activeOption && <div className="mt-4">
-                {activeOption.platform === "youtube" && <label className="mb-3 block text-sm font-bold text-slate-700 sm:text-xs">Título do YouTube<input value={titles[activeOption.id] ?? ""} onChange={event => setTitles(current => ({ ...current, [activeOption.id]: event.target.value }))} className="field mt-1 px-3 text-base sm:text-sm" placeholder="Título do vídeo"/></label>}
+                {activeOption.platform === "youtube" && activeOption.contentIntent === "LONG_FORM" && <label className="mb-3 block text-sm font-bold text-slate-700 sm:text-xs">Título do YouTube<input value={titles[activeOption.id] ?? ""} onChange={event => setTitles(current => ({ ...current, [activeOption.id]: event.target.value }))} className="field mt-1 px-3 text-base sm:text-sm" placeholder="Título do vídeo"/></label>}
                 <textarea value={effectiveText(activeOption)} onChange={event => setTexts(current => ({ ...current, [activeOption.id]: event.target.value }))} className="field min-h-36 resize-y p-4 text-base sm:text-sm"/>
                 <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
                   <p className="text-sm text-slate-500 sm:text-xs">Personalização de {activeOption.label}.</p>
@@ -452,13 +555,13 @@ export function PublicationEditor() {
                   </div>
                   <MoreHorizontal size={17} className={activeOption.platform === "tiktok" || activeOption.platform === "kwai" ? "text-white/70" : "text-slate-400"}/>
                 </div>
-                <div className={`relative bg-gradient-to-br from-indigo-50 via-slate-100 to-violet-100 ${activeOption.platform === "youtube" ? "aspect-video" : "aspect-[4/5]"}`}>
+                <div className={`relative bg-gradient-to-br from-indigo-50 via-slate-100 to-violet-100 ${activeOption.platform === "youtube" && activeOption.contentIntent === "LONG_FORM" ? "aspect-video" : "aspect-[4/5]"}`}>
                   {previewUrl && (fileType === "video" ? <video src={previewUrl} className="h-full w-full object-cover" muted playsInline/> : <img src={previewUrl} alt="" className="h-full w-full object-cover"/>)}
                   {!previewUrl && <div className="grid h-full place-items-center text-slate-400"><Play size={30}/></div>}
                   {(activeOption.platform === "tiktok" || activeOption.platform === "kwai") && <PreviewChrome platform={activeOption.platform}/>}
                 </div>
                 <div className="p-3">
-                  {activeOption.platform === "youtube" && titles[activeOption.id] && <p className="mb-1 text-base font-black text-slate-950">{titles[activeOption.id]}</p>}
+                  {activeOption.platform === "youtube" && activeOption.contentIntent === "LONG_FORM" && titles[activeOption.id] && <p className="mb-1 text-base font-black text-slate-950">{titles[activeOption.id]}</p>}
                   <p className={`whitespace-pre-line text-sm leading-5 ${activeOption.platform === "tiktok" || activeOption.platform === "kwai" ? "text-white" : "text-slate-700"}`}>{effectiveText(activeOption) || "Sua descrição aparecerá aqui."}</p>
                 </div>
                 {activeOption.platform !== "tiktok" && activeOption.platform !== "kwai" && <PreviewChrome platform={activeOption.platform}/>}
