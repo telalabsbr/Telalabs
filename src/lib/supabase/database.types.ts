@@ -1169,6 +1169,15 @@ export type Database = {
           organization_id: string
         }[]
       }
+      save_post_draft: {
+        Args: {
+          p_base_caption: string
+          p_brand_id: string
+          p_internal_title: string
+          p_targets?: Json
+        }
+        Returns: string
+      }
     }
     Enums: {
       [_ in never]: never
