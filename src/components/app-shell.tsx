@@ -75,6 +75,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   const pageTitle = useMemo(() => {
+    if (path.startsWith("/configuracoes")) return "Configurações";
     const found = nav.find(item => path === item.href || path.startsWith(item.href + "/"));
     return found?.label ?? "Tela Social";
   }, [path]);
