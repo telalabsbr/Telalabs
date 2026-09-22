@@ -90,6 +90,7 @@ Já existe no banco:
 - `scheduled_jobs`;
 - `publication_attempts`;
 - claim com lock;
+- claim filtrado apenas pelos providers realmente habilitados;
 - idempotência;
 - retry;
 - backoff + jitter;
@@ -98,7 +99,18 @@ Já existe no banco:
 - UNKNOWN + reconciliação;
 - retry manual apenas de falhas finais.
 
-Ainda não ativar um executor periódico contra as redes até existir pelo menos um provider adapter real e testado.
+Já existe no app:
+- endpoint server-only `/api/internal/worker/publications`;
+- proteção por Bearer secret;
+- flag global de ativação;
+- registry de adapters que começa vazio por segurança;
+- nenhum job é consumido se não existir provider adapter real habilitado.
+
+Variáveis:
+- `PUBLISHING_WORKER_ENABLED=false` por padrão;
+- `WORKER_SECRET`.
+
+Não ativar o executor periódico contra as redes até existir pelo menos um provider adapter real, revisado e testado.
 
 ## 5. Ordem de ativação recomendada
 
