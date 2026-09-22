@@ -1216,12 +1216,40 @@ export type Database = {
           organization_id: string
         }[]
       }
+      cancel_post: { Args: { p_post_id: string }; Returns: number }
+      retry_failed_targets: { Args: { p_post_id: string }; Returns: number }
       save_post_draft: {
         Args: {
           p_base_caption: string
           p_brand_id: string
           p_internal_title: string
           p_targets?: Json
+        }
+        Returns: string
+      }
+      soft_delete_post: { Args: { p_post_id: string }; Returns: boolean }
+      worker_claim_publication_jobs: {
+        Args: { p_limit?: number; p_lock_seconds?: number }
+        Returns: {
+          attempt_no: number
+          content_intent: string
+          job_id: string
+          organization_id: string
+          payload: Json
+          post_target_id: string
+          provider: string
+          scheduled_at: string
+        }[]
+      }
+      worker_finish_publication_job: {
+        Args: {
+          p_error_code?: string
+          p_error_message_safe?: string
+          p_http_status?: number
+          p_job_id: string
+          p_outcome: string
+          p_provider_request_id?: string
+          p_retry_after_seconds?: number
         }
         Returns: string
       }
