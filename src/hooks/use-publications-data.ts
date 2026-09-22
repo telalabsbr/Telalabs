@@ -34,6 +34,13 @@ function mediaTypeFromIntent(intent: string): "image" | "video" {
   return intent === "IMAGE" || intent === "CAROUSEL" ? "image" : "video";
 }
 
+function surfaceFromIntent(provider: string, intent: string | null) {
+  if (provider !== "youtube") return undefined;
+  if (intent === "SHORT_FORM") return "short" as const;
+  if (intent === "LONG_FORM") return "video" as const;
+  return undefined;
+}
+
 export function usePublicationsData() {
   const tenant = useTenantData();
   const [publications, setPublications] = useState<Publication[]>([]);
@@ -90,7 +97,7 @@ export function usePublicationsData() {
 
     const targetsResult = await client
       .from("post_targets")
-      .select("id,post_id,social_connection_id,provider,state,scheduled_at,published_at,caption_override,title_override,created_at,updated_at")
+      .select("id,post_id,social_connection_id,provider,state,scheduled_at,published_at,caption_override,title_override,content_intent_override,created_at,updated_at")
       .eq("organization_id", tenant.organization.id)
       .in("post_id", postIds)
       .order("scheduled_at", { ascending: true });
@@ -142,6 +149,7 @@ export function usePublicationsData() {
         connectionId: target.social_connection_id,
         title: target.title_override ?? undefined,
         text: target.caption_override ?? "",
+        surface: surfaceFromIntent(target.provider, target.content_intent_override),
         scheduledAt: target.scheduled_at,
         attempts: attempts.length ? Math.max(...attempts.map(item => item.attempt_no)) : 0,
         lastErrorCode: lastAttempt?.error_code ?? undefined,
@@ -179,5 +187,50 @@ export function usePublicationsData() {
     void refresh();
   }, [refresh]);
 
-  return { publications, loading, error, refresh, source: tenant.source };
+  const retryPost = useCallback(async (postId: string) => {
+    if (tenant.source !== "supabase") return { count: 0, error: "A retentativa real só está disponível em uma sessão conectada." };
+    const client = createSupabaseBrowserClient();
+    if (!client) return { count: 0, error: "Supabase não configurado neste ambiente." };
+
+    const result = await client.rpc("retry_failed_targets", { p_post_id: postId });
+    if (result.error) return { count: 0, error: result.error.message };
+
+    await refresh();
+    return { count: result.data ?? 0, error: "" };
+  }, [tenant.source, refresh]);
+
+  const cancelPost = useCallback(async (postId: string) => {
+    if (tenant.source !== "supabase") return { count: 0, error: "O cancelamento real só está disponível em uma sessão conectada." };
+    const client = createSupabaseBrowserClient();
+    if (!client) return { count: 0, error: "Supabase não configurado neste ambiente." };
+
+    const result = await client.rpc("cancel_post", { p_post_id: postId });
+    if (result.error) return { count: 0, error: result.error.message };
+
+    await refresh();
+    return { count: result.data ?? 0, error: "" };
+  }, [tenant.source, refresh]);
+
+  const deletePost = useCallback(async (postId: string) => {
+    if (tenant.source !== "supabase") return { deleted: false, error: "A exclusão real só está disponível em uma sessão conectada." };
+    const client = createSupabaseBrowserClient();
+    if (!client) return { deleted: false, error: "Supabase não configurado neste ambiente." };
+
+    const result = await client.rpc("soft_delete_post", { p_post_id: postId });
+    if (result.error) return { deleted: false, error: result.error.message };
+
+    await refresh();
+    return { deleted: Boolean(result.data), error: "" };
+  }, [tenant.source, refresh]);
+
+  return {
+    publications,
+    loading,
+    error,
+    refresh,
+    retryPost,
+    cancelPost,
+    deletePost,
+    source: tenant.source,
+  };
 }
