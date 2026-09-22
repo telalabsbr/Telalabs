@@ -5,6 +5,7 @@ import { CircleAlert, Link2, MoreHorizontal, Plus, ShieldCheck, Store, Trash2, U
 import { platformLabels, socialPlatforms, type ConnectionStatus, type SocialPlatform } from "@/domain/social";
 import { PlatformIcon } from "@/components/ui/platform-icon";
 import { useTenantData, type TenantConnection } from "@/components/tenant-provider";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 const statusLabel: Record<ConnectionStatus, string> = {
   connected: "Conectado",
@@ -94,6 +95,38 @@ export default function ConnectionsPage() {
     setOpenMenu(null);
   }
 
+  async function disconnectConnection(id: string) {
+    if (tenant.source === "demo") {
+      demoOnlyUpdate(id, "disconnected");
+      return;
+    }
+
+    if (tenant.source !== "supabase") {
+      setNotice("Conclua a configuração da conta antes de alterar conexões.");
+      setOpenMenu(null);
+      return;
+    }
+
+    const client = createSupabaseBrowserClient();
+    if (!client) {
+      setNotice("Supabase não está configurado neste ambiente.");
+      setOpenMenu(null);
+      return;
+    }
+
+    setNotice("Desconectando a conta...");
+    setOpenMenu(null);
+    const result = await client.rpc("disconnect_social_connection", { p_connection_id: id });
+
+    if (result.error) {
+      setNotice(result.error.message);
+      return;
+    }
+
+    await tenant.refresh();
+    setNotice("Conta desconectada do Tela Social. A credencial armazenada foi removida do backend.");
+  }
+
   function demoOnlyRemove(id: string) {
     if (tenant.source !== "demo") {
       setNotice("A remoção real será feita pelo backend seguro da integração. Esta versão não apaga credenciais reais.");
@@ -149,7 +182,7 @@ export default function ConnectionsPage() {
 
               {menuVisible && <div className="absolute right-3 top-12 z-20 w-48 overflow-hidden rounded-xl border border-slate-200 bg-white p-1 shadow-xl">
                 <button onClick={() => mockAction(connection.platform, "Detalhes de permissões e capacidades desta conta entram junto do OAuth real.")} className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50"><Link2 size={15}/> Gerenciar</button>
-                {connection.status !== "disconnected" && <button onClick={() => demoOnlyUpdate(connection.id, "disconnected")} className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50"><Unplug size={15}/> Desconectar</button>}
+                {connection.status !== "disconnected" && <button onClick={() => void disconnectConnection(connection.id)} className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50"><Unplug size={15}/> Desconectar</button>}
                 <button onClick={() => demoOnlyRemove(connection.id)} className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-red-600 hover:bg-red-50"><Trash2 size={15}/> Remover</button>
               </div>}
             </div>
