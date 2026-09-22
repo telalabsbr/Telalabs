@@ -3,6 +3,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { encryptToken } from "@/lib/oauth/token-crypto";
 import { getMetaOAuthConfig, isMetaPlatform, type MetaPlatform } from "@/lib/oauth/meta";
+import type { Json } from "@/lib/supabase/database.types";
 
 export const runtime = "nodejs";
 
@@ -105,10 +106,10 @@ async function persistConnection(args: {
     p_display_name: args.displayName,
     p_username: args.username ?? "",
     p_scopes: args.scopes,
-    p_token_expires_at: args.tokenExpiresAt ?? null,
-    p_metadata: args.metadata,
+    // O parâmetro SQL aceita NULL, apesar do gerador de tipos de RPC expor string.
+    p_token_expires_at: args.tokenExpiresAt as string,
+    p_metadata: args.metadata as Json,
     p_access_token_ciphertext: encrypted,
-    p_refresh_token_ciphertext: null,
     p_key_version: "aes-gcm-v1",
   });
 
