@@ -1275,6 +1275,23 @@ export type Database = {
           scheduled_at: string
         }[]
       }
+      worker_claim_publication_jobs_for_providers: {
+        Args: {
+          p_limit?: number
+          p_lock_seconds?: number
+          p_providers: string[]
+        }
+        Returns: {
+          attempt_no: number
+          content_intent: string
+          job_id: string
+          organization_id: string
+          payload: Json
+          post_target_id: string
+          provider: string
+          scheduled_at: string
+        }[]
+      }
       worker_finish_publication_job: {
         Args: {
           p_error_code?: string
