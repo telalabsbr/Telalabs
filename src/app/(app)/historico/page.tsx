@@ -26,10 +26,11 @@ function isAuthError(publication: Publication) {
 }
 
 export default function HistoryPage() {
-  const { publications, loading, error, source } = usePublicationsData();
+  const { publications, loading, error, source, retryPost, deletePost } = usePublicationsData();
   const [network, setNetwork] = useState<"all" | SocialPlatform>("all");
   const [status, setStatus] = useState<"all" | PublicationStatus>("all");
   const [query, setQuery] = useState("");
+  const [period, setPeriod] = useState<"7" | "30" | "90" | "all">("30");
   const [selected, setSelected] = useState<Publication | null>(null);
   const [actionMessage, setActionMessage] = useState("");
 
@@ -41,8 +42,56 @@ export default function HistoryPage() {
       publication.baseText,
       ...publication.destinations.map(destination => platformLabels[destination.platform]),
     ].join(" ").toLocaleLowerCase("pt-BR").includes(normalized);
-    return byStatus && byNetwork && byQuery;
-  }), [publications, network, status, query]);
+
+    const createdAt = new Date(publication.createdAt).getTime();
+    const cutoff = period === "all"
+      ? 0
+      : Date.now() - Number(period) * 24 * 60 * 60 * 1000;
+    const byPeriod = createdAt >= cutoff;
+
+    return byStatus && byNetwork && byQuery && byPeriod;
+  }), [publications, network, status, query, period]);
+
+  async function handleRetrySelected() {
+    if (!selected) return;
+    if (source !== "supabase") {
+      setActionMessage("Retentativa simulada no modo demonstração.");
+      return;
+    }
+
+    setActionMessage("Preparando retentativa...");
+    const result = await retryPost(selected.id);
+    if (result.error) {
+      setActionMessage(result.error);
+      return;
+    }
+
+    setActionMessage(result.count > 0
+      ? `${result.count} destino(s) com falha final foram recolocados na fila.`
+      : "Nenhum destino com falha final está elegível para retentativa. Reconexão e reconciliação continuam separadas para evitar duplicidade.");
+    if (result.count > 0) setSelected(null);
+  }
+
+  async function handleDeleteSelected() {
+    if (!selected) return;
+    if (source !== "supabase") {
+      setActionMessage("Exclusão simulada no modo demonstração.");
+      setSelected(null);
+      return;
+    }
+
+    setActionMessage("Excluindo publicação...");
+    const result = await deletePost(selected.id);
+    if (result.error) {
+      setActionMessage(result.error);
+      return;
+    }
+
+    if (result.deleted) {
+      setSelected(null);
+      setActionMessage("");
+    }
+  }
 
   const detail = selected && <div className="space-y-5">
     <div className="aspect-[4/5] rounded-2xl bg-gradient-to-br from-rose-100 via-amber-50 to-indigo-100 p-5">
@@ -81,8 +130,8 @@ export default function HistoryPage() {
           <div className="mt-3 flex flex-wrap gap-2">
             {isAuthError(selected)
               ? <Link href="/conexoes" className="btn-primary">Reconectar conta</Link>
-              : <button onClick={() => setActionMessage("Retentativa manual preparada na interface. Ela será ligada ao worker de publicação antes de habilitarmos APIs reais.")} className="btn-primary"><RefreshCw size={15}/> Tentar novamente</button>}
-            <button onClick={() => setActionMessage("Excluir fica como ação secundária. A estratégia é primeiro corrigir ou repetir; excluir só quando o usuário realmente não quer mais essa publicação.")} className="btn-secondary !text-red-600"><Trash2 size={15}/> Excluir</button>
+              : <button onClick={() => void handleRetrySelected()} className="btn-primary"><RefreshCw size={15}/> Tentar novamente</button>}
+            <button onClick={() => void handleDeleteSelected()} className="btn-secondary !text-red-600"><Trash2 size={15}/> Excluir</button>
           </div>
         </div>
       </div>
@@ -124,7 +173,7 @@ export default function HistoryPage() {
             {publicationStatuses.map(value => <option key={value} value={value}>{statusLabels[value]}</option>)}
           </select>
 
-          <select className="field !min-h-10 min-w-0 px-3 text-base sm:text-sm" defaultValue="30">
+          <select value={period} onChange={event => setPeriod(event.target.value as "7" | "30" | "90" | "all")} className="field !min-h-10 min-w-0 px-3 text-base sm:text-sm">
             <option value="7">Últimos 7 dias</option>
             <option value="30">Últimos 30 dias</option>
             <option value="90">Últimos 90 dias</option>
