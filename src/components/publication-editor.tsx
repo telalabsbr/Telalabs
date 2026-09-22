@@ -181,6 +181,9 @@ export function PublicationEditor() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [stagedMedia, setStagedMedia] = useState<{ key: string; mediaId: string } | null>(null);
+  const [existingMedia, setExistingMedia] = useState<{ id: string; name: string; type: "image" | "video"; size: number } | null>(null);
+  const [editingPostId, setEditingPostId] = useState<string | null>(null);
+  const [loadingEdit, setLoadingEdit] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [date, setDate] = useState("2026-09-25");
   const [time, setTime] = useState("18:30");
@@ -198,6 +201,156 @@ export function PublicationEditor() {
     setSelectedIds(preferred);
     setActiveId(preferred[0] ?? destinationOptions[0]?.id ?? "");
   }, [tenant.loading, tenant.source, destinationOptions]);
+
+  useEffect(() => {
+    if (tenant.loading || tenant.source !== "supabase" || tenant.activeBrand.id === "unconfigured" || !destinationOptions.length) return;
+
+    const editId = new URLSearchParams(window.location.search).get("edit");
+    if (!editId) return;
+
+    let active = true;
+
+    async function loadEdit() {
+      const client = createSupabaseBrowserClient();
+      if (!client) return;
+
+      setLoadingEdit(true);
+      setSaveError("");
+
+      const postResult = await client
+        .from("posts")
+        .select("id,brand_id,internal_title,base_caption,deleted_at")
+        .eq("id", editId!)
+        .eq("brand_id", tenant.activeBrand.id)
+        .is("deleted_at", null)
+        .single();
+
+      if (!active) return;
+      if (postResult.error || !postResult.data) {
+        setSaveError("Não foi possível abrir esta publicação para edição.");
+        setLoadingEdit(false);
+        return;
+      }
+
+      const targetResult = await client
+        .from("post_targets")
+        .select("id,social_connection_id,provider,state,scheduled_at,caption_override,title_override,content_intent_override,provider_config")
+        .eq("post_id", editId!)
+        .order("scheduled_at", { ascending: true });
+
+      if (!active) return;
+      if (targetResult.error) {
+        setSaveError(targetResult.error.message);
+        setLoadingEdit(false);
+        return;
+      }
+
+      const targets = targetResult.data ?? [];
+      if (targets.some(target => !["DRAFT", "SCHEDULED", "CANCELLED"].includes(target.state))) {
+        setSaveError("Esta publicação já entrou no fluxo de envio e não pode mais ser editada com segurança.");
+        setLoadingEdit(false);
+        return;
+      }
+
+      const selected: string[] = [];
+      const nextTexts: Record<string, string> = {};
+      const nextTitles: Record<string, string> = {};
+      const nextTimes: Record<string, string> = {};
+      const clockValues: string[] = [];
+
+      for (const target of targets) {
+        const optionId = target.provider === "youtube" && target.content_intent_override === "SHORT_FORM"
+          ? target.social_connection_id + ":short"
+          : target.provider === "youtube" && target.content_intent_override === "LONG_FORM"
+            ? target.social_connection_id + ":video"
+            : target.social_connection_id;
+
+        if (!destinationOptions.some(option => option.id === optionId)) continue;
+        selected.push(optionId);
+
+        if (target.caption_override) nextTexts[optionId] = target.caption_override;
+        if (target.title_override) nextTitles[optionId] = target.title_override;
+
+        if (target.scheduled_at) {
+          const scheduled = new Date(target.scheduled_at);
+          const hh = String(scheduled.getHours()).padStart(2, "0");
+          const mm = String(scheduled.getMinutes()).padStart(2, "0");
+          const clock = hh + ":" + mm;
+          nextTimes[optionId] = clock;
+          clockValues.push(clock);
+        }
+      }
+
+      setEditingPostId(editId);
+      setBase(postResult.data.base_caption ?? postResult.data.internal_title);
+      setSelectedIds(selected);
+      setActiveId(selected[0] ?? "");
+      setTexts(nextTexts);
+      setTitles(nextTitles);
+
+      const firstScheduled = targets.find(target => target.scheduled_at)?.scheduled_at;
+      if (firstScheduled) {
+        const scheduled = new Date(firstScheduled);
+        const yyyy = scheduled.getFullYear();
+        const mm = String(scheduled.getMonth() + 1).padStart(2, "0");
+        const dd = String(scheduled.getDate()).padStart(2, "0");
+        const hh = String(scheduled.getHours()).padStart(2, "0");
+        const min = String(scheduled.getMinutes()).padStart(2, "0");
+        setDate(yyyy + "-" + mm + "-" + dd);
+        setTime(hh + ":" + min);
+        setMode("schedule");
+      }
+
+      setDestinationTimes(nextTimes);
+      setDifferentTimes(new Set(clockValues).size > 1);
+
+      const firstConfig = targets[0]?.provider_config;
+      if (firstConfig && typeof firstConfig === "object" && !Array.isArray(firstConfig)) {
+        const retentionValue = (firstConfig as Record<string, unknown>).retention;
+        if (retentionValue === "library" || retentionValue === "delete") setRetention(retentionValue);
+      }
+
+      const targetIds = targets.map(target => target.id);
+      if (targetIds.length) {
+        const linkResult = await client
+          .from("post_target_media")
+          .select("media_asset_id")
+          .in("post_target_id", targetIds)
+          .eq("position", 0)
+          .limit(1)
+          .maybeSingle();
+
+        const mediaId = linkResult.data?.media_asset_id;
+        if (mediaId) {
+          const mediaResult = await client
+            .from("media_assets")
+            .select("id,filename,mime_type,size_bytes")
+            .eq("id", mediaId)
+            .is("deleted_at", null)
+            .maybeSingle();
+
+          if (mediaResult.data) {
+            const type = mediaResult.data.mime_type.startsWith("video/") ? "video" as const : "image" as const;
+            const media = {
+              id: mediaResult.data.id,
+              name: mediaResult.data.filename,
+              type,
+              size: mediaResult.data.size_bytes,
+            };
+            setExistingMedia(media);
+            setFileName(media.name);
+            setFileType(media.type);
+            setFileSize(media.size);
+          }
+        }
+      }
+
+      setLoadingEdit(false);
+    }
+
+    void loadEdit();
+    return () => { active = false; };
+  }, [tenant.loading, tenant.source, tenant.activeBrand.id, destinationOptions]);
 
   useEffect(() => () => {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
@@ -223,12 +376,19 @@ export function PublicationEditor() {
   function removeFile() {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setPreviewUrl(null);
-    setFileName("");
-    setFileType(null);
-    setFileSize(0);
     setSelectedFile(null);
     setUploadProgress(null);
     setStagedMedia(null);
+
+    if (existingMedia) {
+      setFileName(existingMedia.name);
+      setFileType(existingMedia.type);
+      setFileSize(existingMedia.size);
+    } else {
+      setFileName("");
+      setFileType(null);
+      setFileSize(0);
+    }
   }
 
   function toggle(option: DestinationOption) {
@@ -366,12 +526,21 @@ export function PublicationEditor() {
       };
     });
 
-    const result = await client.rpc("save_post_draft", {
-      p_brand_id: tenant.activeBrand.id,
+    const postPayload = {
       p_internal_title: base.trim().slice(0, 80) || "Nova publicação",
       p_base_caption: base.trim(),
       p_targets: targets,
-    });
+    };
+
+    const result = editingPostId
+      ? await client.rpc("update_post_plan", {
+          p_post_id: editingPostId,
+          ...postPayload,
+        })
+      : await client.rpc("save_post_draft", {
+          p_brand_id: tenant.activeBrand.id,
+          ...postPayload,
+        });
 
     if (result.error) {
       setSaveError(result.error.message);
@@ -392,7 +561,9 @@ export function PublicationEditor() {
       }
     }
 
-    if (intent === "draft") {
+    if (editingPostId) {
+      setSaveMessage("Alterações salvas no Supabase real.");
+    } else if (intent === "draft") {
       setSaveMessage("Rascunho salvo no Supabase real.");
     } else {
       setSaveMessage("Intenção salva no Supabase. O worker de publicação ainda não está ativado, então nenhuma rede externa foi acionada.");
@@ -403,9 +574,10 @@ export function PublicationEditor() {
 
   return <div className="w-full max-w-full space-y-5 overflow-x-hidden">
     <section>
-      <p className="eyebrow">Publicação</p>
-      <h1 className="mt-2 text-2xl font-black tracking-tight text-slate-950 sm:text-3xl">Criar publicação</h1>
-      <p className="mt-1 text-sm leading-6 text-slate-500">Mídia, descrição, destinos e horário em um único fluxo.</p>
+      <p className="eyebrow">{editingPostId ? "Edição" : "Publicação"}</p>
+      <h1 className="mt-2 text-2xl font-black tracking-tight text-slate-950 sm:text-3xl">{editingPostId ? "Editar publicação" : "Criar publicação"}</h1>
+      <p className="mt-1 text-sm leading-6 text-slate-500">{editingPostId ? "Altere conteúdo, destinos e horário antes da primeira tentativa de envio." : "Mídia, descrição, destinos e horário em um único fluxo."}</p>
+      {loadingEdit && <p className="mt-2 text-xs font-bold text-indigo-600">Carregando publicação...</p>}
       {tenant.source === "supabase" && <p className="mt-2 inline-flex rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700">Dados reais da marca: {tenant.activeBrand.name}</p>}
     </section>
 
@@ -417,9 +589,11 @@ export function PublicationEditor() {
             <p className="mt-1 text-sm text-slate-500 sm:text-xs">Envie um arquivo ou escolha algo que já está na biblioteca.</p>
           </div>
 
-          {previewUrl ? <div className="mt-4 grid min-w-0 gap-3 sm:grid-cols-[180px_minmax(0,1fr)]">
+          {previewUrl || existingMedia ? <div className="mt-4 grid min-w-0 gap-3 sm:grid-cols-[180px_minmax(0,1fr)]">
             <div className="relative aspect-[4/5] overflow-hidden rounded-xl bg-slate-100">
-              {fileType === "video" ? <video src={previewUrl} className="h-full w-full object-cover" muted playsInline/> : <img src={previewUrl} alt="Prévia da mídia" className="h-full w-full object-cover"/>}
+              {previewUrl
+                ? (fileType === "video" ? <video src={previewUrl} className="h-full w-full object-cover" muted playsInline/> : <img src={previewUrl} alt="Prévia da mídia" className="h-full w-full object-cover"/>)
+                : <div className="grid h-full place-items-center text-center text-slate-400"><div><Play className="mx-auto" size={28}/><p className="mt-2 px-3 text-xs font-bold">Mídia já vinculada</p></div></div>}
               <span className="absolute bottom-2 left-2 rounded-md bg-slate-950/75 px-2 py-1 text-xs font-bold text-white">{fileType === "video" ? "VÍDEO" : "IMAGEM"}</span>
             </div>
             <div className="min-w-0 rounded-xl border border-slate-200 bg-slate-50 p-4">
@@ -433,7 +607,7 @@ export function PublicationEditor() {
               </div>}
               <div className="mt-4 flex flex-wrap gap-2">
                 <label className="btn-secondary cursor-pointer"><UploadCloud size={15}/> Substituir<input type="file" accept="image/*,video/*" className="sr-only" onChange={event => handleFile(event.target.files?.[0])}/></label>
-                <button onClick={removeFile} className="btn-secondary !text-red-600"><Trash2 size={15}/> Remover</button>
+                {selectedFile && <button onClick={removeFile} className="btn-secondary !text-red-600"><Trash2 size={15}/> Cancelar substituição</button>}
               </div>
               <div className="mt-4 border-t border-slate-200 pt-4">
                 <p className="text-sm font-bold text-slate-700 sm:text-xs">Depois de concluir todos os destinos</p>
