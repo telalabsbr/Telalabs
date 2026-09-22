@@ -1253,6 +1253,15 @@ export type Database = {
         Returns: string
       }
       soft_delete_post: { Args: { p_post_id: string }; Returns: boolean }
+      update_post_plan: {
+        Args: {
+          p_base_caption: string
+          p_internal_title: string
+          p_post_id: string
+          p_targets?: Json
+        }
+        Returns: string
+      }
       worker_claim_publication_jobs: {
         Args: { p_limit?: number; p_lock_seconds?: number }
         Returns: {
