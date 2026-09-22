@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CalendarClock,
   Check,
@@ -20,11 +21,23 @@ import {
   Trash2,
   UploadCloud,
 } from "lucide-react";
-import { platformLabels, socialPlatforms, type SocialPlatform } from "@/domain/social";
+import { platformLabels, socialPlatforms, type ConnectionStatus, type SocialPlatform } from "@/domain/social";
 import { PlatformIcon } from "./ui/platform-icon";
+import { useTenantData } from "@/components/tenant-provider";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 type PublishMode = "now" | "schedule";
 type RetentionMode = "delete" | "library";
+type SaveIntent = "draft" | "publish_now" | "schedule";
+
+interface DestinationOption {
+  id: string;
+  platform: SocialPlatform;
+  label: string;
+  handle: string;
+  status: ConnectionStatus;
+  connectionId?: string;
+}
 
 const aiSuffixPlain: Partial<Record<SocialPlatform, string>> = {
   instagram: "\n\nSalve para ver depois. #conteudo #socialmedia",
@@ -65,25 +78,72 @@ function PreviewChrome({ platform }: { platform: SocialPlatform }) {
   return <div className="flex items-center gap-4 border-t border-slate-100 px-3 py-2 text-slate-500"><MessageCircle size={16}/><Repeat2 size={16}/><Heart size={16}/><Share2 size={16}/></div>;
 }
 
+function toIso(date: string, time: string) {
+  const parsed = new Date(date + "T" + time + ":00");
+  return Number.isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString();
+}
+
 export function PublicationEditor() {
-  const [selected, setSelected] = useState<SocialPlatform[]>(["instagram", "tiktok", "facebook", "youtube"]);
-  const [activePlatform, setActivePlatform] = useState<SocialPlatform>("instagram");
+  const tenant = useTenantData();
+  const initialized = useRef(false);
+
+  const destinationOptions = useMemo<DestinationOption[]>(() => {
+    if (tenant.source === "supabase") {
+      return tenant.connections.map(connection => ({
+        id: connection.id,
+        platform: connection.platform,
+        label: connection.displayName ?? platformLabels[connection.platform],
+        handle: connection.handle ?? platformLabels[connection.platform],
+        status: connection.status,
+        connectionId: connection.id,
+      }));
+    }
+
+    return socialPlatforms.map(platform => ({
+      id: "demo:" + platform,
+      platform,
+      label: platformLabels[platform],
+      handle: "@conta",
+      status: "connected",
+    }));
+  }, [tenant.source, tenant.connections]);
+
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [activeId, setActiveId] = useState("");
   const [base, setBase] = useState("");
   const [customize, setCustomize] = useState(false);
-  const [texts, setTexts] = useState<Partial<Record<SocialPlatform, string>>>({});
-  const [titles, setTitles] = useState<Partial<Record<SocialPlatform, string>>>({});
+  const [texts, setTexts] = useState<Record<string, string>>({});
+  const [titles, setTitles] = useState<Record<string, string>>({});
   const [mode, setMode] = useState<PublishMode>("schedule");
   const [differentTimes, setDifferentTimes] = useState(false);
+  const [destinationTimes, setDestinationTimes] = useState<Record<string, string>>({});
   const [includeEmojis, setIncludeEmojis] = useState(true);
   const [retention, setRetention] = useState<RetentionMode>("delete");
-  const [saved, setSaved] = useState(false);
+  const [saveMessage, setSaveMessage] = useState("");
+  const [saveError, setSaveError] = useState("");
+  const [saving, setSaving] = useState(false);
   const [fileName, setFileName] = useState("");
   const [fileType, setFileType] = useState<"image" | "video" | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [date, setDate] = useState("2026-09-25");
+  const [time, setTime] = useState("18:30");
+
+  useEffect(() => {
+    if (tenant.loading || initialized.current) return;
+    initialized.current = true;
+    const preferred = tenant.source === "supabase"
+      ? destinationOptions.filter(option => option.status === "connected").map(option => option.id)
+      : destinationOptions.filter(option => ["instagram", "tiktok", "facebook", "youtube"].includes(option.platform)).map(option => option.id);
+    setSelectedIds(preferred);
+    setActiveId(preferred[0] ?? destinationOptions[0]?.id ?? "");
+  }, [tenant.loading, tenant.source, destinationOptions]);
 
   useEffect(() => () => {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
   }, [previewUrl]);
+
+  const selectedOptions = destinationOptions.filter(option => selectedIds.includes(option.id));
+  const activeOption = selectedOptions.find(option => option.id === activeId) ?? selectedOptions[0] ?? destinationOptions[0];
 
   function handleFile(file?: File) {
     if (!file) return;
@@ -100,46 +160,119 @@ export function PublicationEditor() {
     setFileType(null);
   }
 
-  function toggle(platform: SocialPlatform) {
-    setSelected(current => {
-      if (current.includes(platform)) {
-        const next = current.filter(item => item !== platform);
-        if (activePlatform === platform && next.length) setActivePlatform(next[0]);
+  function toggle(option: DestinationOption) {
+    setSelectedIds(current => {
+      if (current.includes(option.id)) {
+        const next = current.filter(item => item !== option.id);
+        if (activeId === option.id) setActiveId(next[0] ?? "");
         return next;
       }
-      setActivePlatform(platform);
-      return [...current, platform];
+      setActiveId(option.id);
+      return [...current, option.id];
     });
+    setSaveMessage("");
   }
 
   function adaptAll() {
     const suffixes = includeEmojis ? aiSuffixEmoji : aiSuffixPlain;
-    const next: Partial<Record<SocialPlatform, string>> = {};
-    selected.forEach(platform => next[platform] = base + (suffixes[platform] ?? ""));
+    const next = { ...texts };
+    const nextTitles = { ...titles };
+    selectedOptions.forEach(option => {
+      next[option.id] = base + (suffixes[option.platform] ?? "");
+      if (option.platform === "youtube" && !nextTitles[option.id]) {
+        nextTitles[option.id] = base.slice(0, 80) || "Novo vídeo";
+      }
+    });
     setTexts(next);
-    if (selected.includes("youtube") && !titles.youtube) {
-      setTitles(current => ({ ...current, youtube: base.slice(0, 80) || "Novo vídeo" }));
-    }
+    setTitles(nextTitles);
     setCustomize(true);
-    setSaved(false);
+    setSaveMessage("");
   }
 
-  const effectiveText = (platform: SocialPlatform) => texts[platform] ?? base;
+  const effectiveText = (option: DestinationOption) => texts[option.id] ?? base;
 
-  const checks = selected.map(platform => {
-    if (!base.trim()) return { platform, level: "error" as const, text: "Adicione a descrição base" };
-    if (platform === "youtube" && !(titles.youtube?.trim())) return { platform, level: "warning" as const, text: "Título será necessário" };
-    if (effectiveText(platform).length > 2000) return { platform, level: "warning" as const, text: "Revise o tamanho da descrição" };
-    return { platform, level: "ok" as const, text: "Pronto" };
+  const checks = selectedOptions.map(option => {
+    if (!base.trim()) return { option, level: "error" as const, text: "Adicione a descrição base" };
+    if (tenant.source === "supabase" && option.status !== "connected") return { option, level: "error" as const, text: "Conta precisa ser reconectada" };
+    if (option.platform === "youtube" && !(titles[option.id]?.trim())) return { option, level: "warning" as const, text: "Título será necessário" };
+    if (effectiveText(option).length > 2000) return { option, level: "warning" as const, text: "Revise o tamanho da descrição" };
+    return { option, level: "ok" as const, text: "Pronto" };
   });
 
-  const canSubmit = !!base.trim() && selected.length > 0 && !checks.some(check => check.level === "error");
+  const canSubmit = !!base.trim() && selectedOptions.length > 0 && !checks.some(check => check.level === "error");
+
+  async function persist(intent: SaveIntent) {
+    setSaving(true);
+    setSaveError("");
+    setSaveMessage("");
+
+    if (tenant.source !== "supabase") {
+      setSaveMessage("Salvo no modo demonstração. Nenhuma rede externa foi acionada.");
+      setSaving(false);
+      return;
+    }
+
+    if (!tenant.user || !tenant.organization || tenant.activeBrand.id === "unconfigured") {
+      setSaveError("Conclua a configuração da conta antes de salvar uma publicação.");
+      setSaving(false);
+      return;
+    }
+
+    if (!selectedOptions.length || selectedOptions.some(option => !option.connectionId)) {
+      setSaveError("Selecione pelo menos uma conta social conectada.");
+      setSaving(false);
+      return;
+    }
+
+    const client = createSupabaseBrowserClient();
+    if (!client) {
+      setSaveError("Supabase não está configurado neste ambiente.");
+      setSaving(false);
+      return;
+    }
+
+    const timezone = tenant.activeBrand.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+    const targets = selectedOptions.map(option => {
+      const targetTime = differentTimes ? (destinationTimes[option.id] || time) : time;
+      return {
+        connection_id: option.connectionId as string,
+        provider: option.platform,
+        scheduled_at: intent === "publish_now" ? new Date().toISOString() : toIso(date, targetTime),
+        scheduled_timezone: timezone,
+        caption_override: effectiveText(option) === base ? "" : effectiveText(option),
+        title_override: titles[option.id] ?? "",
+        requested_action: intent,
+        retention: retention,
+      };
+    });
+
+    const result = await client.rpc("save_post_draft", {
+      p_brand_id: tenant.activeBrand.id,
+      p_internal_title: base.trim().slice(0, 80) || "Nova publicação",
+      p_base_caption: base.trim(),
+      p_targets: targets,
+    });
+
+    if (result.error) {
+      setSaveError(result.error.message);
+      setSaving(false);
+      return;
+    }
+
+    if (intent === "draft") {
+      setSaveMessage("Rascunho salvo no Supabase real.");
+    } else {
+      setSaveMessage("Intenção salva no Supabase. O worker de publicação ainda não está ativado, então nenhuma rede externa foi acionada.");
+    }
+    setSaving(false);
+  }
 
   return <div className="w-full max-w-full space-y-5 overflow-x-hidden">
     <section>
       <p className="eyebrow">Publicação</p>
       <h1 className="mt-2 text-2xl font-black tracking-tight text-slate-950 sm:text-3xl">Criar publicação</h1>
       <p className="mt-1 text-sm leading-6 text-slate-500">Mídia, descrição, destinos e horário em um único fluxo.</p>
+      {tenant.source === "supabase" && <p className="mt-2 inline-flex rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700">Dados reais da marca: {tenant.activeBrand.name}</p>}
     </section>
 
     <div className="grid w-full max-w-full gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
@@ -189,25 +322,31 @@ export function PublicationEditor() {
           <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
             <div className="min-w-0">
               <h2 className="text-base font-bold text-slate-950 sm:text-sm">2. Onde publicar?</h2>
-              <p className="mt-1 text-sm text-slate-500 sm:text-xs">Cada conta é tratada como um destino independente.</p>
+              <p className="mt-1 text-sm text-slate-500 sm:text-xs">{tenant.source === "supabase" ? "Cada conta conectada é um destino independente." : "Modo demonstração: escolha as redes para simular o fluxo."}</p>
             </div>
-            <button onClick={() => setSelected(selected.length === socialPlatforms.length ? [] : [...socialPlatforms])} className="shrink-0 text-sm font-bold text-indigo-600 sm:text-xs">
-              {selected.length === socialPlatforms.length ? "Limpar" : "Selecionar todas"}
-            </button>
+            {!!destinationOptions.length && <button onClick={() => setSelectedIds(selectedIds.length === destinationOptions.length ? [] : destinationOptions.map(option => option.id))} className="shrink-0 text-sm font-bold text-indigo-600 sm:text-xs">
+              {selectedIds.length === destinationOptions.length ? "Limpar" : "Selecionar todas"}
+            </button>}
           </div>
-          <div className="mt-4 grid w-full max-w-full grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
-            {socialPlatforms.map(platform => {
-              const active = selected.includes(platform);
-              return <button key={platform} onClick={() => toggle(platform)} aria-pressed={active} className={`focusable flex min-w-0 items-center gap-3 rounded-xl border p-3 text-left transition-colors ${active ? "border-indigo-300 bg-indigo-50" : "border-slate-200 bg-white hover:bg-slate-50"}`}>
-                <PlatformIcon platform={platform} small/>
+
+          {tenant.source === "supabase" && !destinationOptions.length ? <div className="mt-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-5 text-center">
+            <p className="text-sm font-bold text-slate-900">Nenhuma conta social conectada ainda.</p>
+            <p className="mt-1 text-sm text-slate-500">Conecte pelo menos uma conta antes de criar destinos reais.</p>
+            <Link href="/conexoes" className="btn-secondary mt-3">Ir para Contas</Link>
+          </div> : <div className="mt-4 grid w-full max-w-full grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+            {destinationOptions.map(option => {
+              const active = selectedIds.includes(option.id);
+              const blocked = tenant.source === "supabase" && option.status !== "connected";
+              return <button key={option.id} onClick={() => toggle(option)} aria-pressed={active} className={`focusable flex min-w-0 items-center gap-3 rounded-xl border p-3 text-left transition-colors ${active ? "border-indigo-300 bg-indigo-50" : "border-slate-200 bg-white hover:bg-slate-50"}`}>
+                <PlatformIcon platform={option.platform} small/>
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-bold text-slate-900 sm:text-xs">{platformLabels[platform]}</span>
-                  <span className="block truncate text-sm text-slate-500 sm:text-xs">@conta</span>
+                  <span className="block truncate text-sm font-bold text-slate-900 sm:text-xs">{option.label}</span>
+                  <span className={`block truncate text-sm sm:text-xs ${blocked ? "text-amber-600" : "text-slate-500"}`}>{blocked ? "Reconexão necessária" : option.handle}</span>
                 </span>
                 <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-md border ${active ? "border-indigo-600 bg-indigo-600 text-white" : "border-slate-300"}`}>{active && <Check size={12}/>}</span>
               </button>;
             })}
-          </div>
+          </div>}
         </section>
 
         <section className="card min-w-0 p-4 sm:p-5">
@@ -218,12 +357,12 @@ export function PublicationEditor() {
             </div>
             <div className="flex max-w-full rounded-lg bg-slate-100 p-1 text-sm font-bold sm:text-xs">
               <button onClick={() => setCustomize(false)} className={`rounded-md px-3 py-2 ${!customize ? "bg-white text-slate-900 shadow-sm" : "text-slate-500"}`}>Descrição base</button>
-              <button onClick={() => setCustomize(true)} className={`rounded-md px-3 py-2 ${customize ? "bg-white text-slate-900 shadow-sm" : "text-slate-500"}`}>Por rede</button>
+              <button onClick={() => setCustomize(true)} className={`rounded-md px-3 py-2 ${customize ? "bg-white text-slate-900 shadow-sm" : "text-slate-500"}`}>Por destino</button>
             </div>
           </div>
 
           {!customize ? <div className="mt-4">
-            <textarea value={base} onChange={event => { setBase(event.target.value); setSaved(false); }} placeholder="Escreva a descrição principal aqui..." className="field min-h-36 resize-y p-4 text-base sm:text-sm"/>
+            <textarea value={base} onChange={event => { setBase(event.target.value); setSaveMessage(""); }} placeholder="Escreva a descrição principal aqui..." className="field min-h-36 resize-y p-4 text-base sm:text-sm"/>
             <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <span className="text-sm text-slate-500 sm:text-xs">{base.length} caracteres</span>
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -231,22 +370,22 @@ export function PublicationEditor() {
                   <input type="checkbox" checked={includeEmojis} onChange={event => setIncludeEmojis(event.target.checked)}/>
                   Usar emojis
                 </label>
-                <button onClick={adaptAll} disabled={!base.trim() || !selected.length} className="btn-primary disabled:cursor-not-allowed disabled:opacity-40"><Sparkles size={16}/> Adaptar para todas</button>
+                <button onClick={adaptAll} disabled={!base.trim() || !selectedOptions.length} className="btn-primary disabled:cursor-not-allowed disabled:opacity-40"><Sparkles size={16}/> Adaptar para todas</button>
               </div>
             </div>
           </div> : <div className="mt-4 min-w-0">
-            {selected.length ? <>
+            {selectedOptions.length ? <>
               <div className="app-scrollbar flex max-w-full gap-1 overflow-x-auto border-b border-slate-200">
-                {selected.map(platform => <button key={platform} onClick={() => setActivePlatform(platform)} className={`flex shrink-0 items-center gap-2 border-b-2 px-3 py-2.5 text-sm font-bold sm:text-xs ${activePlatform === platform ? "border-indigo-600 text-indigo-700" : "border-transparent text-slate-500"}`}><PlatformIcon platform={platform} small/>{platformLabels[platform]}</button>)}
+                {selectedOptions.map(option => <button key={option.id} onClick={() => setActiveId(option.id)} className={`flex max-w-44 shrink-0 items-center gap-2 border-b-2 px-3 py-2.5 text-sm font-bold sm:text-xs ${activeId === option.id ? "border-indigo-600 text-indigo-700" : "border-transparent text-slate-500"}`}><PlatformIcon platform={option.platform} small/><span className="truncate">{option.label}</span></button>)}
               </div>
-              <div className="mt-4">
-                {activePlatform === "youtube" && <label className="mb-3 block text-sm font-bold text-slate-700 sm:text-xs">Título do YouTube<input value={titles.youtube ?? ""} onChange={event => setTitles(current => ({ ...current, youtube: event.target.value }))} className="field mt-1 px-3 text-base sm:text-sm" placeholder="Título do vídeo"/></label>}
-                <textarea value={effectiveText(activePlatform)} onChange={event => setTexts(current => ({ ...current, [activePlatform]: event.target.value }))} className="field min-h-36 resize-y p-4 text-base sm:text-sm"/>
+              {activeOption && <div className="mt-4">
+                {activeOption.platform === "youtube" && <label className="mb-3 block text-sm font-bold text-slate-700 sm:text-xs">Título do YouTube<input value={titles[activeOption.id] ?? ""} onChange={event => setTitles(current => ({ ...current, [activeOption.id]: event.target.value }))} className="field mt-1 px-3 text-base sm:text-sm" placeholder="Título do vídeo"/></label>}
+                <textarea value={effectiveText(activeOption)} onChange={event => setTexts(current => ({ ...current, [activeOption.id]: event.target.value }))} className="field min-h-36 resize-y p-4 text-base sm:text-sm"/>
                 <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-sm text-slate-500 sm:text-xs">Personalização de {platformLabels[activePlatform]}.</p>
-                  <button onClick={() => setTexts(current => ({ ...current, [activePlatform]: base }))} className="text-sm font-bold text-indigo-600 sm:text-xs">Usar descrição base</button>
+                  <p className="text-sm text-slate-500 sm:text-xs">Personalização de {activeOption.label}.</p>
+                  <button onClick={() => setTexts(current => ({ ...current, [activeOption.id]: base }))} className="text-sm font-bold text-indigo-600 sm:text-xs">Usar descrição base</button>
                 </div>
-              </div>
+              </div>}
             </> : <p className="rounded-xl bg-slate-50 p-5 text-sm text-slate-500">Selecione ao menos uma conta para personalizar.</p>}
           </div>}
         </section>
@@ -260,15 +399,15 @@ export function PublicationEditor() {
 
           {mode === "schedule" && <div className="mt-4 rounded-xl bg-slate-50 p-4">
             <div className="grid gap-3 sm:grid-cols-2">
-              <label className="text-sm font-bold text-slate-700 sm:text-xs">Data<input type="date" defaultValue="2026-09-25" className="field mt-1 px-3 text-base sm:text-sm"/></label>
-              <label className="text-sm font-bold text-slate-700 sm:text-xs">Horário<input type="time" defaultValue="18:30" className="field mt-1 px-3 text-base sm:text-sm"/></label>
+              <label className="text-sm font-bold text-slate-700 sm:text-xs">Data<input type="date" value={date} onChange={event => setDate(event.target.value)} className="field mt-1 px-3 text-base sm:text-sm"/></label>
+              <label className="text-sm font-bold text-slate-700 sm:text-xs">Horário<input type="time" value={time} onChange={event => setTime(event.target.value)} className="field mt-1 px-3 text-base sm:text-sm"/></label>
             </div>
             <label className="mt-4 flex items-center gap-2 text-sm font-semibold text-slate-700 sm:text-xs">
               <input type="checkbox" checked={differentTimes} onChange={event => setDifferentTimes(event.target.checked)}/>
-              Usar horários diferentes por rede
+              Usar horários diferentes por destino
             </label>
             {differentTimes && <div className="mt-3 grid gap-2 sm:grid-cols-2">
-              {selected.map(platform => <label key={platform} className="flex min-w-0 items-center gap-2 rounded-lg border border-slate-200 bg-white p-2 text-sm font-bold text-slate-700 sm:text-xs"><PlatformIcon platform={platform} small/><span className="min-w-0 flex-1 truncate">{platformLabels[platform]}</span><input type="time" defaultValue="18:30" className="w-28 shrink-0 rounded-lg border border-slate-200 px-2 py-1.5 text-base sm:text-xs"/></label>)}
+              {selectedOptions.map(option => <label key={option.id} className="flex min-w-0 items-center gap-2 rounded-lg border border-slate-200 bg-white p-2 text-sm font-bold text-slate-700 sm:text-xs"><PlatformIcon platform={option.platform} small/><span className="min-w-0 flex-1 truncate">{option.label}</span><input type="time" value={destinationTimes[option.id] ?? time} onChange={event => setDestinationTimes(current => ({ ...current, [option.id]: event.target.value }))} className="w-28 shrink-0 rounded-lg border border-slate-200 px-2 py-1.5 text-base sm:text-xs"/></label>)}
             </div>}
           </div>}
         </section>
@@ -280,10 +419,10 @@ export function PublicationEditor() {
           </div>
           <p className="mt-1 text-sm text-slate-500 sm:text-xs">Avisos por destino antes de publicar.</p>
           <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {checks.map(check => <button key={check.platform} onClick={() => { setCustomize(true); setActivePlatform(check.platform); }} className={`flex min-w-0 items-center gap-3 rounded-xl border p-3 text-left ${check.level === "error" ? "border-red-200 bg-red-50" : check.level === "warning" ? "border-amber-200 bg-amber-50" : "border-emerald-200 bg-emerald-50"}`}>
-              <PlatformIcon platform={check.platform} small/>
+            {checks.map(check => <button key={check.option.id} onClick={() => { setCustomize(true); setActiveId(check.option.id); }} className={`flex min-w-0 items-center gap-3 rounded-xl border p-3 text-left ${check.level === "error" ? "border-red-200 bg-red-50" : check.level === "warning" ? "border-amber-200 bg-amber-50" : "border-emerald-200 bg-emerald-50"}`}>
+              <PlatformIcon platform={check.option.platform} small/>
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-bold text-slate-900 sm:text-xs">{platformLabels[check.platform]}</span>
+                <span className="block truncate text-sm font-bold text-slate-900 sm:text-xs">{check.option.label}</span>
                 <span className={`block truncate text-sm sm:text-xs ${check.level === "error" ? "text-red-700" : check.level === "warning" ? "text-amber-700" : "text-emerald-700"}`}>{check.text}</span>
               </span>
               {check.level === "ok" ? <CheckCircle2 size={15} className="shrink-0 text-emerald-600"/> : <CircleAlert size={15} className={`shrink-0 ${check.level === "error" ? "text-red-600" : "text-amber-600"}`}/>}
@@ -298,36 +437,39 @@ export function PublicationEditor() {
             <p className="font-bold text-slate-950">Prévia da publicação</p>
             <p className="mt-1 text-sm leading-5 text-slate-500 sm:text-xs">Simulação aproximada por rede. A interface oficial pode mudar.</p>
           </div>
-          <div className="app-scrollbar flex max-w-full gap-1 overflow-x-auto border-b border-slate-200 px-3 pt-2">
-            {selected.map(platform => <button key={platform} onClick={() => setActivePlatform(platform)} className={`flex min-w-12 shrink-0 items-center justify-center border-b-2 px-3 py-2 ${activePlatform === platform ? "border-indigo-600" : "border-transparent"}`}><PlatformIcon platform={platform} small/></button>)}
-          </div>
-          <div className="bg-slate-50 p-3 sm:p-4">
-            <div className={`relative mx-auto w-full max-w-[320px] overflow-hidden rounded-2xl border border-slate-200 shadow-sm ${activePlatform === "tiktok" || activePlatform === "kwai" ? "bg-slate-950 text-white" : "bg-white"}`}>
-              <div className="flex items-center gap-2 px-3 py-3">
-                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-indigo-100 text-[10px] font-black text-indigo-700">TS</span>
-                <div className="min-w-0 flex-1">
-                  <p className={`truncate text-xs font-bold ${activePlatform === "tiktok" || activePlatform === "kwai" ? "text-white" : "text-slate-900"}`}>@conta</p>
-                  <p className={`text-[11px] ${activePlatform === "tiktok" || activePlatform === "kwai" ? "text-white/70" : "text-slate-400"}`}>{platformLabels[activePlatform]}</p>
-                </div>
-                <MoreHorizontal size={17} className={activePlatform === "tiktok" || activePlatform === "kwai" ? "text-white/70" : "text-slate-400"}/>
-              </div>
-              <div className={`relative bg-gradient-to-br from-indigo-50 via-slate-100 to-violet-100 ${activePlatform === "youtube" ? "aspect-video" : "aspect-[4/5]"}`}>
-                {previewUrl && (fileType === "video" ? <video src={previewUrl} className="h-full w-full object-cover" muted playsInline/> : <img src={previewUrl} alt="" className="h-full w-full object-cover"/>)}
-                {!previewUrl && <div className="grid h-full place-items-center text-slate-400"><Play size={30}/></div>}
-                {(activePlatform === "tiktok" || activePlatform === "kwai") && <PreviewChrome platform={activePlatform}/>}
-              </div>
-              <div className="p-3">
-                {activePlatform === "youtube" && titles.youtube && <p className="mb-1 text-base font-black text-slate-950">{titles.youtube}</p>}
-                <p className={`whitespace-pre-line text-sm leading-5 ${activePlatform === "tiktok" || activePlatform === "kwai" ? "text-white" : "text-slate-700"}`}>{effectiveText(activePlatform) || "Sua descrição aparecerá aqui."}</p>
-              </div>
-              {activePlatform !== "tiktok" && activePlatform !== "kwai" && <PreviewChrome platform={activePlatform}/>}
+
+          {selectedOptions.length ? <>
+            <div className="app-scrollbar flex max-w-full gap-1 overflow-x-auto border-b border-slate-200 px-3 pt-2">
+              {selectedOptions.map(option => <button key={option.id} onClick={() => setActiveId(option.id)} className={`flex min-w-12 shrink-0 items-center justify-center border-b-2 px-3 py-2 ${activeId === option.id ? "border-indigo-600" : "border-transparent"}`}><PlatformIcon platform={option.platform} small/></button>)}
             </div>
-          </div>
+            {activeOption && <div className="bg-slate-50 p-3 sm:p-4">
+              <div className={`relative mx-auto w-full max-w-[320px] overflow-hidden rounded-2xl border border-slate-200 shadow-sm ${activeOption.platform === "tiktok" || activeOption.platform === "kwai" ? "bg-slate-950 text-white" : "bg-white"}`}>
+                <div className="flex items-center gap-2 px-3 py-3">
+                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-indigo-100 text-[10px] font-black text-indigo-700">{tenant.activeBrand.initials}</span>
+                  <div className="min-w-0 flex-1">
+                    <p className={`truncate text-xs font-bold ${activeOption.platform === "tiktok" || activeOption.platform === "kwai" ? "text-white" : "text-slate-900"}`}>{activeOption.handle}</p>
+                    <p className={`text-[11px] ${activeOption.platform === "tiktok" || activeOption.platform === "kwai" ? "text-white/70" : "text-slate-400"}`}>{platformLabels[activeOption.platform]}</p>
+                  </div>
+                  <MoreHorizontal size={17} className={activeOption.platform === "tiktok" || activeOption.platform === "kwai" ? "text-white/70" : "text-slate-400"}/>
+                </div>
+                <div className={`relative bg-gradient-to-br from-indigo-50 via-slate-100 to-violet-100 ${activeOption.platform === "youtube" ? "aspect-video" : "aspect-[4/5]"}`}>
+                  {previewUrl && (fileType === "video" ? <video src={previewUrl} className="h-full w-full object-cover" muted playsInline/> : <img src={previewUrl} alt="" className="h-full w-full object-cover"/>)}
+                  {!previewUrl && <div className="grid h-full place-items-center text-slate-400"><Play size={30}/></div>}
+                  {(activeOption.platform === "tiktok" || activeOption.platform === "kwai") && <PreviewChrome platform={activeOption.platform}/>}
+                </div>
+                <div className="p-3">
+                  {activeOption.platform === "youtube" && titles[activeOption.id] && <p className="mb-1 text-base font-black text-slate-950">{titles[activeOption.id]}</p>}
+                  <p className={`whitespace-pre-line text-sm leading-5 ${activeOption.platform === "tiktok" || activeOption.platform === "kwai" ? "text-white" : "text-slate-700"}`}>{effectiveText(activeOption) || "Sua descrição aparecerá aqui."}</p>
+                </div>
+                {activeOption.platform !== "tiktok" && activeOption.platform !== "kwai" && <PreviewChrome platform={activeOption.platform}/>}
+              </div>
+            </div>}
+          </> : <div className="p-6 text-center text-sm text-slate-500">Selecione ao menos um destino para ver a prévia.</div>}
         </section>
 
         <section className="card p-4">
           <div className="flex items-center justify-between text-sm sm:text-xs">
-            <span className="text-slate-500">Destinos</span><strong className="text-slate-900">{selected.length}</strong>
+            <span className="text-slate-500">Destinos</span><strong className="text-slate-900">{selectedOptions.length}</strong>
           </div>
           <div className="mt-2 flex items-center justify-between text-sm sm:text-xs">
             <span className="text-slate-500">Envio</span><strong className="text-slate-900">{mode === "now" ? "Agora" : "Agendado"}</strong>
@@ -336,10 +478,12 @@ export function PublicationEditor() {
             <span className="text-slate-500">Arquivo após publicar</span><strong className="text-right text-slate-900">{retention === "delete" ? "Excluir" : "Biblioteca"}</strong>
           </div>
           <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
-            <button onClick={() => setSaved(true)} className="btn-secondary w-full">Salvar rascunho</button>
-            <button disabled={!canSubmit} onClick={() => setSaved(true)} className="btn-primary w-full disabled:cursor-not-allowed disabled:opacity-40">{mode === "now" ? <Send size={16}/> : <Clock3 size={16}/>} {mode === "now" ? "Publicar agora" : "Agendar publicação"}</button>
+            <button disabled={saving || !base.trim()} onClick={() => void persist("draft")} className="btn-secondary w-full disabled:opacity-50">Salvar rascunho</button>
+            <button disabled={saving || !canSubmit} onClick={() => void persist(mode === "now" ? "publish_now" : "schedule")} className="btn-primary w-full disabled:cursor-not-allowed disabled:opacity-40">{mode === "now" ? <Send size={16}/> : <Clock3 size={16}/>} {saving ? "Salvando..." : mode === "now" ? "Publicar agora" : "Agendar publicação"}</button>
           </div>
-          {saved && <p role="status" className="mt-3 rounded-lg bg-emerald-50 p-3 text-sm font-semibold text-emerald-700 sm:text-xs">Salvo no modo demonstração. Nenhuma rede externa foi acionada.</p>}
+          {saveMessage && <p role="status" className="mt-3 rounded-lg bg-emerald-50 p-3 text-sm font-semibold leading-5 text-emerald-700 sm:text-xs">{saveMessage}</p>}
+          {saveError && <p role="alert" className="mt-3 rounded-lg bg-red-50 p-3 text-sm font-semibold leading-5 text-red-700 sm:text-xs">{saveError}</p>}
+          {tenant.source === "supabase" && <p className="mt-3 text-xs leading-5 text-slate-500">Nesta fase, o Tela já persiste rascunho e destinos de forma atômica. Publicação externa e scheduler continuam desativados até a próxima integração.</p>}
         </section>
       </aside>
     </div>
