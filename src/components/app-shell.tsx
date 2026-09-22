@@ -6,20 +6,23 @@ import {
   BarChart3,
   CalendarDays,
   ChevronDown,
+  CreditCard,
   FolderOpen,
+  Gift,
   HelpCircle,
   History,
   Link2,
+  LogOut,
   Menu,
   PanelLeftClose,
   PanelLeftOpen,
   PenLine,
   Settings,
+  UserRound,
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
-import { InstallAppButton } from "@/components/pwa-client";
 import { TenantProvider, useTenantData } from "@/components/tenant-provider";
 import { InitialSetup } from "@/components/initial-setup";
 
@@ -40,15 +43,25 @@ const mobileNav = [
   { href: "/conexoes", label: "Contas", icon: Link2 },
 ];
 
+const accountMenu = [
+  { href: "/conta/perfil", label: "Meu perfil", icon: UserRound },
+  { href: "/conta/plano", label: "Plano e cobrança", icon: CreditCard },
+  { href: "/configuracoes", label: "Preferências", icon: Settings },
+  { href: "/indicacoes", label: "Indique e ganhe", icon: Gift },
+  { href: "/ajuda", label: "Ajuda e suporte", icon: HelpCircle },
+];
+
 function AppShellContent({ children }: { children: React.ReactNode }) {
   const path = usePathname();
-  const { connections, activeBrand, source } = useTenantData();
+  const { connections, activeBrand, source, user } = useTenantData();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const attentionItems = connections.filter(connection => connection.status === "expired" || connection.status === "error");
   const attentionSignature = attentionItems.map(connection => connection.platform + ":" + connection.status).sort().join("|");
   const [seenAttentionSignature, setSeenAttentionSignature] = useState("");
   const attentionCount = attentionSignature && seenAttentionSignature !== attentionSignature ? attentionItems.length : 0;
+  const showCreateTop = !path.startsWith("/publicacoes");
 
   useEffect(() => {
     const stored = window.localStorage.getItem("tela-sidebar-collapsed");
@@ -57,6 +70,8 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    setMobileOpen(false);
+    setProfileOpen(false);
     if (path.startsWith("/conexoes") && attentionSignature) {
       window.localStorage.setItem("tela-seen-account-alert", attentionSignature);
       setSeenAttentionSignature(attentionSignature);
@@ -77,17 +92,28 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
   }
 
   const pageTitle = useMemo(() => {
-    if (path.startsWith("/configuracoes")) return "Configurações";
+    if (path.startsWith("/configuracoes")) return "Preferências";
+    if (path.startsWith("/conta/perfil")) return "Meu perfil";
+    if (path.startsWith("/conta/plano")) return "Plano e cobrança";
+    if (path.startsWith("/indicacoes")) return "Indique e ganhe";
+    if (path.startsWith("/ajuda")) return "Ajuda e suporte";
     const found = nav.find(item => path === item.href || path.startsWith(item.href + "/"));
     return found?.label ?? "Tela Social";
   }, [path]);
 
   const isActive = (href: string) => path === href || path.startsWith(href + "/");
+  const userLabel = user?.user_metadata?.full_name || user?.email || "Minha conta";
+  const userInitials = String(user?.user_metadata?.full_name || user?.email || "TS")
+    .split(/\s+|@/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map(part => part[0]?.toUpperCase())
+    .join("") || "TS";
 
   const sidebar = (
     <div className="flex h-full flex-col overflow-hidden">
       <div className={`flex h-16 shrink-0 items-center ${collapsed ? "justify-center px-3" : "justify-between px-4"}`}>
-        <Link href="/publicacoes/nova" className="focusable flex items-center gap-2 rounded-lg">
+        <Link href="/publicacoes/nova" onClick={() => setMobileOpen(false)} className="focusable flex items-center gap-2 rounded-lg">
           <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-500 text-sm font-black text-white shadow-sm">TS</span>
           {!collapsed && <span className="truncate text-lg font-black tracking-[-.04em] text-slate-950">Tela Social</span>}
         </Link>
@@ -130,26 +156,6 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
           </Link>;
         })}
       </nav>
-
-      <div className="shrink-0 border-t border-slate-200 px-3 py-3">
-        <div className="space-y-1">
-          {!collapsed && <InstallAppButton compact/>}
-          <button title={collapsed ? "Ajuda" : undefined} className={`flex w-full items-center rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-50 ${collapsed ? "justify-center p-2.5" : "gap-3 px-3 py-2.5"}`}>
-            <HelpCircle size={18}/>{!collapsed && "Ajuda"}
-          </button>
-          <Link href="/configuracoes" title={collapsed ? "Configurações" : undefined} className={`flex w-full items-center rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-50 ${collapsed ? "justify-center p-2.5" : "gap-3 px-3 py-2.5"}`}>
-            <Settings size={18}/>{!collapsed && "Configurações"}
-          </Link>
-        </div>
-
-        <div className={`mt-2 flex items-center rounded-xl bg-slate-50 ${collapsed ? "justify-center p-2" : "gap-3 p-2.5"}`}>
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-500 text-xs font-bold text-white">TS</span>
-          {!collapsed && <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-bold text-slate-800">Thiago</p>
-            <button onClick={logout} className="text-xs text-slate-500 hover:text-slate-900">Sair</button>
-          </div>}
-        </div>
-      </div>
     </div>
   );
 
@@ -161,15 +167,48 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
       <aside className="relative h-full w-[min(18rem,88vw)] border-r border-slate-200 bg-white shadow-2xl">{sidebar}</aside>
     </div>}
 
-    <header className="sticky top-0 z-30 flex h-16 w-full max-w-full items-center gap-3 border-b border-slate-200 bg-white/92 px-3 backdrop-blur sm:px-4 md:px-6">
+    <header className="sticky top-0 z-30 flex h-16 w-full max-w-full items-center gap-2 border-b border-slate-200 bg-white/92 px-3 backdrop-blur sm:gap-3 sm:px-4 md:px-6">
       <button onClick={() => setMobileOpen(true)} className="shrink-0 rounded-lg p-2 text-slate-600 md:hidden" aria-label="Abrir menu"><Menu size={20}/></button>
       <button onClick={toggleCollapsed} className="hidden shrink-0 rounded-lg p-2 text-slate-500 hover:bg-slate-100 md:inline-flex" aria-label={collapsed ? "Expandir menu" : "Recolher menu"}>
         {collapsed ? <PanelLeftOpen size={19}/> : <PanelLeftClose size={19}/>}
       </button>
+
       <div className="min-w-0 flex-1">
         <p className="truncate text-base font-bold text-slate-900 md:text-sm">{pageTitle}</p>
       </div>
-      <button className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-500 text-xs font-bold text-white">TS</button>
+
+      {showCreateTop && <Link href="/publicacoes/nova" className="btn-primary !min-h-9 shrink-0 !px-3">
+        <PenLine size={16}/>
+        <span className="hidden sm:inline">Criar publicação</span>
+        <span className="sm:hidden">Criar</span>
+      </Link>}
+
+      <div className="relative shrink-0">
+        <button onClick={() => setProfileOpen(value => !value)} className="grid h-10 w-10 place-items-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-500 text-xs font-bold text-white shadow-sm" aria-label="Abrir menu da conta" aria-expanded={profileOpen}>
+          {userInitials}
+        </button>
+
+        {profileOpen && <>
+          <button className="fixed inset-0 z-30 cursor-default bg-transparent" aria-label="Fechar menu da conta" onClick={() => setProfileOpen(false)}/>
+          <div className="absolute right-0 top-12 z-40 w-[min(20rem,calc(100vw-1.5rem))] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+            <div className="border-b border-slate-100 p-4">
+              <p className="truncate text-sm font-black text-slate-950">{userLabel}</p>
+              <p className="mt-1 truncate text-xs text-slate-500">{activeBrand.name}</p>
+            </div>
+            <div className="p-2">
+              {accountMenu.map(({ href, label, icon: Icon }) => <Link key={href} href={href} onClick={() => setProfileOpen(false)} className="flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                <Icon size={17} className="text-slate-500"/>
+                <span>{label}</span>
+              </Link>)}
+            </div>
+            <div className="border-t border-slate-100 p-2">
+              <button onClick={logout} className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold text-red-600 hover:bg-red-50">
+                <LogOut size={17}/> Sair
+              </button>
+            </div>
+          </div>
+        </>}
+      </div>
     </header>
 
     <main className="mx-auto w-full max-w-[1560px] overflow-x-hidden p-3 sm:p-5 md:p-6 lg:p-8">
@@ -191,7 +230,6 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
     </nav>
   </div>;
 }
-
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   return <TenantProvider><AppShellContent>{children}</AppShellContent></TenantProvider>;
