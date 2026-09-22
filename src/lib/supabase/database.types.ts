@@ -1162,7 +1162,13 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      bootstrap_account: {
+        Args: { p_brand_name?: string }
+        Returns: {
+          brand_id: string
+          organization_id: string
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never
