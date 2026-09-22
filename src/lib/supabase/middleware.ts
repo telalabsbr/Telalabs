@@ -2,7 +2,14 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { supabaseConfig } from "./config";
 
-const publicAuthPaths = ["/login", "/atualizar-senha", "/auth", "/api/oauth", "/api/internal"];
+const publicAuthPaths = [
+  "/login",
+  "/atualizar-senha",
+  "/auth",
+  "/api/oauth",
+  "/api/internal",
+  "/d",
+];
 
 function isPublicAuthPath(pathname: string) {
   return publicAuthPaths.some(path => pathname === path || pathname.startsWith(path + "/"));
