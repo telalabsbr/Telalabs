@@ -25,6 +25,7 @@ import { platformLabels, socialPlatforms, type ConnectionStatus, type SocialPlat
 import { PlatformIcon } from "./ui/platform-icon";
 import { useTenantData } from "@/components/tenant-provider";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { uploadMediaFile } from "@/lib/media/upload";
 
 type PublishMode = "now" | "schedule";
 type RetentionMode = "delete" | "library";
@@ -177,6 +178,9 @@ export function PublicationEditor() {
   const [fileName, setFileName] = useState("");
   const [fileType, setFileType] = useState<"image" | "video" | null>(null);
   const [fileSize, setFileSize] = useState(0);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [stagedMedia, setStagedMedia] = useState<{ key: string; mediaId: string } | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [date, setDate] = useState("2026-09-25");
   const [time, setTime] = useState("18:30");
@@ -210,6 +214,9 @@ export function PublicationEditor() {
     setFileName(file.name);
     setFileType(file.type.startsWith("video/") ? "video" : "image");
     setFileSize(file.size);
+    setSelectedFile(file);
+    setUploadProgress(null);
+    setStagedMedia(null);
     setPreviewUrl(URL.createObjectURL(file));
   }
 
@@ -219,6 +226,9 @@ export function PublicationEditor() {
     setFileName("");
     setFileType(null);
     setFileSize(0);
+    setSelectedFile(null);
+    setUploadProgress(null);
+    setStagedMedia(null);
   }
 
   function toggle(option: DestinationOption) {
@@ -298,6 +308,46 @@ export function PublicationEditor() {
       return;
     }
 
+    let mediaId: string | null = null;
+    if (selectedFile) {
+      const mediaKey = [selectedFile.name, selectedFile.size, selectedFile.lastModified, retention].join(":");
+
+      if (stagedMedia?.key === mediaKey) {
+        mediaId = stagedMedia.mediaId;
+      } else {
+        setUploadProgress(0);
+        setSaveMessage("Enviando mídia para o staging seguro...");
+
+        try {
+          const uploaded = await uploadMediaFile({
+            file: selectedFile,
+            brandId: tenant.activeBrand.id,
+            retention,
+            onProgress: progress => {
+              setUploadProgress(progress.percent);
+              setSaveMessage(`Enviando mídia: ${progress.percent}%`);
+            },
+          });
+          mediaId = uploaded.mediaId;
+          setStagedMedia({ key: mediaKey, mediaId: uploaded.mediaId });
+          setUploadProgress(100);
+        } catch (uploadError) {
+          const code = uploadError instanceof Error ? uploadError.message : "upload_failed";
+          const messages: Record<string, string> = {
+            object_storage_not_configured: "O storage de mídia ainda não está configurado neste ambiente.",
+            file_too_large: "O arquivo ultrapassa o limite inicial de 10 GB.",
+            unsupported_media_type: "Este tipo de arquivo ainda não é suportado.",
+            upload_part_missing_etag: "Não foi possível confirmar o upload. A configuração CORS do storage precisa expor o cabeçalho ETag.",
+          };
+          setSaveError(messages[code] ?? "Não foi possível concluir o upload da mídia. Tente novamente.");
+          setSaveMessage("");
+          setUploadProgress(null);
+          setSaving(false);
+          return;
+        }
+      }
+    }
+
     const timezone = tenant.activeBrand.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
     const targets = selectedOptions.map(option => {
       const targetTime = differentTimes ? (destinationTimes[option.id] || time) : time;
@@ -329,12 +379,26 @@ export function PublicationEditor() {
       return;
     }
 
+    if (mediaId && result.data) {
+      const mediaResult = await client.rpc("attach_media_to_post", {
+        p_post_id: result.data,
+        p_media_asset_id: mediaId,
+      });
+
+      if (mediaResult.error) {
+        setSaveError("A publicação foi salva, mas não conseguimos vincular a mídia. Tente novamente antes de publicar.");
+        setSaving(false);
+        return;
+      }
+    }
+
     if (intent === "draft") {
       setSaveMessage("Rascunho salvo no Supabase real.");
     } else {
       setSaveMessage("Intenção salva no Supabase. O worker de publicação ainda não está ativado, então nenhuma rede externa foi acionada.");
     }
     setSaving(false);
+    if (selectedFile) setUploadProgress(100);
   }
 
   return <div className="w-full max-w-full space-y-5 overflow-x-hidden">
@@ -360,7 +424,13 @@ export function PublicationEditor() {
             </div>
             <div className="min-w-0 rounded-xl border border-slate-200 bg-slate-50 p-4">
               <p className="truncate text-sm font-bold text-slate-900">{fileName}</p>
-              <p className="mt-1 text-sm leading-5 text-slate-500 sm:text-xs">Pré-visualização local. O upload definitivo será conectado ao storage depois.</p>
+              <p className="mt-1 text-sm leading-5 text-slate-500 sm:text-xs">
+                {fileSize ? `${(fileSize / (1024 * 1024)).toFixed(fileSize >= 1024 * 1024 * 1024 ? 0 : 1)} MB` : "Arquivo selecionado"} · o envio real vai direto do navegador ao storage quando a publicação for salva.
+              </p>
+              {uploadProgress !== null && <div className="mt-3">
+                <div className="h-2 overflow-hidden rounded-full bg-slate-200"><div className="h-full rounded-full bg-indigo-600 transition-all" style={{ width: uploadProgress + "%" }}/></div>
+                <p className="mt-1 text-xs font-bold text-slate-500">{uploadProgress < 100 ? `Upload ${uploadProgress}%` : "Mídia pronta"}</p>
+              </div>}
               <div className="mt-4 flex flex-wrap gap-2">
                 <label className="btn-secondary cursor-pointer"><UploadCloud size={15}/> Substituir<input type="file" accept="image/*,video/*" className="sr-only" onChange={event => handleFile(event.target.files?.[0])}/></label>
                 <button onClick={removeFile} className="btn-secondary !text-red-600"><Trash2 size={15}/> Remover</button>
