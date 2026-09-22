@@ -44,6 +44,7 @@ interface TenantState {
   commerceConnections: TenantCommerceConnection[];
   error: string | null;
   refresh: () => Promise<void>;
+  bootstrapAccount: (brandName: string) => Promise<{ error?: string }>;
 }
 
 const demoBrand: TenantBrand = {
@@ -208,6 +209,16 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  async function bootstrapAccount(brandName: string) {
+    const client = createSupabaseBrowserClient();
+    if (!client) return { error: "Supabase não configurado." };
+    const cleanName = brandName.trim() || "Minha marca";
+    const result = await client.rpc("bootstrap_account", { p_brand_name: cleanName });
+    if (result.error) return { error: result.error.message };
+    await load();
+    return {};
+  }
+
   const activeBrand = brands[0] ?? (source === "demo" ? demoBrand : {
     id: "unconfigured",
     name: organization?.name ?? "Minha marca",
@@ -225,6 +236,7 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
     commerceConnections,
     error,
     refresh: load,
+    bootstrapAccount,
   }), [source, user, organization, brands, activeBrand, connections, commerceConnections, error]);
 
   return <TenantContext.Provider value={value}>{children}</TenantContext.Provider>;
