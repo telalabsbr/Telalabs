@@ -1221,6 +1221,10 @@ export type Database = {
         }[]
       }
       cancel_post: { Args: { p_post_id: string }; Returns: number }
+      disconnect_social_connection: {
+        Args: { p_connection_id: string }
+        Returns: boolean
+      }
       retry_failed_targets: { Args: { p_post_id: string }; Returns: number }
       save_post_draft: {
         Args: {
