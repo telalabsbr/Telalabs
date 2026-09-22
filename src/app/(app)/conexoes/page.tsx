@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CircleAlert, Link2, MoreHorizontal, Plus, ShieldCheck, Store, Trash2, Unplug } from "lucide-react";
+import { CircleAlert, Link2, MoreHorizontal, Plus, ShieldCheck, Store, Trash2, Unplug, X } from "lucide-react";
 import { platformLabels, socialPlatforms, type ConnectionStatus, type SocialPlatform } from "@/domain/social";
 import { PlatformIcon } from "@/components/ui/platform-icon";
 import { useTenantData, type TenantConnection } from "@/components/tenant-provider";
@@ -18,6 +18,7 @@ export default function ConnectionsPage() {
   const [notice, setNotice] = useState("");
   const [connections, setConnections] = useState<TenantConnection[]>(tenant.connections);
   const [openMenu, setOpenMenu] = useState<string | null>(null);
+  const [connectOpen, setConnectOpen] = useState(false);
 
   useEffect(() => {
     setConnections(tenant.connections);
@@ -25,6 +26,7 @@ export default function ConnectionsPage() {
 
   function mockAction(platform: SocialPlatform, message?: string) {
     setNotice(message ?? (platformLabels[platform] + " ainda está aguardando a integração OAuth real."));
+    setConnectOpen(false);
   }
 
   function demoOnlyUpdate(id: string, status: ConnectionStatus) {
@@ -58,7 +60,7 @@ export default function ConnectionsPage() {
         <h1 className="mt-2 text-2xl font-black tracking-tight text-slate-950 sm:text-3xl">Contas conectadas</h1>
         <p className="mt-1 text-sm leading-6 text-slate-500">Conecte mais de uma conta por rede e gerencie cada autorização separadamente.</p>
       </div>
-      <button className="btn-primary self-start"><Plus size={16}/> Conectar conta</button>
+      <button onClick={() => setConnectOpen(true)} className="btn-primary self-start"><Plus size={16}/> Adicionar conta</button>
     </section>
 
     {tenant.source === "supabase" && <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">
@@ -66,7 +68,7 @@ export default function ConnectionsPage() {
     </div>}
 
     {tenant.source === "needs_setup" && <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
-      Sua autenticação foi reconhecida, mas ainda não existe organização/marca vinculada a este usuário. O onboarding seguro será a próxima conexão do fluxo.
+      Sua autenticação foi reconhecida, mas ainda não existe organização/marca vinculada a este usuário.
     </div>}
 
     {tenant.error && <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{tenant.error}</div>}
@@ -77,7 +79,7 @@ export default function ConnectionsPage() {
       <button className="shrink-0 text-xs font-black" onClick={() => setNotice("")}>Fechar</button>
     </div>}
 
-    <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+    <section>
       <div className="grid min-w-0 gap-3 md:grid-cols-2 2xl:grid-cols-3">
         {connections.map(connection => {
           const connected = connection.status === "connected";
@@ -123,26 +125,42 @@ export default function ConnectionsPage() {
         {!tenant.loading && !connections.length && <div className="card md:col-span-2 2xl:col-span-3 p-8 text-center">
           <Link2 className="mx-auto text-slate-400" size={28}/>
           <p className="mt-3 font-black text-slate-900">Nenhuma conta social conectada</p>
-          <p className="mt-1 text-sm text-slate-500">Escolha uma rede ao lado para começar.</p>
+          <p className="mt-1 text-sm text-slate-500">Use “Adicionar conta” para escolher a primeira rede.</p>
+          <button onClick={() => setConnectOpen(true)} className="btn-primary mt-4"><Plus size={16}/> Adicionar conta</button>
         </div>}
       </div>
-
-      <aside className="card h-fit min-w-0 p-4">
-        <div className="flex items-center gap-2"><Link2 className="text-indigo-500" size={18}/><h2 className="font-black text-slate-950">Adicionar conta</h2></div>
-        <p className="mt-1 text-sm leading-6 text-slate-500 sm:text-xs">Mais de uma conta da mesma rede é permitida pela arquitetura. O limite final será comercial, por plano.</p>
-        <div className="mt-4 space-y-2">
-          {socialPlatforms.map(platform => <button key={platform} onClick={() => mockAction(platform)} className="flex w-full min-w-0 items-center gap-3 rounded-xl border border-slate-200 bg-white p-2.5 text-left hover:bg-slate-50">
-            <PlatformIcon platform={platform} small/>
-            <span className="min-w-0 flex-1 truncate text-sm font-bold text-slate-800 sm:text-xs">{platformLabels[platform]}</span>
-            <span className="shrink-0 text-xs font-bold text-indigo-600">Conectar</span>
-          </button>)}
-        </div>
-      </aside>
     </section>
 
     <section className="flex gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
       <ShieldCheck className="shrink-0" size={20}/>
       <div><p className="font-bold">Credenciais protegidas.</p><p className="mt-1 text-xs leading-5 text-emerald-800">Tokens permanecem no backend. A interface mostra apenas o estado e as capacidades da conexão.</p></div>
     </section>
+
+    {connectOpen && <>
+      <button aria-label="Fechar seleção de rede" className="fixed inset-0 z-50 bg-slate-950/35 backdrop-blur-[1px]" onClick={() => setConnectOpen(false)}/>
+      <section className="fixed inset-x-3 bottom-[84px] z-[60] max-h-[70vh] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl sm:left-1/2 sm:top-1/2 sm:bottom-auto sm:w-[520px] sm:-translate-x-1/2 sm:-translate-y-1/2">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-black text-slate-950">Adicionar conta</h2>
+            <p className="mt-1 text-sm leading-6 text-slate-500">Escolha uma rede. Você poderá adicionar mais de uma conta da mesma plataforma.</p>
+          </div>
+          <button onClick={() => setConnectOpen(false)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"><X size={18}/></button>
+        </div>
+
+        <div className="mt-4 grid gap-2 sm:grid-cols-2">
+          {socialPlatforms.map(platform => <button key={platform} onClick={() => mockAction(platform)} className="flex min-w-0 items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 text-left hover:border-indigo-300 hover:bg-indigo-50/40">
+            <PlatformIcon platform={platform}/>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm font-black text-slate-900">{platformLabels[platform]}</span>
+              <span className="mt-0.5 block text-xs text-slate-500">Conectar nova conta</span>
+            </span>
+          </button>)}
+        </div>
+
+        <div className="mt-4 rounded-xl bg-slate-50 p-3 text-xs leading-5 text-slate-600">
+          As conexões reais usarão OAuth oficial. O Tela Social nunca pedirá a senha da rede social.
+        </div>
+      </section>
+    </>}
   </div>;
 }
