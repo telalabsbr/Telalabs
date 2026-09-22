@@ -96,49 +96,23 @@ async function persistConnection(args: {
   const { admin } = args;
   if (!admin) throw new Error("admin_not_configured");
 
-  const connectionResult = await admin
-    .from("social_connections")
-    .upsert({
-      organization_id: args.organizationId,
-      brand_id: args.brandId,
-      provider: args.platform,
-      provider_account_id: args.providerAccountId,
-      display_name: args.displayName,
-      username: args.username ?? null,
-      connection_status: "CONNECTED",
-      scopes: args.scopes,
-      token_expires_at: args.tokenExpiresAt ?? null,
-      last_health_at: new Date().toISOString(),
-      metadata: args.metadata,
-      updated_at: new Date().toISOString(),
-    }, {
-      onConflict: "provider,provider_account_id,organization_id",
-    })
-    .select("id")
-    .single();
-
-  if (connectionResult.error || !connectionResult.data) {
-    throw new Error("connection_persist_failed");
-  }
-
   const encrypted = await encryptToken(args.token);
-  const privateResult = await admin
-    .schema("private")
-    .from("oauth_credentials")
-    .upsert({
-      social_connection_id: connectionResult.data.id,
-      media_source_id: null,
-      commerce_connection_id: null,
-      access_token_ciphertext: encrypted,
-      refresh_token_ciphertext: null,
-      expires_at: args.tokenExpiresAt ?? null,
-      key_version: "aes-gcm-v1",
-      updated_at: new Date().toISOString(),
-    }, {
-      onConflict: "social_connection_id",
-    });
+  const result = await admin.rpc("server_upsert_oauth_connection", {
+    p_organization_id: args.organizationId,
+    p_brand_id: args.brandId,
+    p_provider: args.platform,
+    p_provider_account_id: args.providerAccountId,
+    p_display_name: args.displayName,
+    p_username: args.username ?? "",
+    p_scopes: args.scopes,
+    p_token_expires_at: args.tokenExpiresAt ?? null,
+    p_metadata: args.metadata,
+    p_access_token_ciphertext: encrypted,
+    p_refresh_token_ciphertext: null,
+    p_key_version: "aes-gcm-v1",
+  });
 
-  if (privateResult.error) throw new Error("credential_persist_failed");
+  if (result.error) throw new Error("credential_persist_failed");
 }
 
 export async function GET(request: NextRequest) {
