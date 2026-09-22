@@ -18,9 +18,9 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { connections, workspace } from "@/data/mock";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { InstallAppButton } from "@/components/pwa-client";
+import { TenantProvider, useTenantData } from "@/components/tenant-provider";
 
 const nav = [
   { href: "/publicacoes/nova", label: "Criar publicação", icon: PenLine },
@@ -39,8 +39,9 @@ const mobileNav = [
   { href: "/conexoes", label: "Contas", icon: Link2 },
 ];
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+function AppShellContent({ children }: { children: React.ReactNode }) {
   const path = usePathname();
+  const { connections, activeBrand, source } = useTenantData();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const attentionItems = connections.filter(connection => connection.status === "expired" || connection.status === "error");
@@ -94,11 +95,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <div className="mx-3 mt-2 shrink-0">
         <button className={`focusable flex w-full items-center rounded-xl border border-slate-200 bg-white text-left shadow-sm ${collapsed ? "justify-center p-2" : "gap-3 p-2.5"}`}>
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-xs font-bold text-indigo-700">{workspace.initials}</span>
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-xs font-bold text-indigo-700">{activeBrand.initials}</span>
           {!collapsed && <>
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-sm font-bold text-slate-800">{workspace.name}</span>
-              <span className="block text-xs text-slate-500">Marca atual</span>
+              <span className="block truncate text-sm font-bold text-slate-800">{activeBrand.name}</span>
+              <span className="block text-xs text-slate-500">{source === "supabase" ? "Marca atual" : source === "needs_setup" ? "Configuração pendente" : "Modo demonstração"}</span>
             </span>
             <ChevronDown size={15} className="shrink-0 text-slate-400"/>
           </>}
@@ -186,4 +187,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       })}
     </nav>
   </div>;
+}
+
+
+export function AppShell({ children }: { children: React.ReactNode }) {
+  return <TenantProvider><AppShellContent>{children}</AppShellContent></TenantProvider>;
 }
