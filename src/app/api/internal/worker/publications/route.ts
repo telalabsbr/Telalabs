@@ -30,11 +30,11 @@ function authorized(request: NextRequest) {
 function normalizeResult(result: PublishAdapterResult) {
   return {
     p_outcome: result.outcome,
-    p_error_code: result.errorCode ?? null,
-    p_error_message_safe: result.errorMessageSafe ?? null,
-    p_http_status: result.httpStatus ?? null,
-    p_provider_request_id: result.providerRequestId ?? null,
-    p_retry_after_seconds: result.retryAfterSeconds ?? null,
+    ...(result.errorCode ? { p_error_code: result.errorCode } : {}),
+    ...(result.errorMessageSafe ? { p_error_message_safe: result.errorMessageSafe } : {}),
+    ...(typeof result.httpStatus === "number" ? { p_http_status: result.httpStatus } : {}),
+    ...(result.providerRequestId ? { p_provider_request_id: result.providerRequestId } : {}),
+    ...(typeof result.retryAfterSeconds === "number" ? { p_retry_after_seconds: result.retryAfterSeconds } : {}),
   };
 }
 
