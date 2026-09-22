@@ -87,13 +87,10 @@ export default function CalendarPage() {
   </div>;
 
   return <div className="w-full max-w-full space-y-4 overflow-x-hidden">
-    <section className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-      <div>
-        <p className="eyebrow">Planejamento</p>
-        <h1 className="mt-2 text-2xl font-black tracking-tight text-slate-950 sm:text-3xl">Calendário</h1>
-        <p className="mt-1 text-sm text-slate-500">Agenda, resumo operacional e publicações recentes em um só lugar.</p>
-      </div>
-      <Link href="/publicacoes/nova" className="btn-primary self-start">+ Criar publicação</Link>
+    <section>
+      <p className="eyebrow">Planejamento</p>
+      <h1 className="mt-2 text-2xl font-black tracking-tight text-slate-950 sm:text-3xl">Calendário</h1>
+      <p className="mt-1 text-sm text-slate-500">Agenda, resumo operacional e publicações recentes em um só lugar.</p>
     </section>
 
     <section className="grid grid-cols-3 gap-2 sm:gap-3">
@@ -109,22 +106,30 @@ export default function CalendarPage() {
 
     <section className="card min-w-0 overflow-hidden">
       <div className="border-b border-slate-200 p-3 sm:p-4">
-        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <div className="flex rounded-lg bg-slate-100 p-1">
-              {([["month","Mês"],["week","Semana"],["list","Lista"]] as const).map(([value,label]) => <button key={value} onClick={() => setView(value)} className={`rounded-md px-3 py-2 text-sm font-bold sm:text-xs ${view === value ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500"}`}>{label}</button>)}
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <div className="flex rounded-xl bg-slate-100 p-1">
+              <button onClick={() => setView("week")} className="rounded-lg px-3 py-2 text-sm font-bold text-slate-600 hover:text-slate-950">Hoje</button>
+              <button onClick={() => setView("month")} className={`rounded-lg px-3 py-2 text-sm font-bold ${view === "month" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500"}`}>Mês</button>
+              <button onClick={() => setView("week")} className={`rounded-lg px-3 py-2 text-sm font-bold ${view === "week" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500"}`}>Semana</button>
             </div>
-            <button className="btn-secondary !min-h-10 !px-2.5" aria-label="Período anterior"><ChevronLeft size={16}/></button>
-            <div className="min-w-0 flex-1 text-center text-sm font-black text-slate-900 sm:min-w-48 sm:flex-none">22 – 28 set 2026</div>
-            <button className="btn-secondary !min-h-10 !px-2.5" aria-label="Próximo período"><ChevronRight size={16}/></button>
-            <button className="btn-secondary !min-h-10">Hoje</button>
           </div>
+
+          <div className="grid grid-cols-[44px_minmax(0,1fr)_44px] items-center gap-2 rounded-xl border border-slate-200 bg-white p-2">
+            <button className="grid h-10 w-10 place-items-center rounded-lg text-slate-600 hover:bg-slate-50" aria-label="Período anterior"><ChevronLeft size={18}/></button>
+            <div className="min-w-0 text-center text-sm font-black leading-5 text-slate-900 sm:text-base">
+              {view === "month" ? "Setembro de 2026" : "22 – 28 de setembro de 2026"}
+            </div>
+            <button className="grid h-10 w-10 place-items-center rounded-lg text-slate-600 hover:bg-slate-50" aria-label="Próximo período"><ChevronRight size={18}/></button>
+          </div>
+
           <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <button onClick={() => setView("list")} className={`btn-secondary !min-h-10 ${view === "list" ? "!border-indigo-300 !bg-indigo-50 !text-indigo-700" : ""}`}>Lista</button>
             <button className="btn-secondary !min-h-10"><SlidersHorizontal size={15}/> Redes</button>
             <button className="btn-secondary !min-h-10">Status</button>
-            <label className="relative min-w-0 flex-1 sm:min-w-56 xl:flex-none">
+            <label className="relative min-w-0 flex-1 sm:min-w-56">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={15}/>
-              <input className="field !min-h-10 pl-9 pr-3 text-base sm:text-xs" placeholder="Buscar..."/>
+              <input className="field !min-h-10 pl-9 pr-3 text-base sm:text-sm" placeholder="Buscar..."/>
             </label>
           </div>
         </div>
