@@ -24,9 +24,61 @@ export default function ConnectionsPage() {
     setConnections(tenant.connections);
   }, [tenant.connections]);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const oauth = params.get("oauth");
+    if (!oauth) return;
+
+    const count = Number(params.get("count") ?? "0");
+    const messages: Record<string, string> = {
+      meta_connected: count > 1
+        ? `${count} contas da Meta foram conectadas com segurança.`
+        : "Conta da Meta conectada com segurança.",
+      meta_no_eligible_accounts: "A autorização funcionou, mas não encontramos uma conta elegível para a rede escolhida.",
+      meta_not_configured: "A infraestrutura Meta já está preparada, mas as credenciais do aplicativo Meta ainda não foram configuradas no ambiente.",
+      meta_token_failed: "A Meta não concluiu a troca de autorização. Tente novamente depois de revisar as credenciais e permissões.",
+      meta_state_invalid: "A autorização expirou ou não pôde ser validada. Inicie a conexão novamente.",
+      meta_callback_failed: "Não foi possível concluir a conexão da Meta.",
+      session_expired: "Sua sessão expirou durante a autorização. Entre novamente.",
+      brand_not_accessible: "A marca selecionada não está acessível para esta sessão.",
+      server_not_configured: "A integração segura do servidor ainda não está completamente configurada.",
+    };
+
+    setNotice(messages[oauth] ?? "A conexão não pôde ser concluída.");
+    if (oauth === "meta_connected") void tenant.refresh();
+
+    const clean = new URL(window.location.href);
+    clean.searchParams.delete("oauth");
+    clean.searchParams.delete("count");
+    window.history.replaceState({}, "", clean.pathname + clean.search);
+  }, []);
+
   function mockAction(platform: SocialPlatform, message?: string) {
     setNotice(message ?? (platformLabels[platform] + " ainda está aguardando a integração OAuth real."));
     setConnectOpen(false);
+  }
+
+  function connectPlatform(platform: SocialPlatform) {
+    if (tenant.source === "supabase" && (platform === "instagram" || platform === "facebook")) {
+      if (tenant.activeBrand.id === "unconfigured") {
+        setNotice("Conclua a configuração da marca antes de conectar uma rede.");
+        return;
+      }
+      const params = new URLSearchParams({
+        platform,
+        brand_id: tenant.activeBrand.id,
+        return_to: "/conexoes",
+      });
+      window.location.assign("/api/oauth/meta/start?" + params.toString());
+      return;
+    }
+
+    mockAction(
+      platform,
+      tenant.source === "supabase"
+        ? platformLabels[platform] + " será conectado na próxima etapa do rollout OAuth. Instagram e Facebook já têm o fluxo Meta preparado."
+        : undefined,
+    );
   }
 
   function demoOnlyUpdate(id: string, status: ConnectionStatus) {
@@ -115,7 +167,7 @@ export default function ConnectionsPage() {
 
             <div className="mt-4 flex min-w-0 items-center justify-between gap-3 border-t border-slate-100 pt-3">
               <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-bold ${connected ? "bg-emerald-50 text-emerald-700" : attention ? "bg-amber-50 text-amber-700" : "bg-slate-100 text-slate-600"}`}>{statusLabel[connection.status]}</span>
-              <button onClick={() => attention ? demoOnlyUpdate(connection.id, "connected") : mockAction(connection.platform)} className="truncate text-sm font-bold text-indigo-600 sm:text-xs">
+              <button onClick={() => attention ? connectPlatform(connection.platform) : mockAction(connection.platform)} className="truncate text-sm font-bold text-indigo-600 sm:text-xs">
                 {connected ? "Gerenciar" : attention ? "Reconectar" : "Conectar"}
               </button>
             </div>
@@ -148,7 +200,7 @@ export default function ConnectionsPage() {
         </div>
 
         <div className="mt-4 grid gap-2 sm:grid-cols-2">
-          {socialPlatforms.map(platform => <button key={platform} onClick={() => mockAction(platform)} className="flex min-w-0 items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 text-left hover:border-indigo-300 hover:bg-indigo-50/40">
+          {socialPlatforms.map(platform => <button key={platform} onClick={() => connectPlatform(platform)} className="flex min-w-0 items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 text-left hover:border-indigo-300 hover:bg-indigo-50/40">
             <PlatformIcon platform={platform}/>
             <span className="min-w-0 flex-1">
               <span className="block truncate text-sm font-black text-slate-900">{platformLabels[platform]}</span>
