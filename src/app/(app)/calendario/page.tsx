@@ -123,7 +123,7 @@ function isAuthError(publication: Publication) {
 }
 
 export default function CalendarPage() {
-  const { publications, loading, error, source } = usePublicationsData();
+  const { publications, loading, error, source, retryPost, cancelPost, deletePost } = usePublicationsData();
   const [period, setPeriod] = useState<PeriodMode>("week");
   const [listMode, setListMode] = useState(false);
   const [cursorDate, setCursorDate] = useState(() => new Date());
@@ -153,6 +153,59 @@ export default function CalendarPage() {
     scheduled: periodPublications.filter(item => item.status === "scheduled" || item.status === "processing").length,
     failed: periodPublications.filter(item => item.status === "failed").length,
   }), [periodPublications]);
+
+  async function handleRetrySelected() {
+    if (!selected) return;
+    if (source !== "supabase") {
+      setActionMessage("Retentativa simulada no modo demonstração.");
+      return;
+    }
+    setActionMessage("Preparando retentativa...");
+    const result = await retryPost(selected.id);
+    if (result.error) {
+      setActionMessage(result.error);
+      return;
+    }
+    setActionMessage(result.count > 0
+      ? `${result.count} destino(s) com falha final foram recolocados na fila.`
+      : "Nenhum destino com falha final está elegível para retentativa. Erros de autorização precisam de reconexão e resultados incertos precisam de reconciliação.");
+    if (result.count > 0) setSelected(null);
+  }
+
+  async function handleCancelSelected() {
+    if (!selected) return;
+    if (source !== "supabase") {
+      setActionMessage("Cancelamento simulado no modo demonstração.");
+      return;
+    }
+    setActionMessage("Cancelando agendamento...");
+    const result = await cancelPost(selected.id);
+    if (result.error) {
+      setActionMessage(result.error);
+      return;
+    }
+    setActionMessage(result.count > 0 ? "Agendamento cancelado." : "Nenhum destino pendente pôde ser cancelado.");
+    if (result.count > 0) setSelected(null);
+  }
+
+  async function handleDeleteSelected() {
+    if (!selected) return;
+    if (source !== "supabase") {
+      setActionMessage("Exclusão simulada no modo demonstração.");
+      setSelected(null);
+      return;
+    }
+    setActionMessage("Excluindo publicação...");
+    const result = await deletePost(selected.id);
+    if (result.error) {
+      setActionMessage(result.error);
+      return;
+    }
+    if (result.deleted) {
+      setSelected(null);
+      setActionMessage("");
+    }
+  }
 
   function choosePeriod(next: PeriodMode) {
     setPeriod(next);
@@ -227,8 +280,8 @@ export default function CalendarPage() {
           <div className="mt-3 flex flex-wrap gap-2">
             {isAuthError(selected)
               ? <Link href="/conexoes" className="btn-primary">Reconectar conta</Link>
-              : <button onClick={() => setActionMessage("A ação de retentativa já está desenhada. Ela será ligada ao worker antes de publicar em redes reais.")} className="btn-primary"><RefreshCw size={15}/> Tentar novamente</button>}
-            <button onClick={() => setActionMessage("Excluir deve ficar como ação secundária: primeiro tentamos corrigir ou repetir. A exclusão remove a publicação da operação, não deve ser o padrão.")} className="btn-secondary !text-red-600"><Trash2 size={15}/> Excluir</button>
+              : <button onClick={() => void handleRetrySelected()} className="btn-primary"><RefreshCw size={15}/> Tentar novamente</button>}
+            <button onClick={() => void handleDeleteSelected()} className="btn-secondary !text-red-600"><Trash2 size={15}/> Excluir</button>
           </div>
         </div>
       </div>
@@ -239,7 +292,7 @@ export default function CalendarPage() {
     <div className="grid grid-cols-2 gap-2">
       <Link href="/publicacoes/nova" className="btn-secondary"><Edit3 size={15}/> Editar</Link>
       <button className="btn-secondary"><Copy size={15}/> Duplicar</button>
-      <button className="btn-secondary"><Pause size={15}/> Pausar</button>
+      {selected.status === "scheduled" && <button onClick={() => void handleCancelSelected()} className="btn-secondary"><Pause size={15}/> Cancelar agendamento</button>}
       <button className="btn-secondary"><MoreHorizontal size={15}/> Mais</button>
     </div>
   </div>;
