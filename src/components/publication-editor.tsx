@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   CalendarClock,
   Check,
@@ -89,12 +89,12 @@ export function PublicationEditor() {
 
   const effectiveText = (platform: SocialPlatform) => texts[platform] ?? base;
 
-  const checks = useMemo(() => selected.map(platform => {
+  const checks = selected.map(platform => {
     if (!base.trim()) return { platform, level: "error" as const, text: "Adicione o conteúdo-base" };
     if (platform === "youtube" && !(titles.youtube?.trim())) return { platform, level: "warning" as const, text: "Título será necessário" };
     if (effectiveText(platform).length > 2000) return { platform, level: "warning" as const, text: "Revise o tamanho do texto" };
     return { platform, level: "ok" as const, text: "Pronto" };
-  }), [selected, base, texts, titles]);
+  });
 
   const canSubmit = !!base.trim() && selected.length > 0 && !checks.some(check => check.level === "error");
 
