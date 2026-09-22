@@ -68,6 +68,7 @@ export function usePublicationsData() {
       .from("posts")
       .select("id,organization_id,brand_id,internal_title,base_caption,status,content_intent,created_at,updated_at")
       .eq("organization_id", tenant.organization.id)
+      .eq("brand_id", tenant.activeBrand.id)
       .is("deleted_at", null)
       .order("created_at", { ascending: false })
       .limit(300);
@@ -172,7 +173,7 @@ export function usePublicationsData() {
 
     setPublications(mapped);
     setLoading(false);
-  }, [tenant.loading, tenant.source, tenant.organization]);
+  }, [tenant.loading, tenant.source, tenant.organization, tenant.activeBrand.id]);
 
   useEffect(() => {
     void refresh();
