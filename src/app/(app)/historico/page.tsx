@@ -140,7 +140,7 @@ export default function HistoryPage() {
     {actionMessage && <p className="rounded-xl bg-slate-50 p-3 text-sm leading-6 text-slate-700">{actionMessage}</p>}
 
     <div className="grid grid-cols-2 gap-2">
-      <button className="btn-secondary"><Edit3 size={15}/> Editar</button>
+      <Link href={"/publicacoes/nova?edit=" + selected.id} className="btn-secondary"><Edit3 size={15}/> Editar</Link>
       <button className="btn-secondary"><Copy size={15}/> Duplicar</button>
     </div>
   </div>;
