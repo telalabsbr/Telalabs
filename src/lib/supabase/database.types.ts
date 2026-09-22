@@ -1227,6 +1227,23 @@ export type Database = {
         }
         Returns: string
       }
+      server_upsert_oauth_connection: {
+        Args: {
+          p_access_token_ciphertext: string
+          p_brand_id: string
+          p_display_name: string
+          p_key_version?: string
+          p_metadata: Json
+          p_organization_id: string
+          p_provider: string
+          p_provider_account_id: string
+          p_refresh_token_ciphertext?: string
+          p_scopes: string[]
+          p_token_expires_at: string
+          p_username: string
+        }
+        Returns: string
+      }
       soft_delete_post: { Args: { p_post_id: string }; Returns: boolean }
       worker_claim_publication_jobs: {
         Args: { p_limit?: number; p_lock_seconds?: number }
