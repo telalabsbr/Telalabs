@@ -43,12 +43,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const path = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
-  const attentionCount = connections.filter(connection => connection.status === "expired" || connection.status === "error").length;
+  const attentionItems = connections.filter(connection => connection.status === "expired" || connection.status === "error");
+  const attentionSignature = attentionItems.map(connection => connection.platform + ":" + connection.status).sort().join("|");
+  const [seenAttentionSignature, setSeenAttentionSignature] = useState("");
+  const attentionCount = attentionSignature && seenAttentionSignature !== attentionSignature ? attentionItems.length : 0;
 
   useEffect(() => {
     const stored = window.localStorage.getItem("tela-sidebar-collapsed");
     if (stored === "1") setCollapsed(true);
+    setSeenAttentionSignature(window.localStorage.getItem("tela-seen-account-alert") ?? "");
   }, []);
+
+  useEffect(() => {
+    if (path.startsWith("/conexoes") && attentionSignature) {
+      window.localStorage.setItem("tela-seen-account-alert", attentionSignature);
+      setSeenAttentionSignature(attentionSignature);
+    }
+  }, [path, attentionSignature]);
 
   function toggleCollapsed() {
     setCollapsed(value => {
@@ -123,9 +134,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <button title={collapsed ? "Ajuda" : undefined} className={`flex w-full items-center rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-50 ${collapsed ? "justify-center p-2.5" : "gap-3 px-3 py-2.5"}`}>
             <HelpCircle size={18}/>{!collapsed && "Ajuda"}
           </button>
-          <button title={collapsed ? "Configurações" : undefined} className={`flex w-full items-center rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-50 ${collapsed ? "justify-center p-2.5" : "gap-3 px-3 py-2.5"}`}>
+          <Link href="/configuracoes" title={collapsed ? "Configurações" : undefined} className={`flex w-full items-center rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-50 ${collapsed ? "justify-center p-2.5" : "gap-3 px-3 py-2.5"}`}>
             <Settings size={18}/>{!collapsed && "Configurações"}
-          </button>
+          </Link>
         </div>
 
         <div className={`mt-2 flex items-center rounded-xl bg-slate-50 ${collapsed ? "justify-center p-2" : "gap-3 p-2.5"}`}>
