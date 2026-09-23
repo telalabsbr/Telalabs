@@ -4,7 +4,6 @@ import { supabaseConfig } from "./config";
 
 const publicAuthPaths = [
   "/login",
-  "/atualizar-senha",
   "/auth",
   "/api/oauth",
   "/api/internal",
