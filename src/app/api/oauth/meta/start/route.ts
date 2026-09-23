@@ -53,10 +53,9 @@ export async function GET(request: NextRequest) {
   if (brandError || !brand) return redirectWithError(request, "brand_not_accessible");
 
   const state = randomBytes(32).toString("base64url");
-  const redirectUri = new URL("/api/oauth/meta/callback", request.nextUrl.origin).toString();
   const authorization = new URL(config.authorizeUrl);
   authorization.searchParams.set("client_id", config.clientId);
-  authorization.searchParams.set("redirect_uri", redirectUri);
+  authorization.searchParams.set("redirect_uri", config.redirectUri);
   authorization.searchParams.set("response_type", "code");
   authorization.searchParams.set("scope", config.scopes.join(","));
   authorization.searchParams.set("state", state);
