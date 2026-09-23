@@ -7,16 +7,22 @@ import {
   loadRuntimePublicationContext,
   revokeMediaDeliveryUrls,
 } from "./runtime-context";
-import { classifyMetaFailure, metaGraphRequest } from "./meta-http";
+import { classifyMetaFailure, metaGraphRequest, type MetaResponse } from "./meta-http";
 import type {
   PublicationWorkerJob,
   PublishAdapter,
   PublishAdapterResult,
+  ReconcileAdapterResult,
 } from "./provider-registry";
 
 type ContainerCreated = { id?: string };
 type ContainerStatus = { id?: string; status_code?: string; status?: string };
 type PublishedMedia = { id?: string };
+type UnknownPublishAttempt = {
+  error_code: string | null;
+  provider_request_id: string | null;
+  started_at: string;
+};
 
 const REEL_MAX_BYTES = 1024 * 1024 * 1024;
 const REEL_MIN_DURATION_MS = 3_000;
@@ -85,6 +91,24 @@ async function existingContainer(postTargetId: string) {
   return result.data;
 }
 
+async function latestUnknownPublishAttempt(postTargetId: string) {
+  const admin = createSupabaseAdminClient();
+  if (!admin) throw new Error("SUPABASE_ADMIN_NOT_CONFIGURED");
+
+  const result = await admin
+    .from("publication_attempts")
+    .select("error_code,provider_request_id,started_at")
+    .eq("post_target_id", postTargetId)
+    .eq("operation", "PUBLISH")
+    .eq("outcome", "UNKNOWN")
+    .order("started_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (result.error) throw new Error(result.error.message);
+  return result.data as UnknownPublishAttempt | null;
+}
+
 async function rememberContainer(args: {
   organizationId: string;
   postTargetId: string;
@@ -104,6 +128,33 @@ async function rememberContainer(args: {
     metadata: {
       media_type: args.mediaType,
       created_by: "instagram_adapter",
+    },
+  }, {
+    onConflict: "provider,provider_asset_id",
+  });
+
+  if (result.error) throw new Error(result.error.message);
+}
+
+async function rememberPublishedMedia(args: {
+  organizationId: string;
+  postTargetId: string;
+  mediaId: string;
+  containerId?: string | null;
+}) {
+  const admin = createSupabaseAdminClient();
+  if (!admin) throw new Error("SUPABASE_ADMIN_NOT_CONFIGURED");
+
+  const result = await admin.from("provider_assets").upsert({
+    organization_id: args.organizationId,
+    post_target_id: args.postTargetId,
+    provider: "instagram",
+    provider_asset_id: args.mediaId,
+    kind: "MEDIA",
+    state: "PUBLISHED",
+    metadata: {
+      source_container_id: args.containerId ?? null,
+      reconciled: true,
     },
   }, {
     onConflict: "provider,provider_asset_id",
@@ -166,10 +217,54 @@ async function containerStatus(containerId: string, accessToken: string) {
   });
 }
 
+async function publishedMedia(mediaId: string, accessToken: string) {
+  return metaGraphRequest<PublishedMedia>({
+    path: `/${encodeURIComponent(mediaId)}`,
+    accessToken,
+    params: { fields: "id" },
+  });
+}
+
 function publishedIdFromMetadata(metadata: Json) {
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return null;
   const value = metadata.published_media_id;
   return typeof value === "string" ? value : null;
+}
+
+function reconcileMetaFailure(response: MetaResponse<unknown>): ReconcileAdapterResult {
+  const classified = classifyMetaFailure(response);
+
+  if (
+    classified.outcome === "AUTH_REQUIRED" ||
+    classified.outcome === "RATE_LIMIT" ||
+    classified.outcome === "TRANSIENT_FAILURE"
+  ) {
+    return {
+      outcome: classified.outcome,
+      providerRequestId: classified.providerRequestId,
+      httpStatus: classified.httpStatus,
+      errorCode: classified.errorCode,
+      errorMessageSafe: classified.errorMessageSafe,
+      retryAfterSeconds: classified.retryAfterSeconds,
+    };
+  }
+
+  return {
+    outcome: "UNKNOWN",
+    providerRequestId: classified.providerRequestId,
+    httpStatus: classified.httpStatus,
+    errorCode: classified.errorCode ?? "INSTAGRAM_RECONCILE_QUERY_UNCERTAIN",
+    errorMessageSafe: "Ainda não foi possível confirmar com segurança o estado da publicação no Instagram.",
+  };
+}
+
+function failedContainer(status: ContainerStatus, providerRequestId?: string | null): ReconcileAdapterResult {
+  return {
+    outcome: "FAILED_FINAL",
+    providerRequestId,
+    errorCode: `INSTAGRAM_CONTAINER_${status.status_code ?? "FAILED"}`,
+    errorMessageSafe: status.status || "O Instagram confirmou que não conseguiu processar a mídia.",
+  };
 }
 
 export const instagramPublishAdapter: PublishAdapter = {
@@ -255,7 +350,7 @@ export const instagramPublishAdapter: PublishAdapter = {
       } catch {
         return {
           outcome: "UNKNOWN",
-          providerRequestId: create.requestId,
+          providerRequestId: create.data.id,
           errorCode: "INSTAGRAM_CONTAINER_PERSIST_UNKNOWN",
           errorMessageSafe: "O Instagram recebeu a mídia, mas o Tela Social não conseguiu confirmar o registro local.",
         };
@@ -265,7 +360,7 @@ export const instagramPublishAdapter: PublishAdapter = {
       if (!container) {
         return {
           outcome: "UNKNOWN",
-          providerRequestId: create.requestId,
+          providerRequestId: create.data.id,
           errorCode: "INSTAGRAM_CONTAINER_NOT_RELOADED",
           errorMessageSafe: "O container foi criado, mas não pôde ser recuperado com segurança.",
         };
@@ -326,7 +421,7 @@ export const instagramPublishAdapter: PublishAdapter = {
     } catch {
       return {
         outcome: "UNKNOWN",
-        providerRequestId: publish.requestId,
+        providerRequestId: publish.data.id,
         errorCode: "INSTAGRAM_PUBLISH_PERSIST_UNKNOWN",
         errorMessageSafe: "O Instagram respondeu à publicação, mas o Tela Social não conseguiu confirmar o registro local.",
       };
@@ -334,7 +429,177 @@ export const instagramPublishAdapter: PublishAdapter = {
 
     return {
       outcome: "SUCCEEDED",
-      providerRequestId: publish.requestId ?? publish.data.id,
+      providerRequestId: publish.data.id,
+    };
+  },
+
+  async reconcile(job: PublicationWorkerJob): Promise<ReconcileAdapterResult> {
+    const context = await loadRuntimePublicationContext(job.postTargetId);
+
+    if (context.target.provider !== "instagram") {
+      return {
+        outcome: "FAILED_FINAL",
+        errorCode: "PROVIDER_MISMATCH",
+        errorMessageSafe: "O destino não pertence ao Instagram.",
+      };
+    }
+
+    if (context.connection.connection_status !== "CONNECTED") {
+      return {
+        outcome: "AUTH_REQUIRED",
+        errorCode: "INSTAGRAM_CONNECTION_NOT_CONNECTED",
+        errorMessageSafe: "Reconecte a conta do Instagram para verificar a publicação.",
+      };
+    }
+
+    const accessToken = await accessTokenFromContext(context);
+    if (!accessToken) {
+      return {
+        outcome: "AUTH_REQUIRED",
+        errorCode: "INSTAGRAM_TOKEN_UNAVAILABLE",
+        errorMessageSafe: "A autorização do Instagram expirou ou não está disponível.",
+      };
+    }
+
+    const container = await existingContainer(job.postTargetId);
+    if (container?.state === "PUBLISHED") {
+      const mediaId = publishedIdFromMetadata(container.metadata);
+      await revokeMediaDeliveryUrls(job.postTargetId);
+      return {
+        outcome: "SUCCEEDED",
+        providerRequestId: mediaId ?? container.provider_asset_id,
+      };
+    }
+
+    const unknownAttempt = await latestUnknownPublishAttempt(job.postTargetId);
+    const unknownCode = unknownAttempt?.error_code ?? null;
+    const providerObjectId = unknownAttempt?.provider_request_id ?? null;
+
+    if (unknownCode === "INSTAGRAM_PUBLISH_PERSIST_UNKNOWN" && providerObjectId) {
+      const mediaResponse = await publishedMedia(providerObjectId, accessToken);
+      if (!mediaResponse.ok) return reconcileMetaFailure(mediaResponse);
+
+      if (!mediaResponse.data?.id || mediaResponse.data.id !== providerObjectId) {
+        return {
+          outcome: "UNKNOWN",
+          providerRequestId: providerObjectId,
+          errorCode: "INSTAGRAM_RECONCILE_MEDIA_NOT_CONFIRMED",
+          errorMessageSafe: "O Instagram ainda não confirmou a mídia publicada.",
+        };
+      }
+
+      try {
+        if (container) {
+          await markContainerPublished({
+            providerAssetRowId: container.id,
+            organizationId: job.organizationId,
+            postTargetId: job.postTargetId,
+            containerId: container.provider_asset_id,
+            mediaId: providerObjectId,
+            previousMetadata: container.metadata,
+          });
+        } else {
+          await rememberPublishedMedia({
+            organizationId: job.organizationId,
+            postTargetId: job.postTargetId,
+            mediaId: providerObjectId,
+          });
+        }
+        await revokeMediaDeliveryUrls(job.postTargetId);
+      } catch {
+        return {
+          outcome: "TRANSIENT_FAILURE",
+          providerRequestId: providerObjectId,
+          errorCode: "INSTAGRAM_RECONCILE_LOCAL_PERSIST_FAILED",
+          errorMessageSafe: "A publicação foi confirmada no Instagram, mas o registro local ainda precisa ser atualizado.",
+          retryAfterSeconds: 30,
+        };
+      }
+
+      return {
+        outcome: "SUCCEEDED",
+        providerRequestId: providerObjectId,
+      };
+    }
+
+    if (
+      (unknownCode === "INSTAGRAM_CONTAINER_PERSIST_UNKNOWN" ||
+        unknownCode === "INSTAGRAM_CONTAINER_NOT_RELOADED") &&
+      providerObjectId
+    ) {
+      const statusResponse = await containerStatus(providerObjectId, accessToken);
+      if (!statusResponse.ok) return reconcileMetaFailure(statusResponse);
+
+      if (statusResponse.data?.status_code === "ERROR" || statusResponse.data?.status_code === "EXPIRED") {
+        return failedContainer(statusResponse.data, providerObjectId);
+      }
+
+      if (statusResponse.data?.status_code !== "FINISHED") {
+        return {
+          outcome: "TRANSIENT_FAILURE",
+          providerRequestId: providerObjectId,
+          errorCode: "INSTAGRAM_RECONCILE_CONTAINER_PROCESSING",
+          errorMessageSafe: "O Instagram ainda está processando a mídia antes de permitir uma nova tentativa segura.",
+          retryAfterSeconds: 30,
+        };
+      }
+
+      try {
+        await rememberContainer({
+          organizationId: job.organizationId,
+          postTargetId: job.postTargetId,
+          containerId: providerObjectId,
+          mediaType: context.media?.mime_type.startsWith("video/") ? "REELS" : "IMAGE",
+        });
+      } catch {
+        return {
+          outcome: "TRANSIENT_FAILURE",
+          providerRequestId: providerObjectId,
+          errorCode: "INSTAGRAM_RECONCILE_CONTAINER_PERSIST_FAILED",
+          errorMessageSafe: "O container foi confirmado no Instagram, mas o registro local ainda precisa ser atualizado.",
+          retryAfterSeconds: 30,
+        };
+      }
+
+      return {
+        outcome: "SAFE_TO_RETRY",
+        providerRequestId: providerObjectId,
+        errorCode: "INSTAGRAM_RECONCILED_CONTAINER_READY",
+        errorMessageSafe: "O container foi confirmado e uma nova tentativa de publicação é segura.",
+      };
+    }
+
+    if (container) {
+      const statusResponse = await containerStatus(container.provider_asset_id, accessToken);
+      if (!statusResponse.ok) return reconcileMetaFailure(statusResponse);
+
+      if (statusResponse.data?.status_code === "ERROR" || statusResponse.data?.status_code === "EXPIRED") {
+        return failedContainer(statusResponse.data, container.provider_asset_id);
+      }
+
+      if (statusResponse.data?.status_code !== "FINISHED") {
+        return {
+          outcome: "TRANSIENT_FAILURE",
+          providerRequestId: container.provider_asset_id,
+          errorCode: "INSTAGRAM_RECONCILE_CONTAINER_PROCESSING",
+          errorMessageSafe: "O Instagram ainda está processando a mídia.",
+          retryAfterSeconds: 30,
+        };
+      }
+
+      return {
+        outcome: "UNKNOWN",
+        providerRequestId: container.provider_asset_id,
+        errorCode: "INSTAGRAM_RECONCILE_AMBIGUOUS_FINISHED_CONTAINER",
+        errorMessageSafe: "O container está pronto, mas ainda não há prova segura de que a publicação foi ou não concluída.",
+      };
+    }
+
+    return {
+      outcome: "UNKNOWN",
+      providerRequestId: providerObjectId,
+      errorCode: "INSTAGRAM_RECONCILE_NO_PROVIDER_ASSET",
+      errorMessageSafe: "Não há evidência suficiente para republicar com segurança. O Tela Social continuará verificando antes de exigir ação manual.",
     };
   },
 };
