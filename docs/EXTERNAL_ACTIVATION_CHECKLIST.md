@@ -84,7 +84,9 @@ Já implementado:
 - Media Delivery Gateway público em `/d/{token}`;
 - token opaco armazenado somente como hash no banco;
 - validade configurável do token;
-- suporte a `Range`, `HEAD` e streaming do objeto privado;
+- GET e HEAD autorizados pelo gateway;
+- após validar o token, o gateway emite redirect temporário para uma URL assinada do object storage, de modo que os bytes da mídia não atravessem a Function/Vercel;
+- URL assinada downstream curta (15 minutos) e renovável enquanto o token opaco do Tela Social continuar válido;
 - revogação dos tokens de delivery após conclusão conhecida da publicação.
 
 Variáveis exigidas:
@@ -101,7 +103,7 @@ Configuração CORS necessária no bucket:
 - permitir os headers necessários aos uploads assinados;
 - expor o header `ETag`, pois ele é usado para concluir o multipart upload.
 
-O upload grande do usuário não passa inteiro pelo servidor Next.js. O gateway `/d/{token}` existe para providers que precisam buscar uma URL HTTPS temporária; o fluxo de vídeos muito grandes deve preferir integração específica/resumível com o provider quando disponível.
+O upload grande do usuário não passa inteiro pelo servidor Next.js. O gateway `/d/{token}` também não transporta o payload pesado: ele autoriza o acesso e redireciona o consumidor para uma URL S3/R2 assinada de curta duração. A compatibilidade de redirect, `Range` e tempo de ingestão deve ser comprovada com cada provider real antes de marcar a integração como pronta. Para vídeos muito grandes, deve-se preferir upload específico/resumível do provider quando a API oferecer esse fluxo.
 
 ## 4. Worker de publicação
 
@@ -139,7 +141,7 @@ Não ativar o executor periódico contra as redes até o adapter correspondente 
 1. validar login/cadastro/recuperação no preview;
 2. configurar Google Auth se desejado;
 3. criar/configurar o bucket R2 e testar upload real;
-4. validar o Media Delivery Gateway com um arquivo de teste;
+4. validar o Media Delivery Gateway com um arquivo de teste e confirmar que o provider segue o redirect para a URL assinada;
 5. criar/configurar o app Meta;
 6. testar conexão Instagram;
 7. deixar `INSTAGRAM_PUBLISHING_ADAPTER_ENABLED=false` durante os testes de OAuth;
