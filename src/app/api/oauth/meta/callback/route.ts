@@ -148,11 +148,10 @@ export async function GET(request: NextRequest) {
   if (brandError || !brand) return redirectResult(request, returnTo, "brand_not_accessible");
 
   try {
-    const redirectUri = new URL("/api/oauth/meta/callback", request.nextUrl.origin).toString();
     const tokenUrl = new URL(config.tokenUrl);
     tokenUrl.searchParams.set("client_id", config.clientId);
     tokenUrl.searchParams.set("client_secret", config.clientSecret);
-    tokenUrl.searchParams.set("redirect_uri", redirectUri);
+    tokenUrl.searchParams.set("redirect_uri", config.redirectUri);
     tokenUrl.searchParams.set("code", code);
 
     const tokenResponse = await fetch(tokenUrl, {
