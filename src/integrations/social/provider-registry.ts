@@ -11,6 +11,15 @@ export type WorkerOutcome =
   | "UNKNOWN"
   | "FAILED_FINAL";
 
+export type ReconcileOutcome =
+  | "SUCCEEDED"
+  | "SAFE_TO_RETRY"
+  | "TRANSIENT_FAILURE"
+  | "RATE_LIMIT"
+  | "AUTH_REQUIRED"
+  | "UNKNOWN"
+  | "FAILED_FINAL";
+
 export interface PublicationWorkerJob {
   jobId: string;
   organizationId: string;
@@ -31,9 +40,19 @@ export interface PublishAdapterResult {
   retryAfterSeconds?: number | null;
 }
 
+export interface ReconcileAdapterResult {
+  outcome: ReconcileOutcome;
+  providerRequestId?: string | null;
+  httpStatus?: number | null;
+  errorCode?: string | null;
+  errorMessageSafe?: string | null;
+  retryAfterSeconds?: number | null;
+}
+
 export interface PublishAdapter {
   provider: string;
   publish(job: PublicationWorkerJob): Promise<PublishAdapterResult>;
+  reconcile?(job: PublicationWorkerJob): Promise<ReconcileAdapterResult>;
 }
 
 /**
