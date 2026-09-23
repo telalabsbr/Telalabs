@@ -55,6 +55,8 @@ Variáveis exigidas:
 - `OAUTH_TOKEN_ENCRYPTION_KEY`
 - `APP_PUBLIC_URL`
 
+`APP_PUBLIC_URL` é a origem canônica do callback Meta e deve ser configurada por ambiente. No preview, use a URL estável do preview/branch; em produção, o domínio de produção. O início do OAuth e o callback precisam ocorrer na mesma origem para que o cookie `state` anti-CSRF permaneça válido.
+
 Feature flag:
 - `INSTAGRAM_PUBLISHING_ADAPTER_ENABLED=false` por padrão.
 
