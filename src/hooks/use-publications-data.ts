@@ -13,16 +13,22 @@ function isPlatform(value: string): value is SocialPlatform {
 
 function mapTargetState(state: string): PublicationStatus {
   if (state === "PUBLISHED") return "published";
-  if (state === "FAILED_FINAL" || state === "NEEDS_ACTION" || state === "UNKNOWN") return "failed";
+  if (state === "FAILED_FINAL") return "failed";
+  if (state === "NEEDS_ACTION") return "needs_action";
+  if (state === "UNKNOWN") return "verifying";
+  if (state === "RETRY_WAIT") return "retrying";
   if (state === "CANCELLED") return "cancelled";
   if (state === "DRAFT") return "draft";
-  if (["PUBLISHING","PROCESSING","PREPARING","STAGED","VALIDATING","RETRY_WAIT"].includes(state)) return "processing";
+  if (["PUBLISHING","PROCESSING","PREPARING","STAGED","VALIDATING"].includes(state)) return "processing";
   return "scheduled";
 }
 
 function aggregateStatus(destinations: PublicationDestination[]): PublicationStatus {
   if (!destinations.length) return "draft";
+  if (destinations.some(item => item.status === "needs_action")) return "needs_action";
   if (destinations.some(item => item.status === "failed")) return "failed";
+  if (destinations.some(item => item.status === "verifying")) return "verifying";
+  if (destinations.some(item => item.status === "retrying")) return "retrying";
   if (destinations.every(item => item.status === "published")) return "published";
   if (destinations.some(item => item.status === "processing")) return "processing";
   if (destinations.some(item => item.status === "scheduled")) return "scheduled";
