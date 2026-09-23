@@ -13,6 +13,9 @@ const statusLabels: Record<PublicationStatus, string> = {
   draft: "Rascunho",
   scheduled: "Agendado",
   processing: "Processando",
+  retrying: "Tentando novamente",
+  verifying: "Verificando",
+  needs_action: "Ação necessária",
   published: "Publicado",
   failed: "Erro",
   cancelled: "Cancelado",
@@ -20,7 +23,7 @@ const statusLabels: Record<PublicationStatus, string> = {
 
 function isAuthError(publication: Publication) {
   return publication.destinations.some(destination =>
-    destination.status === "failed" &&
+    (destination.status === "failed" || destination.status === "needs_action") &&
     /auth|token|permission|scope|login|credential|oauth/i.test((destination.lastErrorCode ?? "") + " " + (destination.lastError ?? ""))
   );
 }
@@ -117,6 +120,34 @@ export default function HistoryPage() {
       </div>
     </div>
 
+    {selected.status === "verifying" && <div className="rounded-xl border border-cyan-200 bg-cyan-50 p-4 text-sm leading-6 text-cyan-900">
+      <p className="font-black">Confirmando com a rede</p>
+      <p className="mt-1">O resultado da tentativa ficou incerto. O Tela Social está verificando o provider antes de permitir qualquer nova publicação, para evitar conteúdo duplicado.</p>
+    </div>}
+
+    {selected.status === "retrying" && <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">
+      <p className="font-black">Nova tentativa programada</p>
+      <p className="mt-1">A falha foi classificada como temporária e o destino será tentado novamente sem afetar redes que já tiveram sucesso.</p>
+    </div>}
+
+    {selected.status === "needs_action" && <div className="rounded-xl border border-orange-200 bg-orange-50 p-4">
+      <div className="flex gap-3">
+        <AlertTriangle className="mt-0.5 shrink-0 text-orange-700" size={18}/>
+        <div className="min-w-0 flex-1">
+          <p className="font-black text-orange-950">Ação necessária</p>
+          <p className="mt-1 text-sm leading-6 text-orange-900">
+            {isAuthError(selected)
+              ? "A autorização da conta precisa ser renovada antes de qualquer nova tentativa."
+              : "O Tela Social não conseguiu confirmar com segurança se a publicação foi concluída. Ele não republicará automaticamente para evitar duplicidade; confira a rede antes de decidir o próximo passo."}
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {isAuthError(selected) && <Link href="/conexoes" className="btn-primary">Reconectar conta</Link>}
+            <button onClick={() => void handleDeleteSelected()} className="btn-secondary !text-red-600"><Trash2 size={15}/> Excluir</button>
+          </div>
+        </div>
+      </div>
+    </div>}
+
     {selected.status === "failed" && <div className="rounded-xl border border-red-200 bg-red-50 p-4">
       <div className="flex gap-3">
         <AlertTriangle className="mt-0.5 shrink-0 text-red-600" size={18}/>
@@ -125,7 +156,7 @@ export default function HistoryPage() {
           <p className="mt-1 text-sm leading-6 text-red-800">
             {isAuthError(selected)
               ? "A autorização da conta precisa ser corrigida. Nesse caso, repetir a publicação sem reconectar provavelmente falharia de novo."
-              : "Quando o worker estiver ativo, falhas temporárias terão retentativas automáticas. Depois da falha final, a opção principal será tentar novamente manualmente."}
+              : "A falha chegou ao estado final e pode ser reenviada manualmente sem republicar destinos que já tiveram sucesso."}
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             {isAuthError(selected)
