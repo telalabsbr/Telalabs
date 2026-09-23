@@ -57,6 +57,8 @@ Variáveis exigidas:
 
 `APP_PUBLIC_URL` é a origem canônica do callback Meta e deve ser configurada por ambiente. No preview, use a URL estável do preview/branch; em produção, o domínio de produção. O início do OAuth e o callback precisam ocorrer na mesma origem para que o cookie `state` anti-CSRF permaneça válido.
 
+Referência revalidada em 23/09/2026 na coleção oficial da Meta: o fluxo atual com Facebook Login continua usando `/me/accounts` para obter Page Access Tokens e a conta profissional vinculada, seguido de criação de container, consulta de `status_code` e `media_publish`. Para Reels, a referência atual lista MP4/MOV, duração de 3 segundos a 15 minutos, arquivo de até 1 GB e largura máxima de 1920 px. A coleção lista como permissões do conjunto de Instagram com Facebook Login `pages_show_list`, `instagram_basic`, `instagram_content_publish`, `pages_read_engagement` e `instagram_manage_comments`; não copiar essa lista cegamente para produção. `META_OAUTH_SCOPES` deve conter apenas os scopes realmente necessários ao conjunto de funcionalidades que estiver sendo ativado e aprovado no app Meta.
+
 Feature flag:
 - `INSTAGRAM_PUBLISHING_ADAPTER_ENABLED=false` por padrão.
 
