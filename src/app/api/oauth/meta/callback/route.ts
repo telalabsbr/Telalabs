@@ -35,6 +35,11 @@ type InstagramProfile = {
   error?: { message?: string };
 };
 
+function safeReturn(value: string | undefined) {
+  if (!value || !value.startsWith("/") || value.startsWith("//")) return "/conexoes";
+  return value;
+}
+
 function cleanup(response: NextResponse) {
   for (const name of ["tela_meta_state", "tela_meta_brand", "tela_meta_platform", "tela_meta_return"]) {
     response.cookies.set(name, "", { path: "/api/oauth/meta", maxAge: 0 });
@@ -123,7 +128,7 @@ export async function GET(request: NextRequest) {
   const expectedState = request.cookies.get("tela_meta_state")?.value;
   const brandId = request.cookies.get("tela_meta_brand")?.value;
   const platformRaw = request.cookies.get("tela_meta_platform")?.value ?? null;
-  const returnTo = request.cookies.get("tela_meta_return")?.value || "/conexoes";
+  const returnTo = safeReturn(request.cookies.get("tela_meta_return")?.value);
 
   if (!config) return redirectResult(request, returnTo, "meta_not_configured");
   if (!code || !state || !expectedState || state !== expectedState || !brandId || !isMetaPlatform(platformRaw)) {
