@@ -68,8 +68,6 @@ export async function GET(
       new GetObjectCommand({
         Bucket: storage.bucket,
         Key: record.object_key,
-        ResponseContentType: record.mime_type || "application/octet-stream",
-        ResponseContentDisposition: `inline; filename*=UTF-8''${encodeURIComponent(record.filename || "media")}`,
       }),
       { expiresIn: STORAGE_REDIRECT_TTL_SECONDS },
     );
