@@ -49,9 +49,11 @@ export async function GET(request: NextRequest) {
   if (brandError || !brand) return redirectWithError(request, "brand_not_accessible");
 
   const state = randomBytes(32).toString("base64url");
+  const redirectUri = config.redirectUri;
   const authorization = new URL(config.authorizeUrl);
+  authorization.searchParams.set("force_reauth", "true");
   authorization.searchParams.set("client_id", config.clientId);
-  authorization.searchParams.set("redirect_uri", config.redirectUri);
+  authorization.searchParams.set("redirect_uri", redirectUri);
   authorization.searchParams.set("response_type", "code");
   authorization.searchParams.set("scope", config.scopes.join(","));
   authorization.searchParams.set("state", state);
@@ -68,6 +70,7 @@ export async function GET(request: NextRequest) {
   response.cookies.set("tela_instagram_state", state, cookieOptions);
   response.cookies.set("tela_instagram_brand", brand.id, cookieOptions);
   response.cookies.set("tela_instagram_return", returnTo, cookieOptions);
+  response.cookies.set("tela_instagram_redirect", redirectUri, cookieOptions);
 
   return response;
 }
