@@ -58,9 +58,9 @@ export async function GET(request: NextRequest) {
   const brandId = request.cookies.get("tela_instagram_brand")?.value;
   const returnTo = safeReturn(request.cookies.get("tela_instagram_return")?.value);
 
-  if (!config) return redirectResult(request, returnTo, "instagram_not_configured");
+  if (!config) return redirectResult(request, returnTo, "meta_not_configured");
   if (!code || !state || !expectedState || state !== expectedState || !brandId) {
-    return redirectResult(request, returnTo, "instagram_state_invalid");
+    return redirectResult(request, returnTo, "meta_state_invalid");
   }
 
   const supabase = await createSupabaseServerClient();
@@ -101,7 +101,7 @@ export async function GET(request: NextRequest) {
     const shortToken = await tokenResponse.json() as ShortTokenResponse;
 
     if (!tokenResponse.ok || !shortToken.access_token) {
-      return redirectResult(request, returnTo, "instagram_token_failed");
+      return redirectResult(request, returnTo, "meta_token_failed");
     }
 
     const exchangeUrl = new URL(config.graphBaseUrl + "/access_token");
@@ -117,7 +117,7 @@ export async function GET(request: NextRequest) {
     const longToken = await exchangeResponse.json() as LongTokenResponse;
 
     if (!exchangeResponse.ok || longToken.error || !longToken.access_token) {
-      return redirectResult(request, returnTo, "instagram_token_exchange_failed");
+      return redirectResult(request, returnTo, "meta_token_failed");
     }
 
     const profileUrl = new URL(config.graphBaseUrl + "/me");
@@ -132,7 +132,7 @@ export async function GET(request: NextRequest) {
     const profile = await profileResponse.json() as InstagramProfile;
 
     if (!profileResponse.ok || profile.error || (!profile.id && !shortToken.user_id)) {
-      return redirectResult(request, returnTo, "instagram_profile_failed");
+      return redirectResult(request, returnTo, "meta_callback_failed");
     }
 
     const providerAccountId = profile.id || String(shortToken.user_id);
@@ -159,9 +159,9 @@ export async function GET(request: NextRequest) {
       p_key_version: "aes-gcm-v1",
     });
 
-    if (result.error) return redirectResult(request, returnTo, "instagram_credential_persist_failed");
-    return redirectResult(request, returnTo, "instagram_connected");
+    if (result.error) return redirectResult(request, returnTo, "meta_callback_failed");
+    return redirectResult(request, returnTo, "meta_connected");
   } catch {
-    return redirectResult(request, returnTo, "instagram_callback_failed");
+    return redirectResult(request, returnTo, "meta_callback_failed");
   }
 }
