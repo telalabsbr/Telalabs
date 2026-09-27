@@ -1,5 +1,4 @@
 import "server-only";
-import { getMetaGraphBaseUrl } from "@/lib/oauth/meta";
 import type { PublishAdapterResult } from "./provider-registry";
 
 type MetaGraphError = {
@@ -23,6 +22,10 @@ export type MetaResponse<T> = {
   retryAfterSeconds: number | null;
 };
 
+function getInstagramGraphBaseUrl() {
+  return (process.env.INSTAGRAM_GRAPH_BASE_URL || "https://graph.instagram.com").replace(/\/$/, "");
+}
+
 function retryAfterSeconds(response: Response) {
   const header = response.headers.get("retry-after");
   if (!header) return null;
@@ -41,9 +44,7 @@ export async function metaGraphRequest<T>(args: {
   accessToken: string;
   params?: Record<string, string | number | boolean | null | undefined>;
 }) {
-  const baseUrl = getMetaGraphBaseUrl();
-  if (!baseUrl) throw new Error("META_GRAPH_BASE_URL_NOT_CONFIGURED");
-
+  const baseUrl = getInstagramGraphBaseUrl();
   const method = args.method ?? "GET";
   const url = new URL(baseUrl + (args.path.startsWith("/") ? args.path : "/" + args.path));
   const body = new URLSearchParams();
