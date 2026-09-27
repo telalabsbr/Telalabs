@@ -42,7 +42,7 @@ function safeReturn(value: string | undefined) {
 }
 
 function cleanup(response: NextResponse) {
-  for (const name of ["tela_instagram_state", "tela_instagram_brand", "tela_instagram_return"]) {
+  for (const name of ["tela_instagram_state", "tela_instagram_brand", "tela_instagram_return", "tela_instagram_redirect"]) {
     response.cookies.set(name, "", { path: "/api/oauth/instagram", maxAge: 0 });
   }
   return response;
@@ -66,7 +66,7 @@ function classifyOAuthError(message: string | undefined) {
 function redirectResult(request: NextRequest, returnTo: string, code: string, trace = code) {
   const url = new URL(returnTo, request.nextUrl.origin);
   url.searchParams.set("oauth", code);
-  url.searchParams.set("oauth_trace", `igcb_v4_${trace}`);
+  url.searchParams.set("oauth_trace", `igcb_v5_${trace}`);
   return cleanup(NextResponse.redirect(url));
 }
 
@@ -77,10 +77,11 @@ export async function GET(request: NextRequest) {
   const expectedState = request.cookies.get("tela_instagram_state")?.value;
   const brandId = request.cookies.get("tela_instagram_brand")?.value;
   const returnTo = safeReturn(request.cookies.get("tela_instagram_return")?.value);
+  const redirectUri = request.cookies.get("tela_instagram_redirect")?.value;
 
   if (!config) return redirectResult(request, returnTo, "meta_not_configured");
-  if (!code || !state || !expectedState || state !== expectedState || !brandId) {
-    return redirectResult(request, returnTo, "meta_state_invalid");
+  if (!code || !state || !expectedState || state !== expectedState || !brandId || !redirectUri) {
+    return redirectResult(request, returnTo, "meta_state_invalid", "state_or_redirect_missing");
   }
 
   const supabase = await createSupabaseServerClient();
@@ -103,17 +104,21 @@ export async function GET(request: NextRequest) {
   if (brandError || !brand) return redirectResult(request, returnTo, "brand_not_accessible");
 
   try {
-    const tokenForm = new FormData();
-    tokenForm.set("client_id", config.clientId);
-    tokenForm.set("client_secret", config.clientSecret);
-    tokenForm.set("grant_type", "authorization_code");
-    tokenForm.set("redirect_uri", config.redirectUri);
-    tokenForm.set("code", code);
+    const tokenForm = new URLSearchParams({
+      client_id: config.clientId,
+      client_secret: config.clientSecret,
+      grant_type: "authorization_code",
+      redirect_uri: redirectUri,
+      code,
+    });
 
     const tokenResponse = await fetch(config.tokenUrl, {
       method: "POST",
-      headers: { Accept: "application/json" },
-      body: tokenForm,
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: tokenForm.toString(),
       cache: "no-store",
     });
     const shortToken = await tokenResponse.json() as ShortTokenResponse;
@@ -132,6 +137,7 @@ export async function GET(request: NextRequest) {
         code: shortToken.code ?? null,
         errorType: shortToken.error_type ?? null,
         reason,
+        redirectMatchesConfig: redirectUri === config.redirectUri,
       });
       return redirectResult(request, returnTo, "meta_token_failed", trace);
     }
