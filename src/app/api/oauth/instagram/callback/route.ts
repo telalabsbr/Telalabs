@@ -47,7 +47,7 @@ function cleanup(response: NextResponse) {
 function redirectResult(request: NextRequest, returnTo: string, code: string) {
   const url = new URL(returnTo, request.nextUrl.origin);
   url.searchParams.set("oauth", code);
-  url.searchParams.set("oauth_trace", "igcb_v2");
+  url.searchParams.set("oauth_trace", `igcb_v2_${code}`);
   return cleanup(NextResponse.redirect(url));
 }
 
