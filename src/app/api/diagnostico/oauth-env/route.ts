@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getInstagramOAuthConfig } from "@/lib/oauth/instagram";
@@ -24,7 +24,20 @@ function encryptionKeyStatus() {
   }
 }
 
-export async function GET() {
+function safeUrl(value: string | undefined) {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return {
+      origin: url.origin,
+      pathname: url.pathname,
+    };
+  } catch {
+    return { invalid: true };
+  }
+}
+
+export async function GET(request: NextRequest) {
   const supabase = await createSupabaseServerClient();
   const admin = createSupabaseAdminClient();
   const instagram = getInstagramOAuthConfig();
@@ -35,6 +48,8 @@ export async function GET() {
       environment: {
         vercelEnv: process.env.VERCEL_ENV ?? null,
         nodeEnv: process.env.NODE_ENV ?? null,
+        requestOrigin: request.nextUrl.origin,
+        vercelGitCommitSha: process.env.VERCEL_GIT_COMMIT_SHA ?? null,
       },
       variables: {
         NEXT_PUBLIC_SUPABASE_URL: present("NEXT_PUBLIC_SUPABASE_URL"),
@@ -46,6 +61,10 @@ export async function GET() {
         INSTAGRAM_CLIENT_SECRET: present("INSTAGRAM_CLIENT_SECRET"),
         APP_PUBLIC_URL: present("APP_PUBLIC_URL"),
         INSTAGRAM_OAUTH_SCOPES: present("INSTAGRAM_OAUTH_SCOPES"),
+      },
+      routing: {
+        appPublicUrl: safeUrl(process.env.APP_PUBLIC_URL),
+        instagramRedirectUri: instagram ? safeUrl(instagram.redirectUri) : null,
       },
       clients: {
         supabaseServer: Boolean(supabase),
