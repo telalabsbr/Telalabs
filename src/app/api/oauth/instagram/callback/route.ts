@@ -52,10 +52,21 @@ function cleanTracePart(value: string | number | undefined) {
   return String(value ?? "na").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 40) || "na";
 }
 
+function classifyOAuthError(message: string | undefined) {
+  const value = (message ?? "").toLowerCase();
+  if (!value) return "unknown";
+  if (value.includes("invalid platform app")) return "invalid_platform_app";
+  if (value.includes("redirect_uri") || value.includes("redirect uri") || value.includes("redirect")) return "redirect_uri";
+  if (value.includes("client_secret") || value.includes("client secret") || value.includes("app secret")) return "client_secret";
+  if (value.includes("client_id") || value.includes("client id") || value.includes("app id")) return "client_id";
+  if (value.includes("authorization code") || value.includes("auth code") || value.includes("code has been used") || value.includes("invalid code")) return "authorization_code";
+  return "oauth_error";
+}
+
 function redirectResult(request: NextRequest, returnTo: string, code: string, trace = code) {
   const url = new URL(returnTo, request.nextUrl.origin);
   url.searchParams.set("oauth", code);
-  url.searchParams.set("oauth_trace", `igcb_v3_${trace}`);
+  url.searchParams.set("oauth_trace", `igcb_v4_${trace}`);
   return cleanup(NextResponse.redirect(url));
 }
 
@@ -92,36 +103,35 @@ export async function GET(request: NextRequest) {
   if (brandError || !brand) return redirectResult(request, returnTo, "brand_not_accessible");
 
   try {
-    const tokenForm = new URLSearchParams({
-      client_id: config.clientId,
-      client_secret: config.clientSecret,
-      grant_type: "authorization_code",
-      redirect_uri: config.redirectUri,
-      code,
-    });
+    const tokenForm = new FormData();
+    tokenForm.set("client_id", config.clientId);
+    tokenForm.set("client_secret", config.clientSecret);
+    tokenForm.set("grant_type", "authorization_code");
+    tokenForm.set("redirect_uri", config.redirectUri);
+    tokenForm.set("code", code);
 
     const tokenResponse = await fetch(config.tokenUrl, {
       method: "POST",
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: tokenForm.toString(),
+      headers: { Accept: "application/json" },
+      body: tokenForm,
       cache: "no-store",
     });
     const shortToken = await tokenResponse.json() as ShortTokenResponse;
 
     if (!tokenResponse.ok || !shortToken.access_token) {
+      const reason = classifyOAuthError(shortToken.error_message);
       const trace = [
         "short_token_failed",
         `s${cleanTracePart(tokenResponse.status)}`,
         `c${cleanTracePart(shortToken.code)}`,
         `t${cleanTracePart(shortToken.error_type)}`,
+        `r${reason}`,
       ].join("_");
       console.warn("instagram_oauth_short_token_failed", {
         status: tokenResponse.status,
         code: shortToken.code ?? null,
         errorType: shortToken.error_type ?? null,
+        reason,
       });
       return redirectResult(request, returnTo, "meta_token_failed", trace);
     }
@@ -139,16 +149,19 @@ export async function GET(request: NextRequest) {
     const longToken = await exchangeResponse.json() as LongTokenResponse;
 
     if (!exchangeResponse.ok || longToken.error || !longToken.access_token) {
+      const reason = classifyOAuthError(longToken.error?.message);
       const trace = [
         "long_token_failed",
         `s${cleanTracePart(exchangeResponse.status)}`,
         `c${cleanTracePart(longToken.error?.code)}`,
         `t${cleanTracePart(longToken.error?.type)}`,
+        `r${reason}`,
       ].join("_");
       console.warn("instagram_oauth_long_token_failed", {
         status: exchangeResponse.status,
         code: longToken.error?.code ?? null,
         errorType: longToken.error?.type ?? null,
+        reason,
       });
       return redirectResult(request, returnTo, "meta_token_failed", trace);
     }
