@@ -33,8 +33,8 @@ export default function ConnectionsPage() {
     const count = Number(params.get("count") ?? "0");
     const messages: Record<string, string> = {
       meta_connected: count > 1
-        ? `${count} contas da Meta foram conectadas com segurança.`
-        : "Conta da Meta conectada com segurança.",
+        ? `${count} contas foram conectadas com sucesso.`
+        : "Conta do Instagram conectada com sucesso.",
       meta_no_eligible_accounts: "A autorização funcionou, mas não encontramos uma conta elegível para a rede escolhida.",
       meta_not_configured: "A infraestrutura Meta já está preparada, mas as credenciais do aplicativo Meta ainda não foram configuradas no ambiente.",
       meta_token_failed: "A Meta não concluiu a troca de autorização. Tente novamente depois de revisar as credenciais e permissões.",
