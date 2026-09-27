@@ -20,7 +20,11 @@ type LongTokenResponse = {
   access_token?: string;
   token_type?: string;
   expires_in?: number;
-  error?: { message?: string };
+  error?: {
+    message?: string;
+    type?: string;
+    code?: number;
+  };
 };
 
 type InstagramProfile = {
@@ -29,7 +33,7 @@ type InstagramProfile = {
   name?: string;
   profile_picture_url?: string;
   account_type?: string;
-  error?: { message?: string };
+  error?: { message?: string; type?: string; code?: number };
 };
 
 function safeReturn(value: string | undefined) {
@@ -44,10 +48,14 @@ function cleanup(response: NextResponse) {
   return response;
 }
 
-function redirectResult(request: NextRequest, returnTo: string, code: string) {
+function cleanTracePart(value: string | number | undefined) {
+  return String(value ?? "na").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 40) || "na";
+}
+
+function redirectResult(request: NextRequest, returnTo: string, code: string, trace = code) {
   const url = new URL(returnTo, request.nextUrl.origin);
   url.searchParams.set("oauth", code);
-  url.searchParams.set("oauth_trace", `igcb_v2_${code}`);
+  url.searchParams.set("oauth_trace", `igcb_v3_${trace}`);
   return cleanup(NextResponse.redirect(url));
 }
 
@@ -65,10 +73,10 @@ export async function GET(request: NextRequest) {
   }
 
   const supabase = await createSupabaseServerClient();
-  if (!supabase) return redirectResult(request, returnTo, "server_supabase_missing");
+  if (!supabase) return redirectResult(request, returnTo, "server_not_configured", "server_supabase_missing");
 
   const admin = createSupabaseAdminClient();
-  if (!admin) return redirectResult(request, returnTo, "server_admin_missing");
+  if (!admin) return redirectResult(request, returnTo, "server_not_configured", "server_admin_missing");
 
   const { data: userData } = await supabase.auth.getUser();
   if (!userData.user) return redirectResult(request, returnTo, "session_expired");
@@ -104,7 +112,18 @@ export async function GET(request: NextRequest) {
     const shortToken = await tokenResponse.json() as ShortTokenResponse;
 
     if (!tokenResponse.ok || !shortToken.access_token) {
-      return redirectResult(request, returnTo, "meta_token_failed");
+      const trace = [
+        "short_token_failed",
+        `s${cleanTracePart(tokenResponse.status)}`,
+        `c${cleanTracePart(shortToken.code)}`,
+        `t${cleanTracePart(shortToken.error_type)}`,
+      ].join("_");
+      console.warn("instagram_oauth_short_token_failed", {
+        status: tokenResponse.status,
+        code: shortToken.code ?? null,
+        errorType: shortToken.error_type ?? null,
+      });
+      return redirectResult(request, returnTo, "meta_token_failed", trace);
     }
 
     const exchangeUrl = new URL(config.graphBaseUrl + "/access_token");
@@ -120,7 +139,18 @@ export async function GET(request: NextRequest) {
     const longToken = await exchangeResponse.json() as LongTokenResponse;
 
     if (!exchangeResponse.ok || longToken.error || !longToken.access_token) {
-      return redirectResult(request, returnTo, "meta_token_failed");
+      const trace = [
+        "long_token_failed",
+        `s${cleanTracePart(exchangeResponse.status)}`,
+        `c${cleanTracePart(longToken.error?.code)}`,
+        `t${cleanTracePart(longToken.error?.type)}`,
+      ].join("_");
+      console.warn("instagram_oauth_long_token_failed", {
+        status: exchangeResponse.status,
+        code: longToken.error?.code ?? null,
+        errorType: longToken.error?.type ?? null,
+      });
+      return redirectResult(request, returnTo, "meta_token_failed", trace);
     }
 
     const profileUrl = new URL(config.graphBaseUrl + "/me");
@@ -135,7 +165,13 @@ export async function GET(request: NextRequest) {
     const profile = await profileResponse.json() as InstagramProfile;
 
     if (!profileResponse.ok || profile.error || (!profile.id && !shortToken.user_id)) {
-      return redirectResult(request, returnTo, "meta_callback_failed");
+      const trace = [
+        "profile_failed",
+        `s${cleanTracePart(profileResponse.status)}`,
+        `c${cleanTracePart(profile.error?.code)}`,
+        `t${cleanTracePart(profile.error?.type)}`,
+      ].join("_");
+      return redirectResult(request, returnTo, "meta_callback_failed", trace);
     }
 
     const providerAccountId = profile.id || String(shortToken.user_id);
@@ -162,9 +198,16 @@ export async function GET(request: NextRequest) {
       p_key_version: "aes-gcm-v1",
     });
 
-    if (result.error) return redirectResult(request, returnTo, "meta_callback_failed");
-    return redirectResult(request, returnTo, "meta_connected");
-  } catch {
-    return redirectResult(request, returnTo, "meta_callback_failed");
+    if (result.error) {
+      console.warn("instagram_oauth_persist_failed", { code: result.error.code ?? null });
+      return redirectResult(request, returnTo, "meta_callback_failed", `persist_failed_c${cleanTracePart(result.error.code)}`);
+    }
+
+    return redirectResult(request, returnTo, "meta_connected", "meta_connected");
+  } catch (error) {
+    console.warn("instagram_oauth_callback_exception", {
+      name: error instanceof Error ? error.name : "unknown",
+    });
+    return redirectResult(request, returnTo, "meta_callback_failed", "callback_exception");
   }
 }
