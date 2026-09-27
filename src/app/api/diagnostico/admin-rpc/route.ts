@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
@@ -16,11 +17,43 @@ function classify(code: string | null | undefined, message: string | null | unde
   return code ? `other_${code}` : "other_error";
 }
 
+function keyDiagnostics() {
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+
+  let projectRef: string | null = null;
+  try {
+    projectRef = new URL(url).hostname.split(".")[0] || null;
+  } catch {
+    projectRef = null;
+  }
+
+  return {
+    projectRef,
+    keyPresent: Boolean(key),
+    keyKind: key.startsWith("sb_secret_")
+      ? "sb_secret"
+      : key.startsWith("eyJ")
+        ? "legacy_jwt"
+        : key
+          ? "other"
+          : "missing",
+    keyLength: key.length,
+    keyFingerprint: key
+      ? createHash("sha256").update(key).digest("hex").slice(0, 12)
+      : null,
+    vercelEnv: process.env.VERCEL_ENV ?? null,
+    commitSha: process.env.VERCEL_GIT_COMMIT_SHA ?? null,
+  };
+}
+
 export async function GET() {
   const admin = createSupabaseAdminClient();
+  const diagnostics = keyDiagnostics();
+
   if (!admin) {
     return NextResponse.json(
-      { safe: true, adminClient: false },
+      { safe: true, adminClient: false, diagnostics },
       { headers: { "Cache-Control": "no-store" } },
     );
   }
@@ -45,6 +78,7 @@ export async function GET() {
     {
       safe: true,
       adminClient: true,
+      diagnostics,
       brandQuery: {
         ok: !brandProbe.error,
         code: brandProbe.error?.code ?? null,
