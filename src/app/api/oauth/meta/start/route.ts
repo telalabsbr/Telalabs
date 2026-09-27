@@ -19,9 +19,6 @@ function redirectWithError(request: NextRequest, code: string) {
 }
 
 export async function GET(request: NextRequest) {
-  const config = getMetaOAuthConfig();
-  if (!config) return redirectWithError(request, "meta_not_configured");
-
   const platform = request.nextUrl.searchParams.get("platform");
   const brandId = request.nextUrl.searchParams.get("brand_id");
   const returnTo = safeReturn(request.nextUrl.searchParams.get("return_to"));
@@ -29,6 +26,18 @@ export async function GET(request: NextRequest) {
   if (!isMetaPlatform(platform) || !brandId) {
     return redirectWithError(request, "meta_invalid_request");
   }
+
+  if (platform === "instagram") {
+    const instagram = request.nextUrl.clone();
+    instagram.pathname = "/api/oauth/instagram/start";
+    instagram.search = "";
+    instagram.searchParams.set("brand_id", brandId);
+    instagram.searchParams.set("return_to", returnTo);
+    return NextResponse.redirect(instagram);
+  }
+
+  const config = getMetaOAuthConfig();
+  if (!config) return redirectWithError(request, "meta_not_configured");
 
   const supabase = await createSupabaseServerClient();
   if (!supabase) return redirectWithError(request, "auth_not_configured");
