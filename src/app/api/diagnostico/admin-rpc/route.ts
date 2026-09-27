@@ -19,7 +19,10 @@ function classify(code: string | null | undefined, message: string | null | unde
 export async function GET() {
   const admin = createSupabaseAdminClient();
   if (!admin) {
-    return NextResponse.json({ safe: true, adminClient: false }, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json(
+      { safe: true, adminClient: false },
+      { headers: { "Cache-Control": "no-store" } },
+    );
   }
 
   const brandProbe = await admin.from("brands").select("id").limit(1);
@@ -35,7 +38,6 @@ export async function GET() {
     p_token_expires_at: new Date(Date.now() + 60_000).toISOString(),
     p_metadata: { source: "diagnostic_probe" },
     p_access_token_ciphertext: "diagnostic",
-    p_refresh_token_ciphertext: null,
     p_key_version: "aes-gcm-v1",
   });
 
@@ -46,12 +48,16 @@ export async function GET() {
       brandQuery: {
         ok: !brandProbe.error,
         code: brandProbe.error?.code ?? null,
-        classification: brandProbe.error ? classify(brandProbe.error.code, brandProbe.error.message) : "ok",
+        classification: brandProbe.error
+          ? classify(brandProbe.error.code, brandProbe.error.message)
+          : "ok",
       },
       rpcProbe: {
         ok: !rpcProbe.error,
         code: rpcProbe.error?.code ?? null,
-        classification: rpcProbe.error ? classify(rpcProbe.error.code, rpcProbe.error.message) : "unexpected_success",
+        classification: rpcProbe.error
+          ? classify(rpcProbe.error.code, rpcProbe.error.message)
+          : "unexpected_success",
       },
     },
     { headers: { "Cache-Control": "no-store, max-age=0" } },
