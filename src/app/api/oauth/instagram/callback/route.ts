@@ -47,6 +47,7 @@ function cleanup(response: NextResponse) {
 function redirectResult(request: NextRequest, returnTo: string, code: string) {
   const url = new URL(returnTo, request.nextUrl.origin);
   url.searchParams.set("oauth", code);
+  url.searchParams.set("oauth_trace", "igcb_v2");
   return cleanup(NextResponse.redirect(url));
 }
 
@@ -64,8 +65,10 @@ export async function GET(request: NextRequest) {
   }
 
   const supabase = await createSupabaseServerClient();
+  if (!supabase) return redirectResult(request, returnTo, "server_supabase_missing");
+
   const admin = createSupabaseAdminClient();
-  if (!supabase || !admin) return redirectResult(request, returnTo, "server_not_configured");
+  if (!admin) return redirectResult(request, returnTo, "server_admin_missing");
 
   const { data: userData } = await supabase.auth.getUser();
   if (!userData.user) return redirectResult(request, returnTo, "session_expired");
