@@ -10,6 +10,7 @@ import {
   ChevronRight,
   Copy,
   Edit3,
+  ExternalLink,
   MoreHorizontal,
   Pause,
   RefreshCw,
@@ -116,6 +117,12 @@ function matchesText(publication: Publication, query: string) {
     ...publication.destinations.map(destination => platformLabels[destination.platform]),
   ].join(" ").toLocaleLowerCase("pt-BR");
   return text.includes(normalized);
+}
+
+function destinationLabel(destination: Publication["destinations"][number]) {
+  if (destination.platform === "instagram" && destination.surface === "story") return "Instagram Story";
+  if (destination.platform === "instagram" && destination.surface === "reel") return "Instagram Reel";
+  return platformLabels[destination.platform];
 }
 
 function isAuthError(publication: Publication) {
@@ -263,10 +270,13 @@ export default function CalendarPage() {
         {selected.destinations.map(destination => <div key={destination.id} className="flex min-w-0 items-center gap-3 p-3">
           <PlatformIcon platform={destination.platform} small/>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-bold text-slate-900">{platformLabels[destination.platform]}</p>
+            <p className="truncate text-sm font-bold text-slate-900">{destinationLabel(destination)}</p>
             <p className="mt-0.5 truncate text-xs text-slate-500">{destination.lastError ?? (destination.scheduledAt ? new Date(destination.scheduledAt).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }) : "Sem horário")}</p>
           </div>
-          <StatusBadge status={destination.status}/>
+          <div className="flex shrink-0 items-center gap-2">
+            {destination.externalUrl && <a href={destination.externalUrl} target="_blank" rel="noreferrer" className="grid h-8 w-8 place-items-center rounded-lg border border-slate-200 text-indigo-600 hover:bg-indigo-50" title="Ver publicação na rede"><ExternalLink size={14}/></a>}
+            <StatusBadge status={destination.status}/>
+          </div>
         </div>)}
       </div>
     </div>
@@ -309,6 +319,7 @@ export default function CalendarPage() {
     {actionMessage && <p className="rounded-xl bg-slate-50 p-3 text-sm leading-6 text-slate-700">{actionMessage}</p>}
 
     <div className="grid grid-cols-2 gap-2">
+      {selected.destinations.some(destination => destination.externalUrl) && <a href={selected.destinations.find(destination => destination.externalUrl)?.externalUrl} target="_blank" rel="noreferrer" className="btn-primary col-span-2"><ExternalLink size={15}/> Ver publicação</a>}
       <Link href={"/publicacoes/nova?edit=" + selected.id} className="btn-secondary"><Edit3 size={15}/> Editar</Link>
       <button className="btn-secondary"><Copy size={15}/> Duplicar</button>
       {selected.status === "scheduled" && <button onClick={() => void handleCancelSelected()} className="btn-secondary"><Pause size={15}/> Cancelar agendamento</button>}
