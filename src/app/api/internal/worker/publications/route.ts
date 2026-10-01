@@ -11,7 +11,7 @@ import {
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 180;
+export const maxDuration = 55;
 
 const WORKER_BATCH_LIMIT = 10;
 const RECONCILE_BATCH_LIMIT = 4;
@@ -43,18 +43,33 @@ function secureEquals(left: string, right: string) {
   return timingSafeEqual(leftBuffer, rightBuffer);
 }
 
-function authorized(request: NextRequest) {
-  const secrets = [process.env.WORKER_SECRET, process.env.CRON_SECRET].filter(
-    (value): value is string => Boolean(value),
-  );
-  if (!secrets.length) return false;
-
+async function authorized(request: NextRequest) {
   const header = request.headers.get("authorization") ?? "";
   const prefix = "Bearer ";
   if (!header.startsWith(prefix)) return false;
 
   const provided = header.slice(prefix.length);
-  return secrets.some(secret => secureEquals(provided, secret));
+  if (!provided) return false;
+
+  const environmentSecrets = [process.env.WORKER_SECRET, process.env.CRON_SECRET].filter(
+    (value): value is string => Boolean(value),
+  );
+
+  if (environmentSecrets.some(secret => secureEquals(provided, secret))) {
+    return true;
+  }
+
+  // O executor periódico do Supabase usa um token aleatório guardado no Vault.
+  // O valor nunca precisa ser copiado para o Vercel: a validação ocorre por RPC
+  // server-only usando a chave administrativa já configurada no runtime.
+  const admin = createUntypedSupabaseAdminClient();
+  if (!admin) return false;
+
+  const validation = await admin.rpc("server_validate_worker_scheduler_token", {
+    p_token: provided,
+  });
+
+  return !validation.error && validation.data === true;
 }
 
 function normalizeResult(result: PublishAdapterResult | ReconcileAdapterResult) {
@@ -82,7 +97,7 @@ function toWorkerJob(row: ClaimedJobRow): PublicationWorkerJob {
 }
 
 async function runWorker(request: NextRequest) {
-  if (!authorized(request)) {
+  if (!(await authorized(request))) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
