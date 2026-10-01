@@ -60,7 +60,6 @@ async function loadImage(file: File) {
     await image.decode();
     return image;
   } finally {
-    // The decoded image remains usable after revoking its source URL.
     URL.revokeObjectURL(url);
   }
 }
@@ -86,7 +85,6 @@ async function convertStaticImageToJpeg(file: File): Promise<PreparedMediaFile> 
   const height = image.naturalHeight;
   if (!width || !height) throw new Error("image_decode_failed");
 
-  // Keep enough resolution for social publishing while avoiding huge canvases.
   const maxEdge = 4096;
   const scale = Math.min(1, maxEdge / Math.max(width, height));
   const outputWidth = Math.max(1, Math.round(width * scale));
@@ -98,7 +96,6 @@ async function convertStaticImageToJpeg(file: File): Promise<PreparedMediaFile> 
   const context = canvas.getContext("2d");
   if (!context) throw new Error("image_conversion_failed");
 
-  // JPEG has no alpha channel. White prevents transparent PNG/WebP areas from turning black.
   context.fillStyle = "#ffffff";
   context.fillRect(0, 0, outputWidth, outputHeight);
   context.drawImage(image, 0, 0, outputWidth, outputHeight);
@@ -179,10 +176,19 @@ export async function prepareMediaFile(file: File): Promise<PreparedMediaFile> {
     const normalized = file.type === mimeType
       ? file
       : new File([file], file.name, { type: mimeType, lastModified: file.lastModified });
+
+    let metadata: PreparedMediaMetadata = { durationMs: null, width: null, height: null };
+    try {
+      metadata = await probeVideo(normalized);
+    } catch {
+      // Some browsers cannot decode MOV metadata even when Instagram can ingest the file.
+      // Keep the upload available and let the provider perform the final codec validation.
+    }
+
     return {
       file: normalized,
       kind: "video",
-      metadata: await probeVideo(normalized),
+      metadata,
       notice: null,
     };
   }
