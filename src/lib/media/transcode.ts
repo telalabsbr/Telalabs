@@ -3,6 +3,8 @@
 const FFMPEG_CORE_BASE = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/umd";
 const MAX_TRANSCODE_INPUT_BYTES = 350 * 1024 * 1024;
 const MAX_AUDIO_INPUT_BYTES = 150 * 1024 * 1024;
+const INSTAGRAM_MIN_REEL_DURATION_MS = 3_000;
+const GIF_SAFE_MIN_DURATION_MS = 3_200;
 
 export type TranscodeProgress = {
   progress: number;
@@ -68,6 +70,36 @@ async function createAudioCover(filename: string) {
   return canvasToPng(canvas);
 }
 
+/**
+ * Lê os Graphics Control Extensions do GIF para estimar a duração de um ciclo.
+ * Cada delay é armazenado em centésimos de segundo. Se não conseguirmos ler
+ * com segurança, retornamos null e deixamos o FFmpeg fazer a conversão normal.
+ */
+async function gifCycleDurationMs(file: File): Promise<number | null> {
+  try {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    if (bytes.length < 13) return null;
+    const signature = String.fromCharCode(...bytes.slice(0, 6));
+    if (signature !== "GIF87a" && signature !== "GIF89a") return null;
+
+    let totalHundredths = 0;
+    for (let i = 0; i + 7 < bytes.length; i += 1) {
+      // Graphic Control Extension: 21 F9 04 [packed] [delay lo] [delay hi] ...
+      if (bytes[i] === 0x21 && bytes[i + 1] === 0xf9 && bytes[i + 2] === 0x04) {
+        const delayHundredths = bytes[i + 4] | (bytes[i + 5] << 8);
+        // Browsers commonly clamp zero/very-small frame delays. Use 2 cs as a
+        // practical floor so our estimate does not end up shorter than playback.
+        totalHundredths += Math.max(2, delayHundredths);
+        i += 7;
+      }
+    }
+
+    return totalHundredths > 0 ? totalHundredths * 10 : null;
+  } catch {
+    return null;
+  }
+}
+
 async function runFFmpeg(args: {
   file: File;
   mode: "gif" | "video" | "audio";
@@ -112,13 +144,27 @@ async function runFFmpeg(args: {
 
     let command: string[];
     if (args.mode === "gif") {
+      const cycleDurationMs = await gifCycleDurationMs(args.file);
+      const needsMinimumDuration = cycleDurationMs !== null && cycleDurationMs < INSTAGRAM_MIN_REEL_DURATION_MS;
+      const repeatCount = needsMinimumDuration
+        ? Math.max(1, Math.ceil(GIF_SAFE_MIN_DURATION_MS / cycleDurationMs) - 1)
+        : 0;
+
+      const inputArgs = repeatCount > 0
+        ? ["-stream_loop", String(repeatCount), "-i", inputName]
+        : ["-i", inputName];
+      const durationArgs = repeatCount > 0
+        ? ["-t", (GIF_SAFE_MIN_DURATION_MS / 1000).toFixed(1)]
+        : [];
+
       command = [
-        "-i", inputName,
+        ...inputArgs,
         "-vf", "scale='min(1920,iw)':-2,pad=ceil(iw/2)*2:ceil(ih/2)*2",
         "-c:v", "libx264",
         "-preset", "veryfast",
         "-crf", "23",
         "-pix_fmt", "yuv420p",
+        ...durationArgs,
         "-movflags", "+faststart",
         "-an",
         outputName,
