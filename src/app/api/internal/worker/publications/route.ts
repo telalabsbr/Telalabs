@@ -10,6 +10,7 @@ import {
 } from "@/integrations/social/provider-registry";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 const WORKER_BATCH_LIMIT = 10;
 const RECONCILE_BATCH_LIMIT = 4;
@@ -42,14 +43,17 @@ function secureEquals(left: string, right: string) {
 }
 
 function authorized(request: NextRequest) {
-  const expected = process.env.WORKER_SECRET;
-  if (!expected) return false;
+  const secrets = [process.env.WORKER_SECRET, process.env.CRON_SECRET].filter(
+    (value): value is string => Boolean(value),
+  );
+  if (!secrets.length) return false;
 
   const header = request.headers.get("authorization") ?? "";
   const prefix = "Bearer ";
   if (!header.startsWith(prefix)) return false;
 
-  return secureEquals(header.slice(prefix.length), expected);
+  const provided = header.slice(prefix.length);
+  return secrets.some(secret => secureEquals(provided, secret));
 }
 
 function normalizeResult(result: PublishAdapterResult | ReconcileAdapterResult) {
@@ -76,16 +80,9 @@ function toWorkerJob(row: ClaimedJobRow): PublicationWorkerJob {
   };
 }
 
-export async function POST(request: NextRequest) {
+async function runWorker(request: NextRequest) {
   if (!authorized(request)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
-
-  if (process.env.PUBLISHING_WORKER_ENABLED !== "true") {
-    return NextResponse.json({
-      error: "worker_disabled",
-      message: "O executor está preparado, mas continua desligado por segurança.",
-    }, { status: 503 });
   }
 
   const adapters = getEnabledPublishAdapters();
@@ -94,7 +91,7 @@ export async function POST(request: NextRequest) {
   if (!providers.length) {
     return NextResponse.json({
       error: "no_enabled_provider_adapters",
-      message: "Nenhum provider real foi habilitado; nenhum job foi consumido.",
+      message: "Nenhum provider real está configurado neste ambiente.",
     }, { status: 503 });
   }
 
@@ -213,7 +210,6 @@ export async function POST(request: NextRequest) {
       try {
         providerResult = await adapter.publish(job);
       } catch {
-        // Exceção sem classificação é UNKNOWN para impedir republicação cega.
         providerResult = {
           outcome: "UNKNOWN",
           errorCode: "ADAPTER_UNCLASSIFIED_EXCEPTION",
@@ -255,4 +251,12 @@ export async function POST(request: NextRequest) {
     providers,
     results,
   });
+}
+
+export async function POST(request: NextRequest) {
+  return runWorker(request);
+}
+
+export async function GET(request: NextRequest) {
+  return runWorker(request);
 }
