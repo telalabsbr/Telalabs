@@ -3,6 +3,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import type { Json } from "@/lib/supabase/database.types";
 import {
   accessTokenFromContext,
+  issueAttachedMediaDeliveryUrl,
   issueMediaDeliveryUrl,
   loadRuntimePublicationContext,
   revokeMediaDeliveryUrls,
@@ -17,7 +18,7 @@ import type {
 
 type ContainerCreated = { id?: string };
 type ContainerStatus = { id?: string; status_code?: string; status?: string };
-type PublishedMedia = { id?: string };
+type PublishedMedia = { id?: string; permalink?: string };
 type UnknownPublishAttempt = {
   error_code: string | null;
   provider_request_id: string | null;
@@ -113,7 +114,7 @@ async function rememberContainer(args: {
   organizationId: string;
   postTargetId: string;
   containerId: string;
-  mediaType: "IMAGE" | "REELS";
+  mediaType: "IMAGE" | "REELS" | "STORIES";
 }) {
   const admin = createSupabaseAdminClient();
   if (!admin) throw new Error("SUPABASE_ADMIN_NOT_CONFIGURED");
@@ -141,6 +142,7 @@ async function rememberPublishedMedia(args: {
   postTargetId: string;
   mediaId: string;
   containerId?: string | null;
+  permalink?: string | null;
 }) {
   const admin = createSupabaseAdminClient();
   if (!admin) throw new Error("SUPABASE_ADMIN_NOT_CONFIGURED");
@@ -155,6 +157,7 @@ async function rememberPublishedMedia(args: {
     metadata: {
       source_container_id: args.containerId ?? null,
       reconciled: true,
+      permalink: args.permalink ?? null,
     },
   }, {
     onConflict: "provider,provider_asset_id",
@@ -170,6 +173,7 @@ async function markContainerPublished(args: {
   containerId: string;
   mediaId: string;
   previousMetadata: Json;
+  permalink?: string | null;
 }) {
   const admin = createSupabaseAdminClient();
   if (!admin) throw new Error("SUPABASE_ADMIN_NOT_CONFIGURED");
@@ -186,6 +190,7 @@ async function markContainerPublished(args: {
       ...metadata,
       published_media_id: args.mediaId,
       published_at: new Date().toISOString(),
+      permalink: args.permalink ?? null,
     },
     updated_at: new Date().toISOString(),
   }).eq("id", args.providerAssetRowId);
@@ -201,6 +206,7 @@ async function markContainerPublished(args: {
     state: "PUBLISHED",
     metadata: {
       source_container_id: args.containerId,
+      permalink: args.permalink ?? null,
     },
   }, {
     onConflict: "provider,provider_asset_id",
@@ -221,7 +227,7 @@ async function publishedMedia(mediaId: string, accessToken: string) {
   return metaGraphRequest<PublishedMedia>({
     path: `/${encodeURIComponent(mediaId)}`,
     accessToken,
-    params: { fields: "id" },
+    params: { fields: "id,permalink" },
   });
 }
 
@@ -229,6 +235,17 @@ function publishedIdFromMetadata(metadata: Json) {
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return null;
   const value = metadata.published_media_id;
   return typeof value === "string" ? value : null;
+}
+
+function permalinkFromMetadata(metadata: Json) {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return null;
+  const value = metadata.permalink;
+  return typeof value === "string" && value.startsWith("https://") ? value : null;
+}
+
+function surfaceFromConfig(config: Json) {
+  if (!config || typeof config !== "object" || Array.isArray(config)) return "";
+  return typeof config.surface === "string" ? config.surface.toLowerCase() : "";
 }
 
 function reconcileMetaFailure(response: MetaResponse<unknown>): ReconcileAdapterResult {
@@ -306,6 +323,7 @@ export const instagramPublishAdapter: PublishAdapter = {
     if (preflight) return preflight;
 
     const isVideo = context.media.mime_type.startsWith("video/");
+    const isStory = surfaceFromConfig(context.target.provider_config) === "story";
     let container = await existingContainer(job.postTargetId);
 
     if (container?.state === "PUBLISHED") {
@@ -314,26 +332,39 @@ export const instagramPublishAdapter: PublishAdapter = {
       return {
         outcome: "SUCCEEDED",
         providerRequestId: mediaId ?? container.provider_asset_id,
+        publicUrl: permalinkFromMetadata(container.metadata),
       };
     }
 
     if (!container) {
       const deliveryUrl = await issueMediaDeliveryUrl(context);
-      const create = await metaGraphRequest<ContainerCreated>({
-        path: `/${encodeURIComponent(context.connection.provider_account_id)}/media`,
-        method: "POST",
-        accessToken,
-        params: isVideo
+      let coverUrl: string | null = null;
+      if (!isStory && isVideo && context.cover_media?.mime_type === "image/jpeg" && context.cover_media.processing_status === "READY") {
+        coverUrl = await issueAttachedMediaDeliveryUrl(context, context.cover_media);
+      }
+
+      const createParams: Record<string, string | boolean> = isStory
+        ? isVideo
+          ? { media_type: "STORIES", video_url: deliveryUrl }
+          : { media_type: "STORIES", image_url: deliveryUrl }
+        : isVideo
           ? {
               media_type: "REELS",
               video_url: deliveryUrl,
               caption: context.target.caption,
               share_to_feed: true,
+              ...(coverUrl ? { cover_url: coverUrl } : {}),
             }
           : {
               image_url: deliveryUrl,
               caption: context.target.caption,
-            },
+            };
+
+      const create = await metaGraphRequest<ContainerCreated>({
+        path: `/${encodeURIComponent(context.connection.provider_account_id)}/media`,
+        method: "POST",
+        accessToken,
+        params: createParams,
       });
 
       if (!create.ok || !create.data?.id) {
@@ -345,7 +376,7 @@ export const instagramPublishAdapter: PublishAdapter = {
           organizationId: job.organizationId,
           postTargetId: job.postTargetId,
           containerId: create.data.id,
-          mediaType: isVideo ? "REELS" : "IMAGE",
+          mediaType: isStory ? "STORIES" : isVideo ? "REELS" : "IMAGE",
         });
       } catch {
         return {
@@ -408,6 +439,9 @@ export const instagramPublishAdapter: PublishAdapter = {
       return classifyMetaFailure(publish);
     }
 
+    const mediaDetails = await publishedMedia(publish.data.id, accessToken);
+    const permalink = mediaDetails.ok ? mediaDetails.data?.permalink ?? null : null;
+
     try {
       await markContainerPublished({
         providerAssetRowId: container.id,
@@ -416,6 +450,7 @@ export const instagramPublishAdapter: PublishAdapter = {
         containerId: container.provider_asset_id,
         mediaId: publish.data.id,
         previousMetadata: container.metadata,
+        permalink,
       });
       await revokeMediaDeliveryUrls(job.postTargetId);
     } catch {
@@ -430,6 +465,7 @@ export const instagramPublishAdapter: PublishAdapter = {
     return {
       outcome: "SUCCEEDED",
       providerRequestId: publish.data.id,
+      publicUrl: permalink,
     };
   },
 
@@ -468,6 +504,7 @@ export const instagramPublishAdapter: PublishAdapter = {
       return {
         outcome: "SUCCEEDED",
         providerRequestId: mediaId ?? container.provider_asset_id,
+        publicUrl: permalinkFromMetadata(container.metadata),
       };
     }
 
@@ -497,12 +534,14 @@ export const instagramPublishAdapter: PublishAdapter = {
             containerId: container.provider_asset_id,
             mediaId: providerObjectId,
             previousMetadata: container.metadata,
+            permalink: mediaResponse.data.permalink ?? null,
           });
         } else {
           await rememberPublishedMedia({
             organizationId: job.organizationId,
             postTargetId: job.postTargetId,
             mediaId: providerObjectId,
+            permalink: mediaResponse.data.permalink ?? null,
           });
         }
         await revokeMediaDeliveryUrls(job.postTargetId);
@@ -519,6 +558,7 @@ export const instagramPublishAdapter: PublishAdapter = {
       return {
         outcome: "SUCCEEDED",
         providerRequestId: providerObjectId,
+        publicUrl: mediaResponse.data.permalink ?? null,
       };
     }
 
@@ -549,7 +589,9 @@ export const instagramPublishAdapter: PublishAdapter = {
           organizationId: job.organizationId,
           postTargetId: job.postTargetId,
           containerId: providerObjectId,
-          mediaType: context.media?.mime_type.startsWith("video/") ? "REELS" : "IMAGE",
+          mediaType: surfaceFromConfig(context.target.provider_config) === "story"
+            ? "STORIES"
+            : context.media?.mime_type.startsWith("video/") ? "REELS" : "IMAGE",
         });
       } catch {
         return {
