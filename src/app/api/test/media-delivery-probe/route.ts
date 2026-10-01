@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createUntypedSupabaseAdminClient } from "@/lib/supabase/admin";
+import type { RuntimePublicationContext } from "@/integrations/social/runtime-context";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -35,20 +36,26 @@ export async function GET(request: NextRequest) {
   const admin = createUntypedSupabaseAdminClient();
   if (!admin) return NextResponse.json({ error: "supabase_admin_not_configured" }, { status: 503 });
 
-  const target = await admin
-    .from("post_targets")
-    .select("id,organization_id")
-    .eq("id", targetId)
-    .maybeSingle();
+  // Use the same SECURITY DEFINER RPC as the real worker instead of direct
+  // table reads. This keeps the probe aligned with production permissions.
+  const contextResult = await admin.rpc("worker_get_publication_context", {
+    p_post_target_id: targetId,
+  });
 
-  if (target.error || !target.data) {
-    return NextResponse.json({ error: "target_not_found" }, { status: 404 });
+  if (contextResult.error || !contextResult.data) {
+    return NextResponse.json({
+      error: "target_context_failed",
+      code: contextResult.error?.code ?? null,
+      message: contextResult.error?.message ?? null,
+    }, { status: 404 });
   }
+
+  const context = contextResult.data as RuntimePublicationContext;
 
   const membership = await supabase
     .from("memberships")
     .select("organization_id")
-    .eq("organization_id", target.data.organization_id)
+    .eq("organization_id", context.target.organization_id)
     .eq("user_id", authData.user.id)
     .eq("status", "ACTIVE")
     .maybeSingle();
@@ -57,20 +64,13 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
-  const link = await admin
-    .from("post_target_media")
-    .select("media_asset_id")
-    .eq("post_target_id", targetId)
-    .eq("position", 0)
-    .maybeSingle();
-
-  if (link.error || !link.data?.media_asset_id) {
+  if (!context.media?.id) {
     return NextResponse.json({ error: "media_not_attached" }, { status: 404 });
   }
 
   const issue = await admin.rpc("server_issue_media_delivery_token", {
     p_post_target_id: targetId,
-    p_media_asset_id: link.data.media_asset_id,
+    p_media_asset_id: context.media.id,
     p_ttl_seconds: 900,
   });
 
