@@ -6,6 +6,21 @@ import { decryptToken } from "@/lib/oauth/token-crypto";
 import { getObjectStorageConfig } from "@/lib/storage/r2";
 import type { Json } from "@/lib/supabase/database.types";
 
+export type RuntimeMedia = {
+  id: string;
+  object_key: string | null;
+  filename: string;
+  mime_type: string;
+  size_bytes: number;
+  duration_ms: number | null;
+  width: number | null;
+  height: number | null;
+  storage_class: string;
+  origin: string;
+  processing_status: string;
+  metadata: Json;
+};
+
 export type RuntimePublicationContext = {
   target: {
     id: string;
@@ -42,20 +57,8 @@ export type RuntimePublicationContext = {
     internal_title: string;
     base_caption: string | null;
   };
-  media: null | {
-    id: string;
-    object_key: string | null;
-    filename: string;
-    mime_type: string;
-    size_bytes: number;
-    duration_ms: number | null;
-    width: number | null;
-    height: number | null;
-    storage_class: string;
-    origin: string;
-    processing_status: string;
-    metadata: Json;
-  };
+  media: RuntimeMedia | null;
+  cover_media: RuntimeMedia | null;
 };
 
 export async function loadRuntimePublicationContext(postTargetId: string) {
@@ -84,18 +87,20 @@ export async function accessTokenFromContext(context: RuntimePublicationContext)
   return decryptToken(credential.access_token_ciphertext);
 }
 
-export async function issueMediaDeliveryUrl(context: RuntimePublicationContext, ttlSeconds = 21600) {
-  if (!context.media?.id || context.media.processing_status !== "READY") {
+export async function issueAttachedMediaDeliveryUrl(
+  context: RuntimePublicationContext,
+  media: RuntimeMedia,
+  ttlSeconds = 21600,
+) {
+  if (!media.id || media.processing_status !== "READY") {
     throw new Error("MEDIA_NOT_READY");
   }
 
   const ttl = Math.max(60, Math.min(ttlSeconds, 86400));
 
   // Preview deployments can be protected by Vercel Authentication. External
-  // providers such as Instagram cannot pass that login challenge, so give the
-  // provider a short-lived R2 presigned URL directly in Preview instead of the
-  // app delivery gateway. Production keeps the revocable gateway path.
-  if (process.env.VERCEL_ENV === "preview" && context.media.object_key) {
+  // providers cannot pass that challenge, so Preview uses a short-lived R2 URL.
+  if (process.env.VERCEL_ENV === "preview" && media.object_key) {
     const storage = getObjectStorageConfig();
     if (!storage) throw new Error("OBJECT_STORAGE_NOT_CONFIGURED");
 
@@ -103,9 +108,9 @@ export async function issueMediaDeliveryUrl(context: RuntimePublicationContext, 
       storage.client,
       new GetObjectCommand({
         Bucket: storage.bucket,
-        Key: context.media.object_key,
-        ResponseContentType: context.media.mime_type,
-        ResponseContentDisposition: `inline; filename="${context.media.filename.replace(/["\\]/g, "_")}"`,
+        Key: media.object_key,
+        ResponseContentType: media.mime_type,
+        ResponseContentDisposition: `inline; filename="${media.filename.replace(/["\\]/g, "_")}"`,
       }),
       { expiresIn: ttl },
     );
@@ -119,7 +124,7 @@ export async function issueMediaDeliveryUrl(context: RuntimePublicationContext, 
 
   const result = await admin.rpc("server_issue_media_delivery_token", {
     p_post_target_id: context.target.id,
-    p_media_asset_id: context.media.id,
+    p_media_asset_id: media.id,
     p_ttl_seconds: ttl,
   });
 
@@ -128,6 +133,11 @@ export async function issueMediaDeliveryUrl(context: RuntimePublicationContext, 
   }
 
   return new URL(`/d/${result.data}`, publicUrl).toString();
+}
+
+export async function issueMediaDeliveryUrl(context: RuntimePublicationContext, ttlSeconds = 21600) {
+  if (!context.media) throw new Error("MEDIA_NOT_READY");
+  return issueAttachedMediaDeliveryUrl(context, context.media, ttlSeconds);
 }
 
 export async function revokeMediaDeliveryUrls(postTargetId: string) {
