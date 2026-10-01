@@ -6,6 +6,7 @@ on:
       - feat/ui-redesign-v1
     paths:
       - scripts/patch_composer_ux.py
+      - scripts/composer-ux-trigger.txt
 
 permissions:
   contents: write
