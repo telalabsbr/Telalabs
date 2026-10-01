@@ -5,11 +5,13 @@ import type { Json } from "@/lib/supabase/database.types";
 import {
   getEnabledPublishAdapters,
   type PublicationWorkerJob,
+  type PublishAdapter,
   type PublishAdapterResult,
 } from "@/integrations/social/provider-registry";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 type ClaimedJobRow = {
   job_id: string;
@@ -44,6 +46,36 @@ function toWorkerJob(row: ClaimedJobRow): PublicationWorkerJob {
     attemptNo: row.attempt_no,
     payload: row.payload,
   };
+}
+
+function wait(milliseconds: number) {
+  return new Promise(resolve => setTimeout(resolve, milliseconds));
+}
+
+/**
+ * Reels normalmente demoram mais que imagens para o Instagram terminar o
+ * container. Enquanto o provider disser apenas "PROCESSING", reaproveitamos o
+ * mesmo container dentro da mesma tentativa em vez de finalizar cedo demais.
+ * Isso evita duplicação e também evita gastar tentativas só por latência de
+ * processamento do Instagram.
+ */
+async function publishWithProviderProcessingWait(
+  adapter: PublishAdapter,
+  job: PublicationWorkerJob,
+): Promise<PublishAdapterResult> {
+  const deadline = Date.now() + 42_000;
+  let result = await adapter.publish(job);
+
+  while (
+    result.outcome === "TRANSIENT_FAILURE" &&
+    result.errorCode === "INSTAGRAM_CONTAINER_PROCESSING" &&
+    Date.now() < deadline
+  ) {
+    await wait(2_500);
+    result = await adapter.publish(job);
+  }
+
+  return result;
 }
 
 export async function POST(request: NextRequest) {
@@ -132,7 +164,7 @@ export async function POST(request: NextRequest) {
 
     let providerResult: PublishAdapterResult;
     try {
-      providerResult = await adapter.publish(job);
+      providerResult = await publishWithProviderProcessingWait(adapter, job);
     } catch {
       providerResult = {
         outcome: "UNKNOWN",
