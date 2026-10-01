@@ -1,5 +1,12 @@
 "use client";
 
+import {
+  transcodeAudioToMp4,
+  transcodeGifToMp4,
+  transcodeVideoToMp4,
+  type TranscodeProgress,
+} from "./transcode";
+
 export type PreparedMediaMetadata = {
   durationMs: number | null;
   width: number | null;
@@ -13,6 +20,10 @@ export type PreparedMediaFile = {
   notice: string | null;
 };
 
+export type PrepareMediaOptions = {
+  onProgress?: (progress: TranscodeProgress) => void;
+};
+
 const JPEG_TYPES = new Set(["image/jpeg", "image/jpg"]);
 const CONVERTIBLE_STATIC_IMAGE_TYPES = new Set([
   "image/png",
@@ -22,7 +33,28 @@ const CONVERTIBLE_STATIC_IMAGE_TYPES = new Set([
   "image/heif",
   "image/bmp",
 ]);
-const VIDEO_TYPES = new Set(["video/mp4", "video/quicktime"]);
+const DIRECT_VIDEO_TYPES = new Set(["video/mp4", "video/quicktime"]);
+const TRANSCODE_VIDEO_TYPES = new Set([
+  "video/webm",
+  "video/x-msvideo",
+  "video/avi",
+  "video/x-matroska",
+  "video/mpeg",
+  "video/x-m4v",
+  "video/3gpp",
+  "video/ogg",
+]);
+const AUDIO_TYPES = new Set([
+  "audio/mpeg",
+  "audio/mp3",
+  "audio/wav",
+  "audio/x-wav",
+  "audio/mp4",
+  "audio/x-m4a",
+  "audio/aac",
+  "audio/ogg",
+  "audio/flac",
+]);
 
 function extensionOf(file: File) {
   const match = file.name.toLowerCase().match(/\.([a-z0-9]+)$/);
@@ -42,7 +74,19 @@ function inferredType(file: File) {
   if (extension === "gif") return "image/gif";
   if (extension === "mp4") return "video/mp4";
   if (extension === "mov") return "video/quicktime";
-  if (["mp3", "wav", "m4a", "aac", "ogg"].includes(extension)) return "audio/unknown";
+  if (extension === "webm") return "video/webm";
+  if (extension === "avi") return "video/x-msvideo";
+  if (extension === "mkv") return "video/x-matroska";
+  if (["mpeg", "mpg"].includes(extension)) return "video/mpeg";
+  if (extension === "m4v") return "video/x-m4v";
+  if (["3gp", "3gpp"].includes(extension)) return "video/3gpp";
+  if (extension === "ogv") return "video/ogg";
+  if (extension === "mp3") return "audio/mpeg";
+  if (extension === "wav") return "audio/wav";
+  if (extension === "m4a") return "audio/mp4";
+  if (extension === "aac") return "audio/aac";
+  if (extension === "ogg") return "audio/ogg";
+  if (extension === "flac") return "audio/flac";
   return "application/octet-stream";
 }
 
@@ -149,7 +193,18 @@ async function probeVideo(file: File): Promise<PreparedMediaMetadata> {
   }
 }
 
-export async function prepareMediaFile(file: File): Promise<PreparedMediaFile> {
+async function preparedMp4(file: File, notice: string): Promise<PreparedMediaFile> {
+  let metadata: PreparedMediaMetadata = { durationMs: null, width: null, height: null };
+  try {
+    metadata = await probeVideo(file);
+  } catch {
+    // The output is a normalized MP4. Provider validation remains authoritative
+    // if this browser cannot read the generated metadata.
+  }
+  return { file, kind: "video", metadata, notice };
+}
+
+export async function prepareMediaFile(file: File, options: PrepareMediaOptions = {}): Promise<PreparedMediaFile> {
   const mimeType = inferredType(file);
 
   if (JPEG_TYPES.has(mimeType)) {
@@ -169,10 +224,11 @@ export async function prepareMediaFile(file: File): Promise<PreparedMediaFile> {
   }
 
   if (mimeType === "image/gif") {
-    throw new Error("animated_gif_requires_video_conversion");
+    const converted = await transcodeGifToMp4(file, options.onProgress);
+    return preparedMp4(converted, `${file.name} foi convertido automaticamente de GIF para MP4 para publicação nas redes.`);
   }
 
-  if (VIDEO_TYPES.has(mimeType)) {
+  if (DIRECT_VIDEO_TYPES.has(mimeType)) {
     const normalized = file.type === mimeType
       ? file
       : new File([file], file.name, { type: mimeType, lastModified: file.lastModified });
@@ -181,24 +237,20 @@ export async function prepareMediaFile(file: File): Promise<PreparedMediaFile> {
     try {
       metadata = await probeVideo(normalized);
     } catch {
-      // Some browsers cannot decode MOV metadata even when Instagram can ingest the file.
-      // Keep the upload available and let the provider perform the final codec validation.
+      // Some browsers cannot decode MOV metadata even when a provider can ingest it.
     }
 
-    return {
-      file: normalized,
-      kind: "video",
-      metadata,
-      notice: null,
-    };
+    return { file: normalized, kind: "video", metadata, notice: null };
   }
 
-  if (mimeType.startsWith("audio/")) {
-    throw new Error("audio_requires_visual");
+  if (TRANSCODE_VIDEO_TYPES.has(mimeType) || mimeType.startsWith("video/")) {
+    const converted = await transcodeVideoToMp4(file, options.onProgress);
+    return preparedMp4(converted, `${file.name} foi convertido automaticamente para MP4 para aumentar a compatibilidade entre as redes.`);
   }
 
-  if (mimeType.startsWith("video/")) {
-    throw new Error("video_format_requires_conversion");
+  if (AUDIO_TYPES.has(mimeType) || mimeType.startsWith("audio/")) {
+    const converted = await transcodeAudioToMp4(file, options.onProgress);
+    return preparedMp4(converted, `${file.name} foi transformado automaticamente em vídeo MP4 com uma capa para poder ser publicado nas redes.`);
   }
 
   if (mimeType.startsWith("image/")) {
