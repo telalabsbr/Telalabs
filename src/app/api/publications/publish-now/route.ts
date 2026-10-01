@@ -55,14 +55,14 @@ function wait(milliseconds: number) {
 async function publishWithProviderProcessingWait(
   adapter: PublishAdapter,
   job: PublicationWorkerJob,
+  deadline: number,
 ): Promise<PublishAdapterResult> {
-  const deadline = Date.now() + 150_000;
   let result = await adapter.publish(job);
 
   while (
     result.outcome === "TRANSIENT_FAILURE" &&
     result.errorCode === "INSTAGRAM_CONTAINER_PROCESSING" &&
-    Date.now() < deadline
+    Date.now() + 3_500 < deadline
   ) {
     await wait(3_000);
     result = await adapter.publish(job);
@@ -151,6 +151,9 @@ export async function POST(request: NextRequest) {
     providerRequestId?: string | null;
     publicUrl?: string | null;
   }> = [];
+  // One shared deadline prevents Reel + Story from each consuming the full
+  // function budget. Anything still processing is safely left for the cron worker.
+  const providerWaitDeadline = Date.now() + 160_000;
 
   for (const job of jobs) {
     const adapter = adapters.get(job.provider);
@@ -158,7 +161,7 @@ export async function POST(request: NextRequest) {
 
     let providerResult: PublishAdapterResult;
     try {
-      providerResult = await publishWithProviderProcessingWait(adapter, job);
+      providerResult = await publishWithProviderProcessingWait(adapter, job, providerWaitDeadline);
     } catch {
       providerResult = {
         outcome: "UNKNOWN",
