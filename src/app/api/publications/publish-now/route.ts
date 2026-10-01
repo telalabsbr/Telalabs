@@ -52,13 +52,6 @@ function wait(milliseconds: number) {
   return new Promise(resolve => setTimeout(resolve, milliseconds));
 }
 
-/**
- * Reels podem levar bem mais tempo que imagens para o Instagram finalizar o
- * container. Enquanto o provider disser apenas PROCESSING, reaproveitamos o
- * mesmo container dentro da mesma tentativa. Isso evita duplicidade e evita
- * mostrar ao usuário uma falsa falha só porque o Instagram ainda está
- * processando o vídeo.
- */
 async function publishWithProviderProcessingWait(
   adapter: PublishAdapter,
   job: PublicationWorkerJob,
@@ -97,7 +90,6 @@ export async function POST(request: NextRequest) {
   const postId = body.post_id?.trim();
   if (!postId) return NextResponse.json({ error: "post_id_required" }, { status: 400 });
 
-  // RLS + sessão do usuário provam que o post pertence a uma organização acessível.
   const post = await supabase
     .from("posts")
     .select("id,organization_id,deleted_at")
@@ -156,6 +148,8 @@ export async function POST(request: NextRequest) {
     finalizedAs?: string;
     errorCode?: string | null;
     errorMessage?: string | null;
+    providerRequestId?: string | null;
+    publicUrl?: string | null;
   }> = [];
 
   for (const job of jobs) {
@@ -185,6 +179,8 @@ export async function POST(request: NextRequest) {
         outcome: providerResult.outcome,
         errorCode: providerResult.errorCode ?? null,
         errorMessage: finish.error.message,
+        providerRequestId: providerResult.providerRequestId ?? null,
+        publicUrl: providerResult.publicUrl ?? null,
       });
       continue;
     }
@@ -196,6 +192,8 @@ export async function POST(request: NextRequest) {
       finalizedAs: typeof finish.data === "string" ? finish.data : undefined,
       errorCode: providerResult.errorCode ?? null,
       errorMessage: providerResult.errorMessageSafe ?? null,
+      providerRequestId: providerResult.providerRequestId ?? null,
+      publicUrl: providerResult.publicUrl ?? null,
     });
   }
 
