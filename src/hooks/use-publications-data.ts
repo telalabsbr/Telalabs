@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { publications as demoPublications } from "@/data/mock";
 import type { Publication, PublicationDestination, PublicationStatus } from "@/domain/publication";
 import { socialPlatforms, type SocialPlatform } from "@/domain/social";
@@ -11,11 +11,12 @@ function isPlatform(value: string): value is SocialPlatform {
   return (socialPlatforms as readonly string[]).includes(value);
 }
 
-function mapTargetState(state: string): PublicationStatus {
+function mapTargetState(state: string, lastErrorCode?: string | null): PublicationStatus {
   if (state === "PUBLISHED") return "published";
   if (state === "FAILED_FINAL") return "failed";
   if (state === "NEEDS_ACTION") return "needs_action";
   if (state === "UNKNOWN") return "verifying";
+  if (state === "RETRY_WAIT" && /CONTAINER_PROCESSING/i.test(lastErrorCode ?? "")) return "processing";
   if (state === "RETRY_WAIT") return "retrying";
   if (state === "CANCELLED") return "cancelled";
   if (state === "DRAFT") return "draft";
@@ -52,12 +53,14 @@ export function usePublicationsData() {
   const [publications, setPublications] = useState<Publication[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const pumpingRef = useRef(false);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = options?.silent ?? false;
     setError("");
 
     if (tenant.loading) {
-      setLoading(true);
+      if (!silent) setLoading(true);
       return;
     }
 
@@ -75,7 +78,7 @@ export function usePublicationsData() {
       return;
     }
 
-    setLoading(true);
+    if (!silent) setLoading(true);
 
     const postsResult = await client
       .from("posts")
@@ -151,7 +154,7 @@ export function usePublicationsData() {
       const destination: PublicationDestination = {
         id: target.id,
         platform: target.provider,
-        status: mapTargetState(target.state),
+        status: mapTargetState(target.state, lastAttempt?.error_code),
         connectionId: target.social_connection_id,
         title: target.title_override ?? undefined,
         text: target.caption_override ?? "",
@@ -192,6 +195,47 @@ export function usePublicationsData() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  const activePostIds = publications
+    .filter(publication => publication.status === "processing" || publication.status === "retrying")
+    .map(publication => publication.id)
+    .slice(0, 6)
+    .join("|");
+
+  useEffect(() => {
+    if (tenant.source !== "supabase" || !activePostIds) return;
+
+    let cancelled = false;
+    const postIds = activePostIds.split("|").filter(Boolean);
+
+    const pump = async () => {
+      if (cancelled || pumpingRef.current) return;
+      pumpingRef.current = true;
+
+      try {
+        for (const postId of postIds) {
+          if (cancelled) break;
+          await fetch("/api/publications/publish-now", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ post_id: postId }),
+          }).catch(() => null);
+        }
+        if (!cancelled) await refresh({ silent: true });
+      } finally {
+        pumpingRef.current = false;
+      }
+    };
+
+    const firstRun = window.setTimeout(() => void pump(), 2_500);
+    const interval = window.setInterval(() => void pump(), 15_000);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(firstRun);
+      window.clearInterval(interval);
+    };
+  }, [tenant.source, activePostIds, refresh]);
 
   const retryPost = useCallback(async (postId: string) => {
     if (tenant.source !== "supabase") return { count: 0, error: "A retentativa real só está disponível em uma sessão conectada." };
