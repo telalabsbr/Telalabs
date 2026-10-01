@@ -1,0 +1,32 @@
+name: One-off calendar links
+
+on:
+  push:
+    branches:
+      - feat/ui-redesign-v1
+    paths:
+      - scripts/patch_calendar_links.py
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/ui-redesign-v1
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python scripts/patch_calendar_links.py
+      - name: Commit changes
+        run: |
+          if git diff --quiet; then exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add 'src/app/(app)/calendario/page.tsx'
+          git commit -m "feat: links externos e Story no calendário"
+          git push origin HEAD:feat/ui-redesign-v1
