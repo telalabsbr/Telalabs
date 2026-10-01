@@ -26,6 +26,7 @@ import { PlatformIcon } from "./ui/platform-icon";
 import { useTenantData } from "@/components/tenant-provider";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { uploadMediaFile } from "@/lib/media/upload";
+import { prepareMediaFile, type PreparedMediaMetadata } from "@/lib/media/compatibility";
 
 type PublishMode = "now" | "schedule";
 type RetentionMode = "delete" | "library";
@@ -180,6 +181,8 @@ export function PublicationEditor() {
   const [fileSize, setFileSize] = useState(0);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [mediaNotice, setMediaNotice] = useState("");
+  const [mediaMetadata, setMediaMetadata] = useState<PreparedMediaMetadata>({ durationMs: null, width: null, height: null });
   const [stagedMedia, setStagedMedia] = useState<{ key: string; mediaId: string } | null>(null);
   const [existingMedia, setExistingMedia] = useState<{ id: string; name: string; type: "image" | "video"; size: number } | null>(null);
   const [editingPostId, setEditingPostId] = useState<string | null>(null);
@@ -361,16 +364,40 @@ export function PublicationEditor() {
   const selectedOptions = destinationOptions.filter(option => selectedIds.includes(option.id));
   const activeOption = selectedOptions.find(option => option.id === activeId) ?? selectedOptions[0] ?? destinationOptions[0];
 
-  function handleFile(file?: File) {
+  async function handleFile(file?: File) {
     if (!file) return;
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
-    setFileName(file.name);
-    setFileType(file.type.startsWith("video/") ? "video" : "image");
-    setFileSize(file.size);
-    setSelectedFile(file);
-    setUploadProgress(null);
-    setStagedMedia(null);
-    setPreviewUrl(URL.createObjectURL(file));
+    setSaveError("");
+    setSaveMessage("Preparando mídia...");
+    setMediaNotice("");
+
+    try {
+      const prepared = await prepareMediaFile(file);
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      setFileName(prepared.file.name);
+      setFileType(prepared.kind);
+      setFileSize(prepared.file.size);
+      setSelectedFile(prepared.file);
+      setMediaMetadata(prepared.metadata);
+      setMediaNotice(prepared.notice ?? "");
+      setUploadProgress(null);
+      setStagedMedia(null);
+      setPreviewUrl(URL.createObjectURL(prepared.file));
+      setSaveMessage(prepared.notice ? "Mídia adaptada automaticamente." : "Mídia pronta.");
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "unsupported_media_type";
+      const messages: Record<string, string> = {
+        animated_gif_requires_video_conversion: "GIF animado ainda precisa ser convertido para vídeo MP4 antes da publicação.",
+        audio_requires_visual: "Áudio sozinho ainda não pode ser publicado. Na próxima etapa o Tela poderá gerar um vídeo com capa para MP3/WAV.",
+        video_format_requires_conversion: "Este formato de vídeo ainda precisa ser convertido para MP4 ou MOV.",
+        image_format_requires_conversion: "Este formato de imagem ainda não pode ser convertido automaticamente.",
+        image_conversion_not_supported_in_browser: "Este arquivo não pôde ser convertido neste navegador. Tente JPG, PNG, WebP ou AVIF.",
+        image_conversion_failed: "Não foi possível converter esta imagem automaticamente.",
+        image_decode_failed: "A imagem não pôde ser lida. Verifique se o arquivo está íntegro.",
+        unsupported_media_type: "Este tipo de arquivo ainda não é suportado para publicação.",
+      };
+      setSaveError(messages[code] ?? "Não foi possível preparar esta mídia para publicação.");
+      setSaveMessage("");
+    }
   }
 
   function removeFile() {
@@ -378,6 +405,8 @@ export function PublicationEditor() {
     setPreviewUrl(null);
     setSelectedFile(null);
     setUploadProgress(null);
+    setMediaNotice("");
+    setMediaMetadata({ durationMs: null, width: null, height: null });
     setStagedMedia(null);
 
     if (existingMedia) {
@@ -425,6 +454,14 @@ export function PublicationEditor() {
   const checks = selectedOptions.map(option => {
     if (!base.trim()) return { option, level: "error" as const, text: "Adicione a descrição base" };
     if (tenant.source === "supabase" && option.status !== "connected") return { option, level: "error" as const, text: "Conta precisa ser reconectada" };
+
+    if (option.platform === "instagram") {
+      if (!fileType && !existingMedia) return { option, level: "error" as const, text: "Adicione uma imagem ou vídeo" };
+      if (fileType === "video" && mediaMetadata.durationMs !== null && mediaMetadata.durationMs < 3_000) return { option, level: "error" as const, text: "Reel precisa ter ao menos 3 segundos" };
+      if (fileType === "video" && mediaMetadata.durationMs !== null && mediaMetadata.durationMs > 15 * 60 * 1000) return { option, level: "error" as const, text: "Reel ultrapassa 15 minutos" };
+      if (fileType === "video" && mediaMetadata.width !== null && mediaMetadata.width > 1920) return { option, level: "error" as const, text: "Reduza a largura do Reel para até 1920 px" };
+      if (fileType === "video" && fileSize > 1024 * 1024 * 1024) return { option, level: "error" as const, text: "Reel ultrapassa 1 GB" };
+    }
 
     if (option.contentIntent === "LONG_FORM") {
       if (fileType !== "video") return { option, level: "error" as const, text: "Adicione um vídeo para o YouTube" };
@@ -483,6 +520,7 @@ export function PublicationEditor() {
             file: selectedFile,
             brandId: tenant.activeBrand.id,
             retention,
+            metadata: mediaMetadata,
             onProgress: progress => {
               setUploadProgress(progress.percent);
               setSaveMessage(`Enviando mídia: ${progress.percent}%`);
@@ -497,6 +535,7 @@ export function PublicationEditor() {
             object_storage_not_configured: "O storage de mídia ainda não está configurado neste ambiente.",
             file_too_large: "O arquivo ultrapassa o limite inicial de 10 GB.",
             unsupported_media_type: "Este tipo de arquivo ainda não é suportado.",
+            invalid_media_request: "Os dados técnicos da mídia não puderam ser validados.",
             upload_part_missing_etag: "Não foi possível confirmar o upload. A configuração CORS do storage precisa expor o cabeçalho ETag.",
           };
           setSaveError(messages[code] ?? "Não foi possível concluir o upload da mídia. Tente novamente.");
@@ -652,12 +691,13 @@ export function PublicationEditor() {
               <p className="mt-1 text-sm leading-5 text-slate-500 sm:text-xs">
                 {fileSize ? `${(fileSize / (1024 * 1024)).toFixed(fileSize >= 1024 * 1024 * 1024 ? 0 : 1)} MB` : "Arquivo selecionado"} · o envio real vai direto do navegador ao storage quando a publicação for salva.
               </p>
+              {mediaNotice && <p className="mt-2 rounded-lg bg-emerald-50 px-3 py-2 text-xs font-semibold leading-5 text-emerald-800">{mediaNotice}</p>}
               {uploadProgress !== null && <div className="mt-3">
                 <div className="h-2 overflow-hidden rounded-full bg-slate-200"><div className="h-full rounded-full bg-indigo-600 transition-all" style={{ width: uploadProgress + "%" }}/></div>
                 <p className="mt-1 text-xs font-bold text-slate-500">{uploadProgress < 100 ? `Upload ${uploadProgress}%` : "Mídia pronta"}</p>
               </div>}
               <div className="mt-4 flex flex-wrap gap-2">
-                <label className="btn-secondary cursor-pointer"><UploadCloud size={15}/> Substituir<input type="file" accept="image/*,video/*" className="sr-only" onChange={event => handleFile(event.target.files?.[0])}/></label>
+                <label className="btn-secondary cursor-pointer"><UploadCloud size={15}/> Substituir<input type="file" accept=".jpg,.jpeg,.png,.webp,.avif,.heic,.heif,.bmp,.mp4,.mov,image/jpeg,image/png,image/webp,image/avif,image/heic,image/heif,image/bmp,video/mp4,video/quicktime" className="sr-only" onChange={event => handleFile(event.target.files?.[0])}/></label>
                 {selectedFile && <button onClick={removeFile} className="btn-secondary !text-red-600"><Trash2 size={15}/> Cancelar substituição</button>}
               </div>
               <div className="mt-4 border-t border-slate-200 pt-4">
@@ -673,7 +713,7 @@ export function PublicationEditor() {
               <ImagePlus className="text-indigo-600" size={26}/>
               <span className="mt-2 text-base font-bold text-slate-900 sm:text-sm">Adicionar imagem ou vídeo</span>
               <span className="mt-1 text-sm text-slate-500 sm:text-xs">Clique para selecionar</span>
-              <input type="file" accept="image/*,video/*" className="sr-only" onChange={event => handleFile(event.target.files?.[0])}/>
+              <input type="file" accept=".jpg,.jpeg,.png,.webp,.avif,.heic,.heif,.bmp,.mp4,.mov,image/jpeg,image/png,image/webp,image/avif,image/heic,image/heif,image/bmp,video/mp4,video/quicktime" className="sr-only" onChange={event => handleFile(event.target.files?.[0])}/>
             </label>
             <button className="flex min-h-36 flex-col items-center justify-center rounded-xl border border-slate-200 bg-slate-50 p-5 text-center hover:bg-slate-100">
               <Library className="text-slate-600" size={26}/>
