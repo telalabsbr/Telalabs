@@ -21,6 +21,12 @@ type UploadProgress = {
   totalParts: number;
 };
 
+type MediaMetadata = {
+  durationMs?: number | null;
+  width?: number | null;
+  height?: number | null;
+};
+
 async function jsonOrThrow(response: Response) {
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -59,6 +65,7 @@ export async function uploadMediaFile(args: {
   file: File;
   brandId: string;
   retention: "delete" | "library";
+  metadata?: MediaMetadata;
   onProgress?: (progress: UploadProgress) => void;
 }) {
   const startResponse = await fetch("/api/media/multipart/start", {
@@ -70,6 +77,9 @@ export async function uploadMediaFile(args: {
       mime_type: args.file.type || "application/octet-stream",
       size_bytes: args.file.size,
       retention: args.retention,
+      duration_ms: args.metadata?.durationMs ?? null,
+      width: args.metadata?.width ?? null,
+      height: args.metadata?.height ?? null,
     }),
   });
 
