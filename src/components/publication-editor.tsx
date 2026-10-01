@@ -371,7 +371,12 @@ export function PublicationEditor() {
     setMediaNotice("");
 
     try {
-      const prepared = await prepareMediaFile(file);
+      const prepared = await prepareMediaFile(file, {
+        onProgress: progress => {
+          const suffix = progress.progress > 0 && progress.progress < 100 ? ` ${progress.progress}%` : "";
+          setSaveMessage(`${progress.message}${suffix}`);
+        },
+      });
       if (previewUrl) URL.revokeObjectURL(previewUrl);
       setFileName(prepared.file.name);
       setFileType(prepared.kind);
@@ -386,9 +391,10 @@ export function PublicationEditor() {
     } catch (error) {
       const code = error instanceof Error ? error.message : "unsupported_media_type";
       const messages: Record<string, string> = {
-        animated_gif_requires_video_conversion: "GIF animado ainda precisa ser convertido para vídeo MP4 antes da publicação.",
-        audio_requires_visual: "Áudio sozinho ainda não pode ser publicado. Na próxima etapa o Tela poderá gerar um vídeo com capa para MP3/WAV.",
-        video_format_requires_conversion: "Este formato de vídeo ainda precisa ser convertido para MP4 ou MOV.",
+        media_conversion_too_large: "Este arquivo é grande demais para conversão automática no navegador. Arquivos que já estejam em MP4 continuam aceitos normalmente.",
+        audio_conversion_too_large: "Este áudio é grande demais para ser transformado automaticamente em vídeo neste navegador.",
+        media_conversion_failed: "Não foi possível converter esta mídia para MP4. Tente outro arquivo ou um MP4 já pronto.",
+        audio_cover_failed: "Não foi possível gerar a capa automática para este áudio.",
         image_format_requires_conversion: "Este formato de imagem ainda não pode ser convertido automaticamente.",
         image_conversion_not_supported_in_browser: "Este arquivo não pôde ser convertido neste navegador. Tente JPG, PNG, WebP ou AVIF.",
         image_conversion_failed: "Não foi possível converter esta imagem automaticamente.",
@@ -697,7 +703,7 @@ export function PublicationEditor() {
                 <p className="mt-1 text-xs font-bold text-slate-500">{uploadProgress < 100 ? `Upload ${uploadProgress}%` : "Mídia pronta"}</p>
               </div>}
               <div className="mt-4 flex flex-wrap gap-2">
-                <label className="btn-secondary cursor-pointer"><UploadCloud size={15}/> Substituir<input type="file" accept=".jpg,.jpeg,.png,.webp,.avif,.heic,.heif,.bmp,.mp4,.mov,image/jpeg,image/png,image/webp,image/avif,image/heic,image/heif,image/bmp,video/mp4,video/quicktime" className="sr-only" onChange={event => handleFile(event.target.files?.[0])}/></label>
+                <label className="btn-secondary cursor-pointer"><UploadCloud size={15}/> Substituir<input type="file" accept=".jpg,.jpeg,.png,.webp,.avif,.heic,.heif,.bmp,.gif,.mp4,.mov,.webm,.avi,.mkv,.mpeg,.mpg,.m4v,.3gp,.ogv,.mp3,.wav,.m4a,.aac,.ogg,.flac,image/jpeg,image/png,image/webp,image/avif,image/heic,image/heif,image/bmp,image/gif,video/mp4,video/quicktime,video/webm,video/x-msvideo,video/x-matroska,video/mpeg,video/x-m4v,video/3gpp,video/ogg,audio/mpeg,audio/wav,audio/mp4,audio/aac,audio/ogg,audio/flac" className="sr-only" onChange={event => handleFile(event.target.files?.[0])}/></label>
                 {selectedFile && <button onClick={removeFile} className="btn-secondary !text-red-600"><Trash2 size={15}/> Cancelar substituição</button>}
               </div>
               <div className="mt-4 border-t border-slate-200 pt-4">
@@ -711,9 +717,9 @@ export function PublicationEditor() {
           </div> : <div className="mt-4 grid min-w-0 gap-3 sm:grid-cols-2">
             <label className="flex min-h-36 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-indigo-200 bg-indigo-50/40 p-5 text-center transition-colors hover:bg-indigo-50">
               <ImagePlus className="text-indigo-600" size={26}/>
-              <span className="mt-2 text-base font-bold text-slate-900 sm:text-sm">Adicionar imagem ou vídeo</span>
-              <span className="mt-1 text-sm text-slate-500 sm:text-xs">Clique para selecionar</span>
-              <input type="file" accept=".jpg,.jpeg,.png,.webp,.avif,.heic,.heif,.bmp,.mp4,.mov,image/jpeg,image/png,image/webp,image/avif,image/heic,image/heif,image/bmp,video/mp4,video/quicktime" className="sr-only" onChange={event => handleFile(event.target.files?.[0])}/>
+              <span className="mt-2 text-base font-bold text-slate-900 sm:text-sm">Adicionar mídia</span>
+              <span className="mt-1 text-sm text-slate-500 sm:text-xs">Imagem, vídeo, GIF ou áudio · o Tela adapta quando necessário</span>
+              <input type="file" accept=".jpg,.jpeg,.png,.webp,.avif,.heic,.heif,.bmp,.gif,.mp4,.mov,.webm,.avi,.mkv,.mpeg,.mpg,.m4v,.3gp,.ogv,.mp3,.wav,.m4a,.aac,.ogg,.flac,image/jpeg,image/png,image/webp,image/avif,image/heic,image/heif,image/bmp,image/gif,video/mp4,video/quicktime,video/webm,video/x-msvideo,video/x-matroska,video/mpeg,video/x-m4v,video/3gpp,video/ogg,audio/mpeg,audio/wav,audio/mp4,audio/aac,audio/ogg,audio/flac" className="sr-only" onChange={event => handleFile(event.target.files?.[0])}/>
             </label>
             <button className="flex min-h-36 flex-col items-center justify-center rounded-xl border border-slate-200 bg-slate-50 p-5 text-center hover:bg-slate-100">
               <Library className="text-slate-600" size={26}/>
