@@ -605,7 +605,7 @@ export function PublicationEditor() {
       } else if (needsRetry > 0) {
         setSaveMessage("Envio iniciado. A rede ainda está processando a mídia e o worker fará a próxima verificação automaticamente.");
       } else if (succeeded > 0) {
-        setSaveMessage(succeeded === 1 ? "Publicado com sucesso." : `${succeeded} destinos publicados com sucesso.`);
+        setSaveMessage(succeeded === 1 ? "Publicado." : `${succeeded} destinos publicados.`);
       } else if ((publishResult?.claimed ?? 0) === 0) {
         setSaveMessage("Publicação salva. Não havia destino habilitado aguardando envio neste instante.");
       } else {

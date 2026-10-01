@@ -3,8 +3,8 @@ import type { PublicationStatus } from "@/domain/publication";
 const labels: Record<PublicationStatus, string> = {
   draft: "Rascunho",
   scheduled: "Agendado",
-  processing: "Processando",
-  retrying: "Tentando novamente",
+  processing: "Publicando",
+  retrying: "Retentativa automática",
   verifying: "Verificando",
   needs_action: "Ação necessária",
   published: "Publicado",
