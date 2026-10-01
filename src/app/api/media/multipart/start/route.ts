@@ -14,6 +14,13 @@ function safeFilename(value: string) {
   return cleaned.slice(-180) || "media.bin";
 }
 
+function optionalPositiveInteger(value: unknown) {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  return Math.round(parsed);
+}
+
 export async function POST(request: NextRequest) {
   const storage = getObjectStorageConfig();
   if (!storage) return NextResponse.json({ error: "object_storage_not_configured" }, { status: 503 });
@@ -31,6 +38,9 @@ export async function POST(request: NextRequest) {
     mime_type?: string;
     size_bytes?: number;
     retention?: "delete" | "library";
+    duration_ms?: number | null;
+    width?: number | null;
+    height?: number | null;
   };
 
   const brandId = body?.brand_id ?? "";
@@ -38,6 +48,9 @@ export async function POST(request: NextRequest) {
   const mimeType = body?.mime_type ?? "";
   const sizeBytes = Number(body?.size_bytes ?? -1);
   const retention = body?.retention === "library" ? "library" : "delete";
+  const durationMs = optionalPositiveInteger(body?.duration_ms);
+  const width = optionalPositiveInteger(body?.width);
+  const height = optionalPositiveInteger(body?.height);
 
   if (!brandId || !mimeType || !Number.isFinite(sizeBytes) || sizeBytes <= 0) {
     return NextResponse.json({ error: "invalid_media_request" }, { status: 400 });
@@ -79,12 +92,16 @@ export async function POST(request: NextRequest) {
     filename,
     mime_type: mimeType,
     size_bytes: sizeBytes,
+    duration_ms: durationMs,
+    width,
+    height,
     processing_status: "PENDING_UPLOAD",
     created_by: user.id,
     metadata: {
       retention,
       upload_protocol: "s3_multipart",
       media_pipeline: sizeBytes > LARGE_FILE_BYTES ? "LARGE_FILE_TEMP" : "STANDARD",
+      client_metadata_probed: Boolean(durationMs || width || height),
     },
   });
 
