@@ -56,19 +56,23 @@ export interface PublishAdapter {
 }
 
 /**
- * Um provider só entra no registry depois que o adapter existe E uma flag
- * explícita do ambiente o habilita. Isso impede que o worker consuma jobs de
- * integrações ainda não validadas com credenciais reais.
+ * O Instagram já passou por teste real ponta a ponta. A partir daqui o adapter
+ * entra no registry quando a configuração mínima de runtime está presente.
+ * Providers futuros continuam fora até terem adapter e validação equivalentes.
  */
 export function getEnabledPublishAdapters(): Map<string, PublishAdapter> {
   const adapters = new Map<string, PublishAdapter>();
 
-  if (
-    process.env.INSTAGRAM_PUBLISHING_ADAPTER_ENABLED === "true" &&
-    process.env.META_GRAPH_BASE_URL &&
-    process.env.APP_PUBLIC_URL &&
-    process.env.OAUTH_TOKEN_ENCRYPTION_KEY
-  ) {
+  const hasTokenCrypto = Boolean(process.env.OAUTH_TOKEN_ENCRYPTION_KEY);
+  const hasStorage = Boolean(
+    process.env.OBJECT_STORAGE_ENDPOINT &&
+    process.env.OBJECT_STORAGE_BUCKET &&
+    process.env.OBJECT_STORAGE_ACCESS_KEY_ID &&
+    process.env.OBJECT_STORAGE_SECRET_ACCESS_KEY,
+  );
+  const hasDeliveryOrigin = process.env.VERCEL_ENV === "preview" || Boolean(process.env.APP_PUBLIC_URL);
+
+  if (hasTokenCrypto && hasStorage && hasDeliveryOrigin) {
     adapters.set(instagramPublishAdapter.provider, instagramPublishAdapter);
   }
 
