@@ -11,7 +11,7 @@ import {
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 180;
 
 type ClaimedJobRow = {
   job_id: string;
@@ -53,17 +53,17 @@ function wait(milliseconds: number) {
 }
 
 /**
- * Reels normalmente demoram mais que imagens para o Instagram terminar o
- * container. Enquanto o provider disser apenas "PROCESSING", reaproveitamos o
- * mesmo container dentro da mesma tentativa em vez de finalizar cedo demais.
- * Isso evita duplicação e também evita gastar tentativas só por latência de
- * processamento do Instagram.
+ * Reels podem levar bem mais tempo que imagens para o Instagram finalizar o
+ * container. Enquanto o provider disser apenas PROCESSING, reaproveitamos o
+ * mesmo container dentro da mesma tentativa. Isso evita duplicidade e evita
+ * mostrar ao usuário uma falsa falha só porque o Instagram ainda está
+ * processando o vídeo.
  */
 async function publishWithProviderProcessingWait(
   adapter: PublishAdapter,
   job: PublicationWorkerJob,
 ): Promise<PublishAdapterResult> {
-  const deadline = Date.now() + 42_000;
+  const deadline = Date.now() + 150_000;
   let result = await adapter.publish(job);
 
   while (
@@ -71,7 +71,7 @@ async function publishWithProviderProcessingWait(
     result.errorCode === "INSTAGRAM_CONTAINER_PROCESSING" &&
     Date.now() < deadline
   ) {
-    await wait(2_500);
+    await wait(3_000);
     result = await adapter.publish(job);
   }
 
@@ -141,7 +141,7 @@ export async function POST(request: NextRequest) {
     p_post_id: postId,
     p_providers: providers,
     p_limit: 10,
-    p_lock_seconds: 120,
+    p_lock_seconds: 180,
   });
 
   if (claim.error) {
