@@ -1,0 +1,36 @@
+name: One-off publication UX fix
+
+on:
+  push:
+    branches:
+      - feat/ui-redesign-v1
+    paths:
+      - scripts/oneoff_publication_ux_fix.py
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/ui-redesign-v1
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply targeted UX changes
+        run: python scripts/oneoff_publication_ux_fix.py
+      - name: Commit changes
+        run: |
+          if git diff --quiet; then
+            echo "No changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/app/'(app)'/calendario/page.tsx src/components/publication-editor.tsx src/components/ui/status-badge.tsx
+          git commit -m "fix: melhorar estados de publicacao na interface"
+          git push origin HEAD:feat/ui-redesign-v1
