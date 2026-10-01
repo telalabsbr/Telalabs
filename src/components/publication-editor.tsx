@@ -548,9 +548,11 @@ export function PublicationEditor() {
       return;
     }
 
-    if (mediaId && result.data) {
+    const postId = typeof result.data === "string" ? result.data : editingPostId;
+
+    if (mediaId && postId) {
       const mediaResult = await client.rpc("attach_media_to_post", {
-        p_post_id: result.data,
+        p_post_id: postId,
         p_media_asset_id: mediaId,
       });
 
@@ -561,13 +563,62 @@ export function PublicationEditor() {
       }
     }
 
-    if (editingPostId) {
+    if (intent === "publish_now" && postId) {
+      setSaveMessage("Mídia pronta. Enviando para as redes habilitadas...");
+
+      let publishResponse: Response;
+      try {
+        publishResponse = await fetch("/api/publications/publish-now", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ post_id: postId }),
+        });
+      } catch {
+        setSaveError("A publicação foi salva, mas o envio externo não pôde ser iniciado agora.");
+        setSaving(false);
+        return;
+      }
+
+      const publishResult = await publishResponse.json().catch(() => null) as null | {
+        claimed?: number;
+        succeeded?: number;
+        needsRetry?: number;
+        failed?: number;
+        message?: string;
+        error?: string;
+        results?: Array<{ provider: string; outcome: string; errorMessage?: string | null }>;
+      };
+
+      if (!publishResponse.ok) {
+        setSaveError(publishResult?.message ?? "A publicação foi salva, mas o worker não conseguiu iniciar o envio externo.");
+        setSaving(false);
+        return;
+      }
+
+      const succeeded = publishResult?.succeeded ?? 0;
+      const needsRetry = publishResult?.needsRetry ?? 0;
+      const failed = publishResult?.failed ?? 0;
+
+      if (failed > 0) {
+        const firstFailure = publishResult?.results?.find(item => !["SUCCEEDED", "TRANSIENT_FAILURE", "RATE_LIMIT", "UNKNOWN"].includes(item.outcome));
+        setSaveError(firstFailure?.errorMessage ?? "A publicação foi processada, mas um dos destinos recusou o conteúdo.");
+      } else if (needsRetry > 0) {
+        setSaveMessage("Envio iniciado. A rede ainda está processando a mídia e o worker fará a próxima verificação automaticamente.");
+      } else if (succeeded > 0) {
+        setSaveMessage(succeeded === 1 ? "Publicado com sucesso." : `${succeeded} destinos publicados com sucesso.`);
+      } else if ((publishResult?.claimed ?? 0) === 0) {
+        setSaveMessage("Publicação salva. Não havia destino habilitado aguardando envio neste instante.");
+      } else {
+        setSaveMessage("Publicação processada pelo worker.");
+      }
+    } else if (editingPostId) {
       setSaveMessage("Alterações salvas no Supabase real.");
     } else if (intent === "draft") {
       setSaveMessage("Rascunho salvo no Supabase real.");
     } else {
-      setSaveMessage("Intenção salva no Supabase. O worker de publicação ainda não está ativado, então nenhuma rede externa foi acionada.");
+      setSaveMessage("Agendamento salvo. O worker enviará cada destino no horário configurado.");
     }
+
     setSaving(false);
     if (selectedFile) setUploadProgress(100);
   }
@@ -592,7 +643,7 @@ export function PublicationEditor() {
           {previewUrl || existingMedia ? <div className="mt-4 grid min-w-0 gap-3 sm:grid-cols-[180px_minmax(0,1fr)]">
             <div className="relative aspect-[4/5] overflow-hidden rounded-xl bg-slate-100">
               {previewUrl
-                ? (fileType === "video" ? <video src={previewUrl} className="h-full w-full object-cover" muted playsInline/> : <img src={previewUrl} alt="Prévia da mídia" className="h-full w-full object-cover"/>)
+                ? (fileType === "video" ? <video src={previewUrl} className="h-full w-full object-cover" muted playsInline/> : <img src={previewUrl} alt="Prévia da mídia" className="h-full w-full object-cover"/> )
                 : <div className="grid h-full place-items-center text-center text-slate-400"><div><Play className="mx-auto" size={28}/><p className="mt-2 px-3 text-xs font-bold">Mídia já vinculada</p></div></div>}
               <span className="absolute bottom-2 left-2 rounded-md bg-slate-950/75 px-2 py-1 text-xs font-bold text-white">{fileType === "video" ? "VÍDEO" : "IMAGEM"}</span>
             </div>
@@ -772,7 +823,7 @@ export function PublicationEditor() {
                 <span className="block truncate text-sm font-bold text-slate-900 sm:text-xs">{check.option.label}</span>
                 <span className={`block truncate text-sm sm:text-xs ${check.level === "error" ? "text-red-700" : check.level === "warning" ? "text-amber-700" : "text-emerald-700"}`}>{check.text}</span>
               </span>
-              {check.level === "ok" ? <CheckCircle2 size={15} className="shrink-0 text-emerald-600"/> : <CircleAlert size={15} className={`shrink-0 ${check.level === "error" ? "text-red-600" : "text-amber-600"}`}/>}
+              {check.level === "ok" ? <CheckCircle2 size={15} className="shrink-0 text-emerald-600"/> : <CircleAlert size={15} className={`shrink-0 ${check.level === "error" ? "text-red-600" : "text-amber-600"}`}/>} 
             </button>)}
           </div>
         </section>
@@ -802,13 +853,13 @@ export function PublicationEditor() {
                 <div className={`relative bg-gradient-to-br from-indigo-50 via-slate-100 to-violet-100 ${activeOption.platform === "youtube" && activeOption.contentIntent === "LONG_FORM" ? "aspect-video" : "aspect-[4/5]"}`}>
                   {previewUrl && (fileType === "video" ? <video src={previewUrl} className="h-full w-full object-cover" muted playsInline/> : <img src={previewUrl} alt="" className="h-full w-full object-cover"/>)}
                   {!previewUrl && <div className="grid h-full place-items-center text-slate-400"><Play size={30}/></div>}
-                  {(activeOption.platform === "tiktok" || activeOption.platform === "kwai") && <PreviewChrome platform={activeOption.platform}/>}
+                  {(activeOption.platform === "tiktok" || activeOption.platform === "kwai") && <PreviewChrome platform={activeOption.platform}/>} 
                 </div>
                 <div className="p-3">
                   {activeOption.platform === "youtube" && activeOption.contentIntent === "LONG_FORM" && titles[activeOption.id] && <p className="mb-1 text-base font-black text-slate-950">{titles[activeOption.id]}</p>}
                   <p className={`whitespace-pre-line text-sm leading-5 ${activeOption.platform === "tiktok" || activeOption.platform === "kwai" ? "text-white" : "text-slate-700"}`}>{effectiveText(activeOption) || "Sua descrição aparecerá aqui."}</p>
                 </div>
-                {activeOption.platform !== "tiktok" && activeOption.platform !== "kwai" && <PreviewChrome platform={activeOption.platform}/>}
+                {activeOption.platform !== "tiktok" && activeOption.platform !== "kwai" && <PreviewChrome platform={activeOption.platform}/>} 
               </div>
             </div>}
           </> : <div className="p-6 text-center text-sm text-slate-500">Selecione ao menos um destino para ver a prévia.</div>}
@@ -826,11 +877,11 @@ export function PublicationEditor() {
           </div>
           <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
             <button disabled={saving || !base.trim()} onClick={() => void persist("draft")} className="btn-secondary w-full disabled:opacity-50">Salvar rascunho</button>
-            <button disabled={saving || !canSubmit} onClick={() => void persist(mode === "now" ? "publish_now" : "schedule")} className="btn-primary w-full disabled:cursor-not-allowed disabled:opacity-40">{mode === "now" ? <Send size={16}/> : <Clock3 size={16}/>} {saving ? "Salvando..." : mode === "now" ? "Publicar agora" : "Agendar publicação"}</button>
+            <button disabled={saving || !canSubmit} onClick={() => void persist(mode === "now" ? "publish_now" : "schedule")} className="btn-primary w-full disabled:cursor-not-allowed disabled:opacity-40">{mode === "now" ? <Send size={16}/> : <Clock3 size={16}/>} {saving ? (mode === "now" ? "Publicando..." : "Salvando...") : mode === "now" ? "Publicar agora" : "Agendar publicação"}</button>
           </div>
           {saveMessage && <p role="status" className="mt-3 rounded-lg bg-emerald-50 p-3 text-sm font-semibold leading-5 text-emerald-700 sm:text-xs">{saveMessage}</p>}
           {saveError && <p role="alert" className="mt-3 rounded-lg bg-red-50 p-3 text-sm font-semibold leading-5 text-red-700 sm:text-xs">{saveError}</p>}
-          {tenant.source === "supabase" && <p className="mt-3 text-xs leading-5 text-slate-500">Nesta fase, o Tela já persiste rascunho e destinos de forma atômica. Publicação externa e scheduler continuam desativados até a próxima integração.</p>}
+          {tenant.source === "supabase" && <p className="mt-3 text-xs leading-5 text-slate-500">O Instagram já publica pelo worker real. Destinos futuros entram aqui conforme cada adapter for validado.</p>}
         </section>
       </aside>
     </div>
