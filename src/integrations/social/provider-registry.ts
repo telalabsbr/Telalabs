@@ -38,6 +38,7 @@ export interface PublishAdapterResult {
   errorCode?: string | null;
   errorMessageSafe?: string | null;
   retryAfterSeconds?: number | null;
+  publicUrl?: string | null;
 }
 
 export interface ReconcileAdapterResult {
@@ -47,6 +48,7 @@ export interface ReconcileAdapterResult {
   errorCode?: string | null;
   errorMessageSafe?: string | null;
   retryAfterSeconds?: number | null;
+  publicUrl?: string | null;
 }
 
 export interface PublishAdapter {
