@@ -30,6 +30,7 @@ export interface PublicationDestination {
   lastError?: string;
   nextAttemptAt?: string;
   externalId?: string;
+  externalUrl?: string;
   publishedAt?: string;
 }
 
