@@ -1,6 +1,9 @@
 import "server-only";
+import { GetObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { createUntypedSupabaseAdminClient } from "@/lib/supabase/admin";
 import { decryptToken } from "@/lib/oauth/token-crypto";
+import { getObjectStorageConfig } from "@/lib/storage/r2";
 import type { Json } from "@/lib/supabase/database.types";
 
 export type RuntimePublicationContext = {
@@ -86,6 +89,28 @@ export async function issueMediaDeliveryUrl(context: RuntimePublicationContext, 
     throw new Error("MEDIA_NOT_READY");
   }
 
+  const ttl = Math.max(60, Math.min(ttlSeconds, 86400));
+
+  // Preview deployments can be protected by Vercel Authentication. External
+  // providers such as Instagram cannot pass that login challenge, so give the
+  // provider a short-lived R2 presigned URL directly in Preview instead of the
+  // app delivery gateway. Production keeps the revocable gateway path.
+  if (process.env.VERCEL_ENV === "preview" && context.media.object_key) {
+    const storage = getObjectStorageConfig();
+    if (!storage) throw new Error("OBJECT_STORAGE_NOT_CONFIGURED");
+
+    return getSignedUrl(
+      storage.client,
+      new GetObjectCommand({
+        Bucket: storage.bucket,
+        Key: context.media.object_key,
+        ResponseContentType: context.media.mime_type,
+        ResponseContentDisposition: `inline; filename="${context.media.filename.replace(/["\\]/g, "_")}"`,
+      }),
+      { expiresIn: ttl },
+    );
+  }
+
   const publicUrl = process.env.APP_PUBLIC_URL;
   if (!publicUrl) throw new Error("APP_PUBLIC_URL_NOT_CONFIGURED");
 
@@ -95,7 +120,7 @@ export async function issueMediaDeliveryUrl(context: RuntimePublicationContext, 
   const result = await admin.rpc("server_issue_media_delivery_token", {
     p_post_target_id: context.target.id,
     p_media_asset_id: context.media.id,
-    p_ttl_seconds: ttlSeconds,
+    p_ttl_seconds: ttl,
   });
 
   if (result.error || !result.data) {
