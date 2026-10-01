@@ -6,6 +6,7 @@ import type { Publication, PublicationDestination, PublicationStatus } from "@/d
 import { socialPlatforms, type SocialPlatform } from "@/domain/social";
 import { useTenantData } from "@/components/tenant-provider";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import type { Json } from "@/lib/supabase/database.types";
 
 function isPlatform(value: string): value is SocialPlatform {
   return (socialPlatforms as readonly string[]).includes(value);
@@ -41,11 +42,23 @@ function mediaTypeFromIntent(intent: string): "image" | "video" {
   return intent === "IMAGE" || intent === "CAROUSEL" ? "image" : "video";
 }
 
-function surfaceFromIntent(provider: string, intent: string | null) {
+function surfaceFromTarget(provider: string, intent: string | null, providerConfig: Json) {
+  if (providerConfig && typeof providerConfig === "object" && !Array.isArray(providerConfig)) {
+    const surface = providerConfig.surface;
+    if (surface === "story") return "story" as const;
+    if (surface === "reel") return "reel" as const;
+    if (surface === "feed") return "feed" as const;
+  }
   if (provider !== "youtube") return undefined;
   if (intent === "SHORT_FORM") return "short" as const;
   if (intent === "LONG_FORM") return "video" as const;
   return undefined;
+}
+
+function providerAssetLink(metadata: Json) {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return undefined;
+  const value = metadata.permalink;
+  return typeof value === "string" && value.startsWith("https://") ? value : undefined;
 }
 
 export function usePublicationsData() {
@@ -106,7 +119,7 @@ export function usePublicationsData() {
 
     const targetsResult = await client
       .from("post_targets")
-      .select("id,post_id,social_connection_id,provider,state,scheduled_at,published_at,caption_override,title_override,content_intent_override,created_at,updated_at")
+      .select("id,post_id,social_connection_id,provider,state,scheduled_at,published_at,caption_override,title_override,content_intent_override,provider_config,created_at,updated_at")
       .eq("organization_id", tenant.organization.id)
       .in("post_id", postIds)
       .order("scheduled_at", { ascending: true });
@@ -132,6 +145,18 @@ export function usePublicationsData() {
 
     if (attemptsResult.error) setError(attemptsResult.error.message);
 
+    const assetsResult = targetIds.length
+      ? await client
+          .from("provider_assets")
+          .select("post_target_id,provider_asset_id,state,metadata,updated_at")
+          .eq("organization_id", tenant.organization.id)
+          .in("post_target_id", targetIds)
+          .eq("state", "PUBLISHED")
+          .order("updated_at", { ascending: false })
+      : { data: [], error: null };
+
+    if (assetsResult.error) setError(assetsResult.error.message);
+
     const attemptsByTarget = new Map<string, Array<{
       attempt_no: number;
       error_code: string | null;
@@ -146,11 +171,21 @@ export function usePublicationsData() {
       attemptsByTarget.set(attempt.post_target_id, list);
     }
 
+    const assetByTarget = new Map<string, { providerAssetId: string; externalUrl?: string }>();
+    for (const asset of assetsResult.data ?? []) {
+      if (assetByTarget.has(asset.post_target_id)) continue;
+      assetByTarget.set(asset.post_target_id, {
+        providerAssetId: asset.provider_asset_id,
+        externalUrl: providerAssetLink(asset.metadata),
+      });
+    }
+
     const targetsByPost = new Map<string, PublicationDestination[]>();
     for (const target of targets) {
       if (!isPlatform(target.provider)) continue;
       const attempts = attemptsByTarget.get(target.id) ?? [];
       const lastAttempt = attempts[0];
+      const providerAsset = assetByTarget.get(target.id);
       const destination: PublicationDestination = {
         id: target.id,
         platform: target.provider,
@@ -158,11 +193,13 @@ export function usePublicationsData() {
         connectionId: target.social_connection_id,
         title: target.title_override ?? undefined,
         text: target.caption_override ?? "",
-        surface: surfaceFromIntent(target.provider, target.content_intent_override),
+        surface: surfaceFromTarget(target.provider, target.content_intent_override, target.provider_config),
         scheduledAt: target.scheduled_at,
         attempts: attempts.length ? Math.max(...attempts.map(item => item.attempt_no)) : 0,
         lastErrorCode: lastAttempt?.error_code ?? undefined,
         lastError: lastAttempt?.error_message_safe ?? undefined,
+        externalId: providerAsset?.providerAssetId,
+        externalUrl: providerAsset?.externalUrl,
         publishedAt: target.published_at ?? undefined,
       };
       const list = targetsByPost.get(target.post_id) ?? [];
