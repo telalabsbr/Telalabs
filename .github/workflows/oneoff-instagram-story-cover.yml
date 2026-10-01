@@ -6,6 +6,7 @@ on:
       - feat/ui-redesign-v1
     paths:
       - scripts/patch_instagram_story_cover.py
+      - scripts/instagram-story-cover-trigger.txt
 
 permissions:
   contents: write
