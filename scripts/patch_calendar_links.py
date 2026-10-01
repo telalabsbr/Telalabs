@@ -54,3 +54,4 @@ r(
 
 path.write_text(text, encoding="utf-8")
 print("Calendar links patch applied")
+# trigger
