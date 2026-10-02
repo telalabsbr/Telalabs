@@ -66,7 +66,7 @@ function classifyOAuthError(message: string | undefined) {
 function redirectResult(request: NextRequest, returnTo: string, code: string, trace = code) {
   const url = new URL(returnTo, request.nextUrl.origin);
   url.searchParams.set("oauth", code);
-  url.searchParams.set("oauth_trace", `igcb_v5_${trace}`);
+  url.searchParams.set("oauth_trace", `igcb_v6_${trace}`);
   return cleanup(NextResponse.redirect(url));
 }
 
@@ -104,21 +104,17 @@ export async function GET(request: NextRequest) {
   if (brandError || !brand) return redirectResult(request, returnTo, "brand_not_accessible");
 
   try {
-    const tokenForm = new URLSearchParams({
-      client_id: config.clientId,
-      client_secret: config.clientSecret,
-      grant_type: "authorization_code",
-      redirect_uri: redirectUri,
-      code,
-    });
+    const tokenForm = new FormData();
+    tokenForm.set("client_id", config.clientId);
+    tokenForm.set("client_secret", config.clientSecret);
+    tokenForm.set("grant_type", "authorization_code");
+    tokenForm.set("redirect_uri", redirectUri);
+    tokenForm.set("code", code);
 
     const tokenResponse = await fetch(config.tokenUrl, {
       method: "POST",
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: tokenForm.toString(),
+      headers: { Accept: "application/json" },
+      body: tokenForm,
       cache: "no-store",
     });
     const shortToken = await tokenResponse.json() as ShortTokenResponse;
