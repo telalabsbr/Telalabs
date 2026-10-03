@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { createUntypedSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
 
@@ -34,8 +34,11 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: context.error }, { status: context.error === "session_expired" ? 401 : 403 });
   }
 
-  const { supabase, brand } = context;
-  const result = await (supabase as any)
+  const admin = createUntypedSupabaseAdminClient();
+  if (!admin) return NextResponse.json({ error: "server_not_configured" }, { status: 500 });
+
+  const { brand } = context;
+  const result = await admin
     .from("meta_assets")
     .select("id,page_id,page_name,page_tasks,instagram_business_account_id,instagram_username,instagram_name,status,discovered_at")
     .eq("brand_id", brand.id)
@@ -64,8 +67,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: context.error }, { status: context.error === "session_expired" ? 401 : 403 });
   }
 
+  const admin = createUntypedSupabaseAdminClient();
+  if (!admin) return NextResponse.json({ error: "server_not_configured" }, { status: 500 });
+
   const { supabase, brand } = context;
-  const assetResult = await (supabase as any)
+  const assetResult = await admin
     .from("meta_assets")
     .select("id,page_id,instagram_business_account_id")
     .eq("id", body.asset_id)
@@ -78,11 +84,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "meta_asset_not_accessible" }, { status: 404 });
   }
 
-  const admin = createSupabaseAdminClient();
-  if (!admin) return NextResponse.json({ error: "server_not_configured" }, { status: 500 });
-
   if (body.action === "facebook") {
-    const result = await (admin as any).rpc("server_connect_facebook_meta_asset", {
+    const result = await admin.rpc("server_connect_facebook_meta_asset", {
       p_meta_asset_id: body.asset_id,
     });
     if (result.error) return NextResponse.json({ error: "facebook_connect_failed" }, { status: 500 });
@@ -108,7 +111,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "instagram_not_linked_to_meta_asset" }, { status: 409 });
   }
 
-  const result = await (admin as any).rpc("server_enable_instagram_advanced", {
+  const result = await admin.rpc("server_enable_instagram_advanced", {
     p_connection_id: body.connection_id,
     p_meta_asset_id: body.asset_id,
   });
