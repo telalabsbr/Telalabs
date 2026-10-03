@@ -24,6 +24,8 @@ export interface TenantConnection {
   displayName?: string;
   brandId?: string | null;
   sourceStatus?: string;
+  providerAccountId?: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface TenantCommerceConnection {
@@ -72,6 +74,11 @@ function normalizeStatus(value: string): ConnectionStatus {
   if (value === "EXPIRING" || value === "REAUTH_REQUIRED") return "expired";
   if (value === "ERROR") return "error";
   return "disconnected";
+}
+
+function metadataRecord(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  return value as Record<string, unknown>;
 }
 
 const TenantContext = createContext<TenantState | null>(null);
@@ -152,7 +159,7 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
     const [organizationResult, brandsResult, socialResult, commerceResult] = await Promise.all([
       client.from("organizations").select("id,name,plan_code").eq("id", organizationId).maybeSingle(),
       client.from("brands").select("id,name,organization_id,status,timezone").eq("organization_id", organizationId).eq("status", "ACTIVE").order("created_at"),
-      client.from("social_connections").select("id,provider,connection_status,display_name,username,brand_id").eq("organization_id", organizationId).order("created_at"),
+      client.from("social_connections").select("id,provider,provider_account_id,connection_status,display_name,username,brand_id,metadata").eq("organization_id", organizationId).order("created_at"),
       client.from("commerce_connections").select("id,provider,connection_status,display_name,brand_id").eq("organization_id", organizationId).order("created_at"),
     ]);
 
@@ -182,6 +189,8 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
         displayName: connection.display_name,
         brandId: connection.brand_id,
         sourceStatus: connection.connection_status,
+        providerAccountId: connection.provider_account_id,
+        metadata: metadataRecord(connection.metadata),
       }];
     });
     setConnections(mappedConnections);
