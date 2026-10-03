@@ -61,15 +61,19 @@ function redirectResult(request: NextRequest, returnTo: string, code: string, co
 }
 
 async function exchangeAuthorizationCode(config: NonNullable<ReturnType<typeof getMetaOAuthConfig>>, code: string) {
-  const tokenUrl = new URL(config.tokenUrl);
-  tokenUrl.searchParams.set("client_id", config.clientId);
-  tokenUrl.searchParams.set("client_secret", config.clientSecret);
-  tokenUrl.searchParams.set("redirect_uri", config.redirectUri);
-  tokenUrl.searchParams.set("code", code);
+  const form = new URLSearchParams();
+  form.set("client_id", config.clientId);
+  form.set("client_secret", config.clientSecret);
+  form.set("redirect_uri", config.redirectUri);
+  form.set("code", code);
 
-  const response = await fetch(tokenUrl, {
-    method: "GET",
-    headers: { Accept: "application/json" },
+  const response = await fetch(config.tokenUrl, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: form,
     cache: "no-store",
   });
   const body = await response.json() as MetaTokenResponse;
@@ -79,6 +83,7 @@ async function exchangeAuthorizationCode(config: NonNullable<ReturnType<typeof g
       code: body.error?.code ?? null,
       type: body.error?.type ?? null,
       message: body.error?.message ?? null,
+      clientId: config.clientId,
     });
     throw new Error("meta_token_failed");
   }
@@ -86,15 +91,19 @@ async function exchangeAuthorizationCode(config: NonNullable<ReturnType<typeof g
 }
 
 async function exchangeLongLivedToken(config: NonNullable<ReturnType<typeof getMetaOAuthConfig>>, shortToken: string) {
-  const url = new URL(config.graphBaseUrl + "/oauth/access_token");
-  url.searchParams.set("grant_type", "fb_exchange_token");
-  url.searchParams.set("client_id", config.clientId);
-  url.searchParams.set("client_secret", config.clientSecret);
-  url.searchParams.set("fb_exchange_token", shortToken);
+  const form = new URLSearchParams();
+  form.set("grant_type", "fb_exchange_token");
+  form.set("client_id", config.clientId);
+  form.set("client_secret", config.clientSecret);
+  form.set("fb_exchange_token", shortToken);
 
-  const response = await fetch(url, {
-    method: "GET",
-    headers: { Accept: "application/json" },
+  const response = await fetch(config.graphBaseUrl + "/oauth/access_token", {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: form,
     cache: "no-store",
   });
   const body = await response.json() as MetaTokenResponse;
@@ -104,6 +113,7 @@ async function exchangeLongLivedToken(config: NonNullable<ReturnType<typeof getM
       code: body.error?.code ?? null,
       type: body.error?.type ?? null,
       message: body.error?.message ?? null,
+      clientId: config.clientId,
     });
     throw new Error("meta_long_token_failed");
   }
@@ -174,8 +184,8 @@ export async function GET(request: NextRequest) {
       description: oauthErrorDescription,
       code: oauthErrorCode,
       purpose: purposeRaw,
+      clientId: config.clientId,
     });
-    // A tela já conhece esta mensagem e evita um erro genérico. O log mantém o detalhe técnico.
     return redirectResult(request, returnTo, "meta_token_failed");
   }
 
@@ -283,6 +293,9 @@ export async function GET(request: NextRequest) {
     const codeValue = error instanceof Error ? error.message : "meta_callback_failed";
     if (codeValue === "meta_token_failed" || codeValue === "meta_long_token_failed") {
       return redirectResult(request, returnTo, codeValue);
+    }
+    if (codeValue === "meta_account_discovery_failed") {
+      return redirectResult(request, returnTo, "meta_account_discovery_failed");
     }
     return redirectResult(request, returnTo, "meta_callback_failed");
   }
