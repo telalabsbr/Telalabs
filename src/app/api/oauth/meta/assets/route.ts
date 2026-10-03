@@ -182,10 +182,6 @@ export async function POST(request: NextRequest) {
     }
 
     if (!matching) {
-      await admin.rpc("server_mark_instagram_meta_authorized", {
-        p_connection_id: body.connection_id,
-        p_link_required: true,
-      });
       return NextResponse.json({ ok: true, linked: false });
     }
 
