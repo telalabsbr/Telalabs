@@ -2,6 +2,7 @@ import "server-only";
 
 export type MetaPurpose = "facebook" | "instagram_advanced";
 
+const DEFAULT_META_CLIENT_ID = "918738154364216";
 const DEFAULT_GRAPH_BASE_URL = "https://graph.facebook.com/v26.0";
 const DEFAULT_AUTHORIZE_URL = "https://www.facebook.com/v26.0/dialog/oauth";
 
@@ -46,10 +47,10 @@ function validMetaAppId(value: string | undefined) {
 }
 
 export function getMetaOAuthConfig(purpose: MetaPurpose) {
-  // Facebook Login usa explicitamente as credenciais do app Meta/Facebook.
-  // Não reutilize INSTAGRAM_CLIENT_ID/SECRET como fallback: o Instagram Login
-  // direto pode usar credenciais próprias que o diálogo OAuth do Facebook rejeita.
-  const clientId = process.env.META_CLIENT_ID?.trim();
+  // Facebook Login usa explicitamente o app Meta/Facebook do Tela Social.
+  // O App ID é público e pode ter fallback seguro; o App Secret continua
+  // obrigatório no runtime e nunca é exposto ao navegador.
+  const clientId = process.env.META_CLIENT_ID?.trim() || DEFAULT_META_CLIENT_ID;
   const clientSecret = process.env.META_CLIENT_SECRET?.trim();
   const graphBaseUrl = getMetaGraphBaseUrl();
   const authorizeUrl = process.env.META_OAUTH_AUTHORIZE_URL || DEFAULT_AUTHORIZE_URL;
@@ -60,7 +61,7 @@ export function getMetaOAuthConfig(purpose: MetaPurpose) {
   if (!validMetaAppId(clientId) || !clientSecret || !redirectUri || !scopes.length) return null;
 
   return {
-    clientId: clientId as string,
+    clientId,
     clientSecret,
     authorizeUrl,
     tokenUrl,
