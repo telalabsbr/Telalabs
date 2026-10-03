@@ -1,7 +1,7 @@
 import { randomBytes } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { getMetaOAuthConfig, isMetaPlatform } from "@/lib/oauth/meta";
+import { getMetaOAuthConfig, isMetaPurpose, type MetaPurpose } from "@/lib/oauth/meta";
 
 export const runtime = "nodejs";
 
@@ -18,16 +18,26 @@ function redirectWithError(request: NextRequest, code: string) {
   return NextResponse.redirect(url);
 }
 
-export async function GET(request: NextRequest) {
+function resolvePurpose(request: NextRequest): MetaPurpose | "instagram_direct" | null {
+  const explicit = request.nextUrl.searchParams.get("purpose");
+  if (isMetaPurpose(explicit)) return explicit;
+
+  // Compatibilidade com links antigos da tela de conexões.
   const platform = request.nextUrl.searchParams.get("platform");
+  if (platform === "facebook") return "facebook";
+  if (platform === "instagram") return "instagram_direct";
+  return null;
+}
+
+export async function GET(request: NextRequest) {
+  const purpose = resolvePurpose(request);
   const brandId = request.nextUrl.searchParams.get("brand_id");
+  const connectionId = request.nextUrl.searchParams.get("connection_id");
   const returnTo = safeReturn(request.nextUrl.searchParams.get("return_to"));
 
-  if (!isMetaPlatform(platform) || !brandId) {
-    return redirectWithError(request, "meta_invalid_request");
-  }
+  if (!purpose || !brandId) return redirectWithError(request, "meta_invalid_request");
 
-  if (platform === "instagram") {
+  if (purpose === "instagram_direct") {
     const instagram = request.nextUrl.clone();
     instagram.pathname = "/api/oauth/instagram/start";
     instagram.search = "";
@@ -36,7 +46,11 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(instagram);
   }
 
-  const config = getMetaOAuthConfig();
+  if (purpose === "instagram_advanced" && !connectionId) {
+    return redirectWithError(request, "meta_invalid_request");
+  }
+
+  const config = getMetaOAuthConfig(purpose);
   if (!config) return redirectWithError(request, "meta_not_configured");
 
   const supabase = await createSupabaseServerClient();
@@ -61,6 +75,21 @@ export async function GET(request: NextRequest) {
 
   if (brandError || !brand) return redirectWithError(request, "brand_not_accessible");
 
+  if (purpose === "instagram_advanced") {
+    const { data: connection, error: connectionError } = await supabase
+      .from("social_connections")
+      .select("id,brand_id,organization_id,provider,connection_status")
+      .eq("id", connectionId as string)
+      .eq("brand_id", brand.id)
+      .eq("organization_id", brand.organization_id)
+      .eq("provider", "instagram")
+      .single();
+
+    if (connectionError || !connection || connection.connection_status === "REVOKED") {
+      return redirectWithError(request, "instagram_advanced_invalid_connection");
+    }
+  }
+
   const state = randomBytes(32).toString("base64url");
   const authorization = new URL(config.authorizeUrl);
   authorization.searchParams.set("client_id", config.clientId);
@@ -68,6 +97,7 @@ export async function GET(request: NextRequest) {
   authorization.searchParams.set("response_type", "code");
   authorization.searchParams.set("scope", config.scopes.join(","));
   authorization.searchParams.set("state", state);
+  authorization.searchParams.set("auth_type", "rerequest");
 
   const response = NextResponse.redirect(authorization);
   const cookieOptions = {
@@ -80,8 +110,9 @@ export async function GET(request: NextRequest) {
 
   response.cookies.set("tela_meta_state", state, cookieOptions);
   response.cookies.set("tela_meta_brand", brand.id, cookieOptions);
-  response.cookies.set("tela_meta_platform", platform, cookieOptions);
+  response.cookies.set("tela_meta_purpose", purpose, cookieOptions);
   response.cookies.set("tela_meta_return", returnTo, cookieOptions);
+  if (connectionId) response.cookies.set("tela_meta_connection", connectionId, cookieOptions);
 
   return response;
 }
