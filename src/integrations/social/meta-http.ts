@@ -43,8 +43,9 @@ export async function metaGraphRequest<T>(args: {
   method?: "GET" | "POST";
   accessToken: string;
   params?: Record<string, string | number | boolean | null | undefined>;
+  baseUrl?: string;
 }) {
-  const baseUrl = getInstagramGraphBaseUrl();
+  const baseUrl = (args.baseUrl || getInstagramGraphBaseUrl()).replace(/\/$/, "");
   const method = args.method ?? "GET";
   const url = new URL(baseUrl + (args.path.startsWith("/") ? args.path : "/" + args.path));
   const body = new URLSearchParams();
