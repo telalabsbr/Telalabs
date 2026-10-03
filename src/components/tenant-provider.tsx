@@ -21,6 +21,7 @@ export interface TenantConnection {
   platform: SocialPlatform;
   status: ConnectionStatus;
   handle?: string;
+  username?: string;
   displayName?: string;
   brandId?: string | null;
   sourceStatus?: string;
@@ -186,6 +187,7 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
         platform,
         status: normalizeStatus(connection.connection_status),
         handle: connection.username ? (connection.username.startsWith("@") ? connection.username : "@" + connection.username) : connection.display_name,
+        username: connection.username ?? undefined,
         displayName: connection.display_name,
         brandId: connection.brand_id,
         sourceStatus: connection.connection_status,
