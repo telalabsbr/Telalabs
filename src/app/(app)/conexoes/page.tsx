@@ -1,7 +1,20 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CircleAlert, Link2, MoreHorizontal, Plus, ShieldCheck, Store, Trash2, Unplug, X } from "lucide-react";
+import {
+  CircleAlert,
+  Link2,
+  MoreHorizontal,
+  Music2,
+  Plus,
+  RefreshCw,
+  ShieldCheck,
+  Sparkles,
+  Store,
+  Trash2,
+  Unplug,
+  X,
+} from "lucide-react";
 import { platformLabels, socialPlatforms, type ConnectionStatus, type SocialPlatform } from "@/domain/social";
 import { PlatformIcon } from "@/components/ui/platform-icon";
 import { useTenantData, type TenantConnection } from "@/components/tenant-provider";
@@ -14,12 +27,29 @@ const statusLabel: Record<ConnectionStatus, string> = {
   error: "Com erro",
 };
 
+type MetaAsset = {
+  id: string;
+  page_id: string;
+  page_name: string;
+  page_tasks: string[];
+  instagram_business_account_id: string | null;
+  instagram_username: string | null;
+  instagram_name: string | null;
+  status: string;
+  discovered_at: string;
+};
+
 export default function ConnectionsPage() {
   const tenant = useTenantData();
   const [notice, setNotice] = useState("");
   const [connections, setConnections] = useState<TenantConnection[]>(tenant.connections);
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [connectOpen, setConnectOpen] = useState(false);
+  const [metaAssetsOpen, setMetaAssetsOpen] = useState(false);
+  const [metaAssets, setMetaAssets] = useState<MetaAsset[]>([]);
+  const [metaAssetsLoading, setMetaAssetsLoading] = useState(false);
+  const [metaBusy, setMetaBusy] = useState<string | null>(null);
+  const [pendingMetaAssetsAfterOAuth, setPendingMetaAssetsAfterOAuth] = useState(false);
 
   useEffect(() => {
     setConnections(tenant.connections);
@@ -32,12 +62,16 @@ export default function ConnectionsPage() {
 
     const count = Number(params.get("count") ?? "0");
     const messages: Record<string, string> = {
-      meta_connected: count > 1
-        ? `${count} contas foram conectadas com sucesso.`
-        : "Conta do Instagram conectada com sucesso.",
-      meta_no_eligible_accounts: "A autorização funcionou, mas não encontramos uma conta elegível para a rede escolhida.",
-      meta_not_configured: "A infraestrutura Meta já está preparada, mas as credenciais do aplicativo Meta ainda não foram configuradas no ambiente.",
-      meta_token_failed: "A Meta não concluiu a troca de autorização. Tente novamente depois de revisar as credenciais e permissões.",
+      meta_assets_ready: count > 1
+        ? `${count} Páginas da Meta foram autorizadas. Escolha quais deseja conectar ao Facebook.`
+        : "Autorização Meta concluída. Escolha a Página do Facebook que deseja conectar.",
+      instagram_advanced_enabled: "Recursos avançados do Instagram ativados. Esta conta já pode usar capacidades Meta como música para Reels quando disponíveis no criador.",
+      instagram_advanced_not_linked: "A Meta foi autorizada, mas não encontramos uma Página vinculada a este mesmo Instagram profissional.",
+      instagram_advanced_invalid_connection: "Não foi possível identificar a conexão do Instagram escolhida para ativar os recursos avançados.",
+      meta_no_eligible_accounts: "A autorização funcionou, mas não encontramos Páginas elegíveis nesta conta Meta.",
+      meta_not_configured: "A infraestrutura Meta está pronta, mas esta instalação ainda precisa habilitar o Facebook Login no aplicativo Meta.",
+      meta_token_failed: "A Meta não concluiu a autorização inicial. Tente novamente.",
+      meta_long_token_failed: "A Meta autorizou o login, mas não foi possível concluir a credencial de longa duração.",
       meta_state_invalid: "A autorização expirou ou não pôde ser validada. Inicie a conexão novamente.",
       meta_callback_failed: "Não foi possível concluir a conexão da Meta.",
       session_expired: "Sua sessão expirou durante a autorização. Entre novamente.",
@@ -46,7 +80,8 @@ export default function ConnectionsPage() {
     };
 
     setNotice(messages[oauth] ?? "A conexão não pôde ser concluída.");
-    if (oauth === "meta_connected") void tenant.refresh();
+    if (oauth === "meta_assets_ready") setPendingMetaAssetsAfterOAuth(true);
+    if (oauth === "instagram_advanced_enabled") void tenant.refresh();
 
     const clean = new URL(window.location.href);
     clean.searchParams.delete("oauth");
@@ -54,30 +89,156 @@ export default function ConnectionsPage() {
     window.history.replaceState({}, "", clean.pathname + clean.search);
   }, []);
 
+  useEffect(() => {
+    if (!pendingMetaAssetsAfterOAuth || tenant.source !== "supabase" || tenant.activeBrand.id === "unconfigured") return;
+    setPendingMetaAssetsAfterOAuth(false);
+    void loadMetaAssets(true);
+  }, [pendingMetaAssetsAfterOAuth, tenant.source, tenant.activeBrand.id]);
+
   function mockAction(platform: SocialPlatform, message?: string) {
     setNotice(message ?? (platformLabels[platform] + " ainda está aguardando a integração OAuth real."));
     setConnectOpen(false);
   }
 
+  function startDirectInstagram() {
+    const params = new URLSearchParams({
+      brand_id: tenant.activeBrand.id,
+      return_to: "/conexoes",
+    });
+    window.location.assign("/api/oauth/instagram/start?" + params.toString());
+  }
+
+  function startMetaOAuth(purpose: "facebook" | "instagram_advanced", connectionId?: string) {
+    const params = new URLSearchParams({
+      purpose,
+      brand_id: tenant.activeBrand.id,
+      return_to: "/conexoes",
+    });
+    if (connectionId) params.set("connection_id", connectionId);
+    window.location.assign("/api/oauth/meta/start?" + params.toString());
+  }
+
+  async function loadMetaAssets(open = false) {
+    if (tenant.source !== "supabase" || tenant.activeBrand.id === "unconfigured") return [] as MetaAsset[];
+    setMetaAssetsLoading(true);
+    try {
+      const response = await fetch(`/api/oauth/meta/assets?brand_id=${encodeURIComponent(tenant.activeBrand.id)}`, {
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+      const body = await response.json() as { assets?: MetaAsset[]; error?: string };
+      if (!response.ok) {
+        setNotice("Não foi possível carregar as Páginas já autorizadas da Meta.");
+        return [];
+      }
+      const assets = body.assets ?? [];
+      setMetaAssets(assets);
+      if (open) setMetaAssetsOpen(true);
+      return assets;
+    } finally {
+      setMetaAssetsLoading(false);
+    }
+  }
+
+  async function connectFacebook() {
+    if (tenant.source !== "supabase" || tenant.activeBrand.id === "unconfigured") {
+      setNotice("Conclua a configuração da marca antes de conectar o Facebook.");
+      return;
+    }
+    setConnectOpen(false);
+    const assets = await loadMetaAssets(false);
+    if (assets.length) {
+      setMetaAssetsOpen(true);
+      return;
+    }
+    startMetaOAuth("facebook");
+  }
+
+  async function connectFacebookAsset(assetId: string) {
+    setMetaBusy(assetId);
+    try {
+      const response = await fetch("/api/oauth/meta/assets", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          brand_id: tenant.activeBrand.id,
+          asset_id: assetId,
+          action: "facebook",
+        }),
+      });
+      const body = await response.json() as { error?: string };
+      if (!response.ok) {
+        setNotice(body.error === "facebook_connect_failed" ? "Não foi possível conectar esta Página do Facebook." : "A Página selecionada não pôde ser conectada.");
+        return;
+      }
+      await tenant.refresh();
+      setNotice("Página do Facebook conectada com sucesso.");
+    } finally {
+      setMetaBusy(null);
+    }
+  }
+
+  async function activateInstagramAdvanced(connection: TenantConnection) {
+    if (tenant.source !== "supabase" || tenant.activeBrand.id === "unconfigured") return;
+    if (connection.metadata?.meta_advanced_enabled === true) {
+      setNotice("Os recursos avançados já estão ativos para este Instagram.");
+      return;
+    }
+
+    setMetaBusy(connection.id);
+    try {
+      const assets = await loadMetaAssets(false);
+      const matching = assets.find(asset =>
+        Boolean(connection.providerAccountId)
+        && asset.instagram_business_account_id === connection.providerAccountId
+      );
+
+      if (matching) {
+        const response = await fetch("/api/oauth/meta/assets", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            brand_id: tenant.activeBrand.id,
+            asset_id: matching.id,
+            action: "instagram_advanced",
+            connection_id: connection.id,
+          }),
+        });
+        if (response.ok) {
+          await tenant.refresh();
+          setNotice("Recursos avançados do Instagram ativados usando a autorização Meta que já existia.");
+          return;
+        }
+      }
+    } finally {
+      setMetaBusy(null);
+    }
+
+    startMetaOAuth("instagram_advanced", connection.id);
+  }
+
   function connectPlatform(platform: SocialPlatform) {
-    if (tenant.source === "supabase" && (platform === "instagram" || platform === "facebook")) {
+    if (tenant.source === "supabase" && platform === "instagram") {
       if (tenant.activeBrand.id === "unconfigured") {
         setNotice("Conclua a configuração da marca antes de conectar uma rede.");
         return;
       }
-      const params = new URLSearchParams({
-        platform,
-        brand_id: tenant.activeBrand.id,
-        return_to: "/conexoes",
-      });
-      window.location.assign("/api/oauth/meta/start?" + params.toString());
+      setConnectOpen(false);
+      startDirectInstagram();
+      return;
+    }
+
+    if (tenant.source === "supabase" && platform === "facebook") {
+      void connectFacebook();
       return;
     }
 
     mockAction(
       platform,
       tenant.source === "supabase"
-        ? platformLabels[platform] + " será conectado na próxima etapa do rollout OAuth. Instagram e Facebook já têm o fluxo Meta preparado."
+        ? platformLabels[platform] + " será conectado na próxima etapa do rollout OAuth. Instagram e Facebook já têm integração real."
         : undefined,
     );
   }
@@ -100,7 +261,6 @@ export default function ConnectionsPage() {
       demoOnlyUpdate(id, "disconnected");
       return;
     }
-
     if (tenant.source !== "supabase") {
       setNotice("Conclua a configuração da conta antes de alterar conexões.");
       setOpenMenu(null);
@@ -117,12 +277,10 @@ export default function ConnectionsPage() {
     setNotice("Desconectando a conta...");
     setOpenMenu(null);
     const result = await client.rpc("disconnect_social_connection", { p_connection_id: id });
-
     if (result.error) {
       setNotice(result.error.message);
       return;
     }
-
     await tenant.refresh();
     setNotice("Conta desconectada do Tela Social. A credencial armazenada foi removida do backend.");
   }
@@ -138,18 +296,22 @@ export default function ConnectionsPage() {
     setNotice("Conta removida desta demonstração.");
   }
 
+  const connectedFacebookIds = new Set(
+    connections.filter(item => item.platform === "facebook" && item.status === "connected").map(item => item.providerAccountId)
+  );
+
   return <div className="w-full max-w-full space-y-4 overflow-x-hidden">
     <section className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
       <div>
         <p className="eyebrow">Integrações</p>
         <h1 className="mt-2 text-2xl font-black tracking-tight text-slate-950 sm:text-3xl">Contas conectadas</h1>
-        <p className="mt-1 text-sm leading-6 text-slate-500">Conecte mais de uma conta por rede e gerencie cada autorização separadamente.</p>
+        <p className="mt-1 text-sm leading-6 text-slate-500">Conecte cada rede separadamente. Autorizações Meta já existentes são reaproveitadas quando possível.</p>
       </div>
       <button onClick={() => setConnectOpen(true)} className="btn-primary self-start"><Plus size={16}/> Adicionar conta</button>
     </section>
 
     {tenant.source === "supabase" && <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">
-      Esta tela já está lendo organização, marca e conexões do Supabase real.
+      Instagram direto e autorizações Meta ficam separados: ativar Facebook ou música não substitui a conexão normal do Instagram.
     </div>}
 
     {tenant.source === "needs_setup" && <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
@@ -170,6 +332,7 @@ export default function ConnectionsPage() {
           const connected = connection.status === "connected";
           const attention = connection.status === "expired" || connection.status === "error";
           const menuVisible = openMenu === connection.id;
+          const advancedInstagram = connection.platform === "instagram" && connection.metadata?.meta_advanced_enabled === true;
 
           return <article key={connection.id} className="card relative min-w-0 p-4">
             <div className="flex min-w-0 items-start gap-3">
@@ -181,11 +344,29 @@ export default function ConnectionsPage() {
               <button onClick={() => setOpenMenu(menuVisible ? null : connection.id)} className="shrink-0 rounded-lg p-2 text-slate-400 hover:bg-slate-100" aria-label="Mais opções"><MoreHorizontal size={18}/></button>
 
               {menuVisible && <div className="absolute right-3 top-12 z-20 w-48 overflow-hidden rounded-xl border border-slate-200 bg-white p-1 shadow-xl">
-                <button onClick={() => mockAction(connection.platform, "Detalhes de permissões e capacidades desta conta entram junto do OAuth real.")} className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50"><Link2 size={15}/> Gerenciar</button>
+                <button onClick={() => mockAction(connection.platform, "Esta conta usa autorização oficial e os detalhes técnicos permanecem protegidos no backend.")} className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50"><Link2 size={15}/> Gerenciar</button>
                 {connection.status !== "disconnected" && <button onClick={() => void disconnectConnection(connection.id)} className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50"><Unplug size={15}/> Desconectar</button>}
                 <button onClick={() => demoOnlyRemove(connection.id)} className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-red-600 hover:bg-red-50"><Trash2 size={15}/> Remover</button>
               </div>}
             </div>
+
+            {connection.platform === "instagram" && connected && <div className={`mt-4 rounded-xl border p-3 ${advancedInstagram ? "border-indigo-200 bg-indigo-50/60" : "border-slate-200 bg-slate-50"}`}>
+              <div className="flex items-start gap-2">
+                {advancedInstagram ? <Sparkles size={17} className="mt-0.5 shrink-0 text-indigo-600"/> : <Music2 size={17} className="mt-0.5 shrink-0 text-slate-600"/>}
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-black text-slate-900">Recursos avançados</p>
+                  {advancedInstagram
+                    ? <p className="mt-1 text-xs leading-5 text-indigo-800">Ativos via Meta. Música para Reels e outras capacidades avançadas podem usar esta autorização.</p>
+                    : <p className="mt-1 text-xs leading-5 text-slate-600">Para música do Instagram, a Meta exige também autorização da conta do Facebook que administra a Página vinculada.</p>}
+                </div>
+              </div>
+              {!advancedInstagram && <button
+                onClick={() => void activateInstagramAdvanced(connection)}
+                disabled={metaBusy === connection.id}
+                className="mt-3 w-full rounded-lg border border-indigo-200 bg-white px-3 py-2 text-xs font-black text-indigo-700 hover:bg-indigo-50 disabled:opacity-60"
+              >{metaBusy === connection.id ? "Verificando autorização Meta..." : "Ativar recursos avançados"}</button>}
+              {advancedInstagram && <div className="mt-3 flex items-center gap-2 text-xs font-bold text-indigo-700"><Music2 size={14}/> Música para Reels: autorização disponível</div>}
+            </div>}
 
             {connection.platform === "tiktok" && <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
               <div className="flex min-w-0 items-center gap-2">
@@ -218,7 +399,7 @@ export default function ConnectionsPage() {
 
     <section className="flex gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
       <ShieldCheck className="shrink-0" size={20}/>
-      <div><p className="font-bold">Credenciais protegidas.</p><p className="mt-1 text-xs leading-5 text-emerald-800">Tokens permanecem no backend. A interface mostra apenas o estado e as capacidades da conexão.</p></div>
+      <div><p className="font-bold">Credenciais protegidas.</p><p className="mt-1 text-xs leading-5 text-emerald-800">O Tela Social nunca recebe sua senha do Instagram ou Facebook. O login acontece nas telas oficiais da Meta e apenas tokens criptografados ficam no backend.</p></div>
     </section>
 
     {connectOpen && <>
@@ -227,7 +408,7 @@ export default function ConnectionsPage() {
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 className="text-lg font-black text-slate-950">Adicionar conta</h2>
-            <p className="mt-1 text-sm leading-6 text-slate-500">Escolha uma rede. Você poderá adicionar mais de uma conta da mesma plataforma.</p>
+            <p className="mt-1 text-sm leading-6 text-slate-500">Instagram e Facebook podem ser conectados separadamente. Você decide quais recursos quer usar.</p>
           </div>
           <button onClick={() => setConnectOpen(false)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"><X size={18}/></button>
         </div>
@@ -237,14 +418,53 @@ export default function ConnectionsPage() {
             <PlatformIcon platform={platform}/>
             <span className="min-w-0 flex-1">
               <span className="block truncate text-sm font-black text-slate-900">{platformLabels[platform]}</span>
-              <span className="mt-0.5 block text-xs text-slate-500">Conectar nova conta</span>
+              <span className="mt-0.5 block text-xs text-slate-500">{platform === "instagram" ? "Login direto do Instagram" : platform === "facebook" ? "Escolher Páginas do Facebook" : "Conectar nova conta"}</span>
             </span>
           </button>)}
         </div>
 
         <div className="mt-4 rounded-xl bg-slate-50 p-3 text-xs leading-5 text-slate-600">
-          As conexões reais usarão OAuth oficial. O Tela Social nunca pedirá a senha da rede social.
+          Ao ativar recursos avançados do Instagram, avisaremos claramente antes de abrir a autorização da conta Meta/Facebook responsável pela Página vinculada.
         </div>
+      </section>
+    </>}
+
+    {metaAssetsOpen && <>
+      <button aria-label="Fechar Páginas Meta" className="fixed inset-0 z-50 bg-slate-950/35 backdrop-blur-[1px]" onClick={() => setMetaAssetsOpen(false)}/>
+      <section className="fixed inset-x-3 bottom-[84px] z-[60] max-h-[72vh] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl sm:left-1/2 sm:top-1/2 sm:bottom-auto sm:w-[560px] sm:-translate-x-1/2 sm:-translate-y-1/2">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-black text-slate-950">Páginas autorizadas na Meta</h2>
+            <p className="mt-1 text-sm leading-6 text-slate-500">Escolha somente as Páginas do Facebook que deseja conectar ao Tela Social.</p>
+          </div>
+          <button onClick={() => setMetaAssetsOpen(false)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"><X size={18}/></button>
+        </div>
+
+        <div className="mt-4 space-y-2">
+          {metaAssetsLoading && <div className="rounded-xl bg-slate-50 p-4 text-sm text-slate-500">Carregando Páginas...</div>}
+          {!metaAssetsLoading && metaAssets.map(asset => {
+            const alreadyConnected = connectedFacebookIds.has(asset.page_id);
+            return <div key={asset.id} className="rounded-xl border border-slate-200 p-3">
+              <div className="flex items-center gap-3">
+                <PlatformIcon platform="facebook"/>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-black text-slate-900">{asset.page_name}</p>
+                  <p className="mt-0.5 truncate text-xs text-slate-500">{asset.instagram_username ? `Instagram vinculado: @${asset.instagram_username}` : "Sem Instagram profissional vinculado"}</p>
+                </div>
+                <button
+                  disabled={alreadyConnected || metaBusy === asset.id}
+                  onClick={() => void connectFacebookAsset(asset.id)}
+                  className="shrink-0 rounded-lg border border-indigo-200 px-3 py-2 text-xs font-black text-indigo-700 disabled:border-emerald-100 disabled:bg-emerald-50 disabled:text-emerald-700"
+                >{alreadyConnected ? "Conectada" : metaBusy === asset.id ? "Conectando..." : "Conectar"}</button>
+              </div>
+            </div>;
+          })}
+          {!metaAssetsLoading && !metaAssets.length && <div className="rounded-xl bg-slate-50 p-4 text-sm text-slate-500">Nenhuma Página autorizada foi encontrada.</div>}
+        </div>
+
+        <button onClick={() => startMetaOAuth("facebook")} className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-black text-slate-700 hover:bg-slate-50">
+          <RefreshCw size={15}/> Atualizar contas da Meta
+        </button>
       </section>
     </>}
   </div>;
