@@ -58,6 +58,7 @@ export async function GET(request: NextRequest) {
   const readiness = getMetaOAuthReadiness(purpose);
   const config = getMetaOAuthConfig(purpose);
   if (!config) {
+    console.warn("meta_oauth_not_configured", { purpose, ...readiness });
     if (!readiness.clientIdValid) return redirectWithError(request, "meta_client_id_invalid");
     if (!readiness.clientSecretPresent) return redirectWithError(request, "meta_client_secret_missing");
     if (!readiness.redirectUriPresent) return redirectWithError(request, "meta_redirect_missing");
