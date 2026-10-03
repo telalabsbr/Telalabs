@@ -23,7 +23,7 @@ type MetaPage = {
 
 type MetaAccountsResponse = {
   data?: MetaPage[];
-  error?: { message?: string };
+  error?: { message?: string; code?: number; type?: string };
 };
 
 type InstagramProfile = {
@@ -73,7 +73,15 @@ async function exchangeAuthorizationCode(config: NonNullable<ReturnType<typeof g
     cache: "no-store",
   });
   const body = await response.json() as MetaTokenResponse;
-  if (!response.ok || body.error || !body.access_token) throw new Error("meta_token_failed");
+  if (!response.ok || body.error || !body.access_token) {
+    console.warn("meta_oauth_token_exchange_failed", {
+      status: response.status,
+      code: body.error?.code ?? null,
+      type: body.error?.type ?? null,
+      message: body.error?.message ?? null,
+    });
+    throw new Error("meta_token_failed");
+  }
   return body.access_token;
 }
 
@@ -90,7 +98,15 @@ async function exchangeLongLivedToken(config: NonNullable<ReturnType<typeof getM
     cache: "no-store",
   });
   const body = await response.json() as MetaTokenResponse;
-  if (!response.ok || body.error || !body.access_token) throw new Error("meta_long_token_failed");
+  if (!response.ok || body.error || !body.access_token) {
+    console.warn("meta_oauth_long_token_exchange_failed", {
+      status: response.status,
+      code: body.error?.code ?? null,
+      type: body.error?.type ?? null,
+      message: body.error?.message ?? null,
+    });
+    throw new Error("meta_long_token_failed");
+  }
   return body;
 }
 
@@ -106,7 +122,15 @@ async function discoverAccounts(graphBaseUrl: string, userAccessToken: string) {
   });
 
   const body = await response.json() as MetaAccountsResponse;
-  if (!response.ok || body.error) throw new Error("meta_account_discovery_failed");
+  if (!response.ok || body.error) {
+    console.warn("meta_oauth_account_discovery_failed", {
+      status: response.status,
+      code: body.error?.code ?? null,
+      type: body.error?.type ?? null,
+      message: body.error?.message ?? null,
+    });
+    throw new Error("meta_account_discovery_failed");
+  }
   return body.data ?? [];
 }
 
@@ -129,6 +153,10 @@ async function instagramProfile(graphBaseUrl: string, igId: string, pageAccessTo
 export async function GET(request: NextRequest) {
   const code = request.nextUrl.searchParams.get("code");
   const state = request.nextUrl.searchParams.get("state");
+  const oauthError = request.nextUrl.searchParams.get("error");
+  const oauthErrorReason = request.nextUrl.searchParams.get("error_reason");
+  const oauthErrorDescription = request.nextUrl.searchParams.get("error_description");
+  const oauthErrorCode = request.nextUrl.searchParams.get("error_code");
   const expectedState = request.cookies.get("tela_meta_state")?.value;
   const brandId = request.cookies.get("tela_meta_brand")?.value;
   const purposeRaw = request.cookies.get("tela_meta_purpose")?.value ?? null;
@@ -138,6 +166,19 @@ export async function GET(request: NextRequest) {
   if (!isMetaPurpose(purposeRaw)) return redirectResult(request, returnTo, "meta_state_invalid");
   const config = getMetaOAuthConfig(purposeRaw);
   if (!config) return redirectResult(request, returnTo, "meta_not_configured");
+
+  if (oauthError) {
+    console.warn("meta_oauth_provider_error", {
+      error: oauthError,
+      reason: oauthErrorReason,
+      description: oauthErrorDescription,
+      code: oauthErrorCode,
+      purpose: purposeRaw,
+    });
+    // A tela já conhece esta mensagem e evita um erro genérico. O log mantém o detalhe técnico.
+    return redirectResult(request, returnTo, "meta_token_failed");
+  }
+
   if (!code || !state || !expectedState || state !== expectedState || !brandId) {
     return redirectResult(request, returnTo, "meta_state_invalid");
   }
@@ -208,7 +249,10 @@ export async function GET(request: NextRequest) {
         p_key_version: "aes-gcm-v1",
       });
 
-      if (result.error || !result.data) throw new Error("meta_asset_persist_failed");
+      if (result.error || !result.data) {
+        console.warn("meta_oauth_asset_persist_failed", { code: result.error?.code ?? null });
+        throw new Error("meta_asset_persist_failed");
+      }
       discovered += 1;
       if (targetInstagramId && igId === targetInstagramId) matchingAssetId = String(result.data);
     }
@@ -222,7 +266,10 @@ export async function GET(request: NextRequest) {
         p_connection_id: connectionId,
         p_meta_asset_id: matchingAssetId,
       });
-      if (enable.error) throw new Error("instagram_advanced_persist_failed");
+      if (enable.error) {
+        console.warn("meta_oauth_instagram_advanced_persist_failed", { code: enable.error.code ?? null });
+        throw new Error("instagram_advanced_persist_failed");
+      }
       return redirectResult(request, returnTo, "instagram_advanced_enabled", discovered);
     }
 
