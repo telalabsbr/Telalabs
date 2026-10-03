@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { createUntypedSupabaseAdminClient } from "@/lib/supabase/admin";
 import { encryptToken } from "@/lib/oauth/token-crypto";
 import { getMetaOAuthConfig, isMetaPurpose } from "@/lib/oauth/meta";
 
@@ -143,7 +143,7 @@ export async function GET(request: NextRequest) {
   }
 
   const supabase = await createSupabaseServerClient();
-  const admin = createSupabaseAdminClient();
+  const admin = createUntypedSupabaseAdminClient();
   if (!supabase || !admin) return redirectResult(request, returnTo, "server_not_configured");
 
   const { data: userData } = await supabase.auth.getUser();
@@ -193,7 +193,7 @@ export async function GET(request: NextRequest) {
         : null;
       const encryptedPageToken = await encryptToken(page.access_token);
 
-      const result = await (admin as any).rpc("server_upsert_meta_asset", {
+      const result = await admin.rpc("server_upsert_meta_asset", {
         p_organization_id: brand.organization_id,
         p_brand_id: brand.id,
         p_page_id: page.id,
@@ -204,8 +204,6 @@ export async function GET(request: NextRequest) {
         p_instagram_name: profile?.name ?? "",
         p_scopes: config.scopes,
         p_access_token_ciphertext: encryptedPageToken,
-        // Tokens de Página derivados de um user token de longa duração não usam o
-        // mesmo expires_in do user token; invalidação é tratada por health/relogin.
         p_expires_at: null,
         p_key_version: "aes-gcm-v1",
       });
@@ -220,7 +218,7 @@ export async function GET(request: NextRequest) {
         return redirectResult(request, returnTo, "instagram_advanced_not_linked", discovered);
       }
 
-      const enable = await (admin as any).rpc("server_enable_instagram_advanced", {
+      const enable = await admin.rpc("server_enable_instagram_advanced", {
         p_connection_id: connectionId,
         p_meta_asset_id: matchingAssetId,
       });
