@@ -46,6 +46,20 @@ function validMetaAppId(value: string | undefined) {
   return Boolean(value && /^\d+$/.test(value.trim()));
 }
 
+export function getMetaOAuthReadiness(purpose: MetaPurpose) {
+  const clientId = process.env.META_CLIENT_ID?.trim() || DEFAULT_META_CLIENT_ID;
+  const clientSecret = process.env.META_CLIENT_SECRET?.trim();
+  const redirectUri = getMetaRedirectUri();
+  const scopes = scopesForMetaPurpose(purpose);
+
+  return {
+    clientIdValid: validMetaAppId(clientId),
+    clientSecretPresent: Boolean(clientSecret),
+    redirectUriPresent: Boolean(redirectUri),
+    scopesPresent: scopes.length > 0,
+  };
+}
+
 export function getMetaOAuthConfig(purpose: MetaPurpose) {
   // Facebook Login usa explicitamente o app Meta/Facebook do Tela Social.
   // O App ID é público e pode ter fallback seguro; o App Secret continua
@@ -57,8 +71,16 @@ export function getMetaOAuthConfig(purpose: MetaPurpose) {
   const tokenUrl = process.env.META_OAUTH_TOKEN_URL || `${graphBaseUrl}/oauth/access_token`;
   const redirectUri = getMetaRedirectUri();
   const scopes = scopesForMetaPurpose(purpose);
+  const readiness = getMetaOAuthReadiness(purpose);
 
-  if (!validMetaAppId(clientId) || !clientSecret || !redirectUri || !scopes.length) return null;
+  if (
+    !readiness.clientIdValid ||
+    !readiness.clientSecretPresent ||
+    !readiness.redirectUriPresent ||
+    !readiness.scopesPresent ||
+    !clientSecret ||
+    !redirectUri
+  ) return null;
 
   return {
     clientId,
