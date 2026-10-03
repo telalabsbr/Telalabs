@@ -34,6 +34,10 @@ type InstagramProfile = {
   error?: { message?: string };
 };
 
+function normalizeUsername(value: string | null | undefined) {
+  return (value ?? "").trim().replace(/^@+/, "").toLowerCase();
+}
+
 function safeReturn(value: string | undefined) {
   if (!value || !value.startsWith("/") || value.startsWith("//")) return "/conexoes";
   return value;
@@ -211,11 +215,12 @@ export async function GET(request: NextRequest) {
   if (brandError || !brand) return redirectResult(request, returnTo, "brand_not_accessible");
 
   let targetInstagramId: string | null = null;
+  let targetInstagramUsername: string | null = null;
   if (purposeRaw === "instagram_advanced") {
     if (!connectionId) return redirectResult(request, returnTo, "instagram_advanced_invalid_connection");
     const { data: connection, error: connectionError } = await supabase
       .from("social_connections")
-      .select("id,provider_account_id,provider,brand_id,organization_id")
+      .select("id,provider_account_id,username,provider,brand_id,organization_id")
       .eq("id", connectionId)
       .eq("provider", "instagram")
       .eq("brand_id", brand.id)
@@ -225,6 +230,7 @@ export async function GET(request: NextRequest) {
       return redirectResult(request, returnTo, "instagram_advanced_invalid_connection");
     }
     targetInstagramId = connection.provider_account_id;
+    targetInstagramUsername = normalizeUsername(connection.username);
   }
 
   try {
@@ -264,12 +270,31 @@ export async function GET(request: NextRequest) {
         throw new Error("meta_asset_persist_failed");
       }
       discovered += 1;
-      if (targetInstagramId && igId === targetInstagramId) matchingAssetId = String(result.data);
+
+      const idMatches = Boolean(targetInstagramId && igId === targetInstagramId);
+      const usernameMatches = Boolean(
+        targetInstagramUsername
+        && profile?.username
+        && normalizeUsername(profile.username) === targetInstagramUsername
+      );
+      if (idMatches || usernameMatches) matchingAssetId = String(result.data);
     }
 
     if (purposeRaw === "instagram_advanced") {
-      if (!matchingAssetId || !connectionId) {
-        return redirectResult(request, returnTo, "instagram_advanced_not_linked", discovered);
+      if (!connectionId) {
+        return redirectResult(request, returnTo, "instagram_advanced_invalid_connection", discovered);
+      }
+
+      if (!matchingAssetId) {
+        const mark = await admin.rpc("server_mark_instagram_meta_authorized", {
+          p_connection_id: connectionId,
+          p_link_required: true,
+        });
+        if (mark.error) {
+          console.warn("meta_oauth_authorized_state_persist_failed", { code: mark.error.code ?? null });
+          throw new Error("instagram_advanced_persist_failed");
+        }
+        return redirectResult(request, returnTo, "instagram_advanced_link_required", discovered);
       }
 
       const enable = await admin.rpc("server_enable_instagram_advanced", {
