@@ -58,10 +58,13 @@ export async function GET(request: NextRequest) {
   const config = getMetaOAuthConfig(purpose);
   if (!config) {
     console.warn("meta_oauth_not_configured", { purpose, ...readiness });
-    if (!readiness.clientIdValid) return redirectWithError(request, "meta_client_id_invalid");
-    if (!readiness.clientSecretPresent) return redirectWithError(request, "meta_client_secret_missing");
-    if (!readiness.loginConfigIdValid) return redirectWithError(request, "meta_login_config_missing");
-    if (!readiness.redirectUriPresent) return redirectWithError(request, "meta_redirect_missing");
+    // Use mensagens já conhecidas pela tela para não deixar o usuário com erro genérico.
+    if (!readiness.clientIdValid || !readiness.clientSecretPresent) {
+      return redirectWithError(request, "server_not_configured");
+    }
+    if (!readiness.loginConfigIdValid || !readiness.redirectUriPresent) {
+      return redirectWithError(request, "meta_not_configured");
+    }
     return redirectWithError(request, "meta_not_configured");
   }
 
@@ -107,7 +110,9 @@ export async function GET(request: NextRequest) {
   authorization.searchParams.set("client_id", config.clientId);
   authorization.searchParams.set("redirect_uri", config.redirectUri);
   authorization.searchParams.set("response_type", "code");
+  authorization.searchParams.set("override_default_response_type", "true");
   authorization.searchParams.set("config_id", config.loginConfigId);
+  authorization.searchParams.set("auth_type", "rerequest");
   authorization.searchParams.set("state", state);
 
   const response = NextResponse.redirect(authorization);
