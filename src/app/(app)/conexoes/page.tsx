@@ -39,6 +39,10 @@ type MetaAsset = {
   discovered_at: string;
 };
 
+function normalizeUsername(value: string | null | undefined) {
+  return (value ?? "").trim().replace(/^@+/, "").toLowerCase();
+}
+
 export default function ConnectionsPage() {
   const tenant = useTenantData();
   const [notice, setNotice] = useState("");
@@ -65,13 +69,15 @@ export default function ConnectionsPage() {
       meta_assets_ready: count > 1
         ? `${count} Páginas da Meta foram autorizadas. Escolha quais deseja conectar ao Facebook.`
         : "Autorização Meta concluída. Escolha a Página do Facebook que deseja conectar.",
-      instagram_advanced_enabled: "Recursos avançados do Instagram ativados. Esta conta já pode usar capacidades Meta como música para Reels quando disponíveis no criador.",
-      instagram_advanced_not_linked: "A Meta foi autorizada, mas não encontramos uma Página vinculada a este mesmo Instagram profissional.",
-      instagram_advanced_invalid_connection: "Não foi possível identificar a conexão do Instagram escolhida para ativar os recursos avançados.",
+      instagram_advanced_enabled: "Recursos avançados do Instagram ativados.",
+      instagram_advanced_link_required: "Meta autorizada com sucesso. Falta apenas vincular este Instagram profissional à Página correspondente no Facebook/Meta. Depois, use Verificar vínculo.",
+      instagram_advanced_not_linked: "A Meta foi autorizada. Falta vincular este Instagram profissional à Página correspondente no Facebook/Meta.",
+      instagram_advanced_invalid_connection: "Não foi possível identificar a conexão do Instagram escolhida.",
       meta_no_eligible_accounts: "A autorização funcionou, mas não encontramos Páginas elegíveis nesta conta Meta.",
-      meta_not_configured: "A infraestrutura Meta está pronta, mas esta instalação ainda precisa habilitar o Facebook Login no aplicativo Meta.",
+      meta_not_configured: "A integração Meta ainda não está completamente configurada neste ambiente.",
       meta_token_failed: "A Meta não concluiu a autorização inicial. Tente novamente.",
       meta_long_token_failed: "A Meta autorizou o login, mas não foi possível concluir a credencial de longa duração.",
+      meta_account_discovery_failed: "A Meta autorizou o login, mas não foi possível carregar as Páginas disponíveis.",
       meta_state_invalid: "A autorização expirou ou não pôde ser validada. Inicie a conexão novamente.",
       meta_callback_failed: "Não foi possível concluir a conexão da Meta.",
       session_expired: "Sua sessão expirou durante a autorização. Entre novamente.",
@@ -81,7 +87,9 @@ export default function ConnectionsPage() {
 
     setNotice(messages[oauth] ?? "A conexão não pôde ser concluída.");
     if (oauth === "meta_assets_ready") setPendingMetaAssetsAfterOAuth(true);
-    if (oauth === "instagram_advanced_enabled") void tenant.refresh();
+    if (oauth === "instagram_advanced_enabled" || oauth === "instagram_advanced_link_required") {
+      void tenant.refresh();
+    }
 
     const clean = new URL(window.location.href);
     clean.searchParams.delete("oauth");
@@ -179,6 +187,37 @@ export default function ConnectionsPage() {
     }
   }
 
+  async function verifyInstagramLink(connection: TenantConnection) {
+    setMetaBusy(connection.id);
+    try {
+      const response = await fetch("/api/oauth/meta/assets", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          brand_id: tenant.activeBrand.id,
+          action: "verify_instagram_link",
+          connection_id: connection.id,
+        }),
+      });
+      const body = await response.json() as { linked?: boolean; error?: string };
+      if (!response.ok) {
+        setNotice("Não foi possível verificar o vínculo agora. Tente novamente.");
+        return;
+      }
+
+      await tenant.refresh();
+      if (body.linked) {
+        setNotice("Vínculo encontrado. Recursos avançados ativados.");
+      } else {
+        const handle = connection.handle ?? connection.username ?? "este Instagram";
+        setNotice(`A Meta já está autorizada. Falta vincular ${handle} à Página do Facebook correspondente. Depois disso, clique em Verificar vínculo.`);
+      }
+    } finally {
+      setMetaBusy(null);
+    }
+  }
+
   async function activateInstagramAdvanced(connection: TenantConnection) {
     if (tenant.source !== "supabase" || tenant.activeBrand.id === "unconfigured") return;
     if (connection.metadata?.meta_advanced_enabled === true) {
@@ -186,13 +225,22 @@ export default function ConnectionsPage() {
       return;
     }
 
+    if (connection.metadata?.meta_authorized === true) {
+      await verifyInstagramLink(connection);
+      return;
+    }
+
     setMetaBusy(connection.id);
     try {
       const assets = await loadMetaAssets(false);
-      const matching = assets.find(asset =>
-        Boolean(connection.providerAccountId)
-        && asset.instagram_business_account_id === connection.providerAccountId
-      );
+      const targetUsername = normalizeUsername(connection.username ?? connection.handle);
+      const matching = assets.find(asset => {
+        const idMatches = Boolean(connection.providerAccountId)
+          && asset.instagram_business_account_id === connection.providerAccountId;
+        const usernameMatches = Boolean(targetUsername)
+          && normalizeUsername(asset.instagram_username) === targetUsername;
+        return idMatches || usernameMatches;
+      });
 
       if (matching) {
         const response = await fetch("/api/oauth/meta/assets", {
@@ -311,7 +359,7 @@ export default function ConnectionsPage() {
     </section>
 
     {tenant.source === "supabase" && <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">
-      Instagram direto e autorizações Meta ficam separados: ativar Facebook ou música não substitui a conexão normal do Instagram.
+      Instagram direto e autorizações Meta ficam separados: ativar Facebook ou recursos avançados não substitui a conexão normal do Instagram.
     </div>}
 
     {tenant.source === "needs_setup" && <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
@@ -333,6 +381,8 @@ export default function ConnectionsPage() {
           const attention = connection.status === "expired" || connection.status === "error";
           const menuVisible = openMenu === connection.id;
           const advancedInstagram = connection.platform === "instagram" && connection.metadata?.meta_advanced_enabled === true;
+          const metaAuthorizedInstagram = connection.platform === "instagram" && connection.metadata?.meta_authorized === true;
+          const metaLinkRequired = metaAuthorizedInstagram && !advancedInstagram && connection.metadata?.meta_link_required === true;
 
           return <article key={connection.id} className="card relative min-w-0 p-4">
             <div className="flex min-w-0 items-start gap-3">
@@ -350,22 +400,26 @@ export default function ConnectionsPage() {
               </div>}
             </div>
 
-            {connection.platform === "instagram" && connected && <div className={`mt-4 rounded-xl border p-3 ${advancedInstagram ? "border-indigo-200 bg-indigo-50/60" : "border-slate-200 bg-slate-50"}`}>
+            {connection.platform === "instagram" && connected && <div className={`mt-4 rounded-xl border p-3 ${advancedInstagram ? "border-indigo-200 bg-indigo-50/60" : metaAuthorizedInstagram ? "border-amber-200 bg-amber-50/60" : "border-slate-200 bg-slate-50"}`}>
               <div className="flex items-start gap-2">
-                {advancedInstagram ? <Sparkles size={17} className="mt-0.5 shrink-0 text-indigo-600"/> : <Music2 size={17} className="mt-0.5 shrink-0 text-slate-600"/>}
+                {advancedInstagram ? <Sparkles size={17} className="mt-0.5 shrink-0 text-indigo-600"/> : <Music2 size={17} className={`mt-0.5 shrink-0 ${metaAuthorizedInstagram ? "text-amber-700" : "text-slate-600"}`}/>}
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-black text-slate-900">Recursos avançados</p>
                   {advancedInstagram
-                    ? <p className="mt-1 text-xs leading-5 text-indigo-800">Ativos via Meta. Música para Reels e outras capacidades avançadas podem usar esta autorização.</p>
-                    : <p className="mt-1 text-xs leading-5 text-slate-600">Para música do Instagram, a Meta exige também autorização da conta do Facebook que administra a Página vinculada.</p>}
+                    ? <p className="mt-1 text-xs leading-5 text-indigo-800">Ativos via Meta. Esta conta já tem a autorização avançada vinculada.</p>
+                    : metaLinkRequired
+                      ? <p className="mt-1 text-xs leading-5 text-amber-800">Meta autorizada. Falta vincular este Instagram profissional à Página correspondente no Facebook/Meta. Depois, basta verificar o vínculo.</p>
+                      : <p className="mt-1 text-xs leading-5 text-slate-600">A ativação abre a autorização oficial da Meta. Esse consentimento é necessário apenas na primeira vez.</p>}
                 </div>
               </div>
               {!advancedInstagram && <button
                 onClick={() => void activateInstagramAdvanced(connection)}
                 disabled={metaBusy === connection.id}
                 className="mt-3 w-full rounded-lg border border-indigo-200 bg-white px-3 py-2 text-xs font-black text-indigo-700 hover:bg-indigo-50 disabled:opacity-60"
-              >{metaBusy === connection.id ? "Verificando autorização Meta..." : "Ativar recursos avançados"}</button>}
-              {advancedInstagram && <div className="mt-3 flex items-center gap-2 text-xs font-bold text-indigo-700"><Music2 size={14}/> Música para Reels: autorização disponível</div>}
+              >{metaBusy === connection.id
+                ? metaAuthorizedInstagram ? "Verificando vínculo..." : "Abrindo autorização Meta..."
+                : metaAuthorizedInstagram ? "Verificar vínculo" : "Ativar recursos avançados"}</button>}
+              {advancedInstagram && <div className="mt-3 flex items-center gap-2 text-xs font-bold text-indigo-700"><Music2 size={14}/> Autorização avançada ativa</div>}
             </div>}
 
             {connection.platform === "tiktok" && <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
@@ -424,7 +478,7 @@ export default function ConnectionsPage() {
         </div>
 
         <div className="mt-4 rounded-xl bg-slate-50 p-3 text-xs leading-5 text-slate-600">
-          Ao ativar recursos avançados do Instagram, avisaremos claramente antes de abrir a autorização da conta Meta/Facebook responsável pela Página vinculada.
+          A autorização Meta usa as telas oficiais da Meta. Depois da primeira autorização, o Tela Social reaproveita a conexão e evita pedir o mesmo consentimento novamente.
         </div>
       </section>
     </>}
@@ -463,7 +517,7 @@ export default function ConnectionsPage() {
         </div>
 
         <button onClick={() => startMetaOAuth("facebook")} className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-black text-slate-700 hover:bg-slate-50">
-          <RefreshCw size={15}/> Atualizar contas da Meta
+          <RefreshCw size={15}/> Atualizar autorização Meta
         </button>
       </section>
     </>}
