@@ -41,22 +41,26 @@ export function scopesForMetaPurpose(purpose: MetaPurpose) {
   return Array.from(new Set([...PURPOSE_SCOPES[purpose], ...extraScopes()]));
 }
 
+function validMetaAppId(value: string | undefined) {
+  return Boolean(value && /^\d+$/.test(value.trim()));
+}
+
 export function getMetaOAuthConfig(purpose: MetaPurpose) {
-  // Instagram Login e Facebook Login podem coexistir no mesmo app Meta.
-  // Se variáveis META específicas não existirem, reaproveitamos App ID/Secret
-  // já configurados para o Instagram direto, sem expor qualquer segredo ao browser.
-  const clientId = process.env.META_CLIENT_ID || process.env.INSTAGRAM_CLIENT_ID;
-  const clientSecret = process.env.META_CLIENT_SECRET || process.env.INSTAGRAM_CLIENT_SECRET;
+  // Facebook Login usa explicitamente as credenciais do app Meta/Facebook.
+  // Não reutilize INSTAGRAM_CLIENT_ID/SECRET como fallback: o Instagram Login
+  // direto pode usar credenciais próprias que o diálogo OAuth do Facebook rejeita.
+  const clientId = process.env.META_CLIENT_ID?.trim();
+  const clientSecret = process.env.META_CLIENT_SECRET?.trim();
   const graphBaseUrl = getMetaGraphBaseUrl();
   const authorizeUrl = process.env.META_OAUTH_AUTHORIZE_URL || DEFAULT_AUTHORIZE_URL;
   const tokenUrl = process.env.META_OAUTH_TOKEN_URL || `${graphBaseUrl}/oauth/access_token`;
   const redirectUri = getMetaRedirectUri();
   const scopes = scopesForMetaPurpose(purpose);
 
-  if (!clientId || !clientSecret || !redirectUri || !scopes.length) return null;
+  if (!validMetaAppId(clientId) || !clientSecret || !redirectUri || !scopes.length) return null;
 
   return {
-    clientId,
+    clientId: clientId as string,
     clientSecret,
     authorizeUrl,
     tokenUrl,
