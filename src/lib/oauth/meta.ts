@@ -2,7 +2,6 @@ import "server-only";
 
 export type MetaPurpose = "facebook" | "instagram_advanced";
 
-const DEFAULT_META_CLIENT_ID = "918738154364216";
 const DEFAULT_GRAPH_BASE_URL = "https://graph.facebook.com/v26.0";
 const DEFAULT_AUTHORIZE_URL = "https://www.facebook.com/v26.0/dialog/oauth";
 
@@ -42,30 +41,33 @@ export function scopesForMetaPurpose(purpose: MetaPurpose) {
   return Array.from(new Set([...PURPOSE_SCOPES[purpose], ...extraScopes()]));
 }
 
-function validMetaAppId(value: string | undefined) {
+function validNumericId(value: string | undefined) {
   return Boolean(value && /^\d+$/.test(value.trim()));
 }
 
 export function getMetaOAuthReadiness(purpose: MetaPurpose) {
-  const clientId = process.env.META_CLIENT_ID?.trim() || DEFAULT_META_CLIENT_ID;
+  const clientId = process.env.META_CLIENT_ID?.trim();
   const clientSecret = process.env.META_CLIENT_SECRET?.trim();
+  const loginConfigId = process.env.META_LOGIN_CONFIG_ID?.trim();
   const redirectUri = getMetaRedirectUri();
   const scopes = scopesForMetaPurpose(purpose);
 
   return {
-    clientIdValid: validMetaAppId(clientId),
+    clientIdValid: validNumericId(clientId),
     clientSecretPresent: Boolean(clientSecret),
+    loginConfigIdValid: validNumericId(loginConfigId),
     redirectUriPresent: Boolean(redirectUri),
     scopesPresent: scopes.length > 0,
   };
 }
 
 export function getMetaOAuthConfig(purpose: MetaPurpose) {
-  // Facebook Login usa explicitamente o app Meta/Facebook do Tela Social.
-  // O App ID é público e pode ter fallback seguro; o App Secret continua
-  // obrigatório no runtime e nunca é exposto ao navegador.
-  const clientId = process.env.META_CLIENT_ID?.trim() || DEFAULT_META_CLIENT_ID;
+  // Este app usa Facebook Login for Business. Nesse fluxo as permissões são
+  // definidas na configuração de login da Meta (config_id), não no parâmetro
+  // scope enviado pelo navegador.
+  const clientId = process.env.META_CLIENT_ID?.trim();
   const clientSecret = process.env.META_CLIENT_SECRET?.trim();
+  const loginConfigId = process.env.META_LOGIN_CONFIG_ID?.trim();
   const graphBaseUrl = getMetaGraphBaseUrl();
   const authorizeUrl = process.env.META_OAUTH_AUTHORIZE_URL || DEFAULT_AUTHORIZE_URL;
   const tokenUrl = process.env.META_OAUTH_TOKEN_URL || `${graphBaseUrl}/oauth/access_token`;
@@ -76,15 +78,18 @@ export function getMetaOAuthConfig(purpose: MetaPurpose) {
   if (
     !readiness.clientIdValid ||
     !readiness.clientSecretPresent ||
+    !readiness.loginConfigIdValid ||
     !readiness.redirectUriPresent ||
-    !readiness.scopesPresent ||
+    !clientId ||
     !clientSecret ||
+    !loginConfigId ||
     !redirectUri
   ) return null;
 
   return {
     clientId,
     clientSecret,
+    loginConfigId,
     authorizeUrl,
     tokenUrl,
     graphBaseUrl,
