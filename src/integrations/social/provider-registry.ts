@@ -1,5 +1,6 @@
 import "server-only";
 import type { Json } from "@/lib/supabase/database.types";
+import { facebookPublishAdapter } from "./facebook-adapter";
 import { instagramPublishAdapter } from "./instagram-adapter";
 
 export type WorkerOutcome =
@@ -58,9 +59,9 @@ export interface PublishAdapter {
 }
 
 /**
- * O Instagram já passou por teste real ponta a ponta. A partir daqui o adapter
- * entra no registry quando a configuração mínima de runtime está presente.
- * Providers futuros continuam fora até terem adapter e validação equivalentes.
+ * Instagram e Facebook Pages compartilham a mesma infraestrutura segura de
+ * credenciais, mídia e worker. Cada adapter continua responsável pelas regras
+ * específicas da plataforma e pela reconciliação para evitar republicação cega.
  */
 export function getEnabledPublishAdapters(): Map<string, PublishAdapter> {
   const adapters = new Map<string, PublishAdapter>();
@@ -76,6 +77,7 @@ export function getEnabledPublishAdapters(): Map<string, PublishAdapter> {
 
   if (hasTokenCrypto && hasStorage && hasDeliveryOrigin) {
     adapters.set(instagramPublishAdapter.provider, instagramPublishAdapter);
+    adapters.set(facebookPublishAdapter.provider, facebookPublishAdapter);
   }
 
   return adapters;
