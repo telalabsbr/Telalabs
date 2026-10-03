@@ -1,7 +1,12 @@
 import { randomBytes } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { getMetaOAuthConfig, isMetaPurpose, type MetaPurpose } from "@/lib/oauth/meta";
+import {
+  getMetaOAuthConfig,
+  getMetaOAuthReadiness,
+  isMetaPurpose,
+  type MetaPurpose,
+} from "@/lib/oauth/meta";
 
 export const runtime = "nodejs";
 
@@ -50,8 +55,14 @@ export async function GET(request: NextRequest) {
     return redirectWithError(request, "meta_invalid_request");
   }
 
+  const readiness = getMetaOAuthReadiness(purpose);
   const config = getMetaOAuthConfig(purpose);
-  if (!config) return redirectWithError(request, "meta_not_configured");
+  if (!config) {
+    if (!readiness.clientIdValid) return redirectWithError(request, "meta_client_id_invalid");
+    if (!readiness.clientSecretPresent) return redirectWithError(request, "meta_client_secret_missing");
+    if (!readiness.redirectUriPresent) return redirectWithError(request, "meta_redirect_missing");
+    return redirectWithError(request, "meta_not_configured");
+  }
 
   const supabase = await createSupabaseServerClient();
   if (!supabase) return redirectWithError(request, "auth_not_configured");
