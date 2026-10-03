@@ -2,6 +2,10 @@ import "server-only";
 
 export type MetaPurpose = "facebook" | "instagram_advanced";
 
+// App ID é público. Fixamos o app oficial de Facebook Login for Business do Tela Social
+// para impedir que uma variável antiga da Vercel volte a abrir o app Meta legado.
+export const TELA_SOCIAL_META_APP_ID = "1572136891356481";
+
 const DEFAULT_GRAPH_BASE_URL = "https://graph.facebook.com/v26.0";
 const DEFAULT_AUTHORIZE_URL = "https://www.facebook.com/v26.0/dialog/oauth";
 
@@ -46,14 +50,13 @@ function validNumericId(value: string | undefined) {
 }
 
 export function getMetaOAuthReadiness(purpose: MetaPurpose) {
-  const clientId = process.env.META_CLIENT_ID?.trim();
   const clientSecret = process.env.META_CLIENT_SECRET?.trim();
   const loginConfigId = process.env.META_LOGIN_CONFIG_ID?.trim();
   const redirectUri = getMetaRedirectUri();
   const scopes = scopesForMetaPurpose(purpose);
 
   return {
-    clientIdValid: validNumericId(clientId),
+    clientIdValid: validNumericId(TELA_SOCIAL_META_APP_ID),
     clientSecretPresent: Boolean(clientSecret),
     loginConfigIdValid: validNumericId(loginConfigId),
     redirectUriPresent: Boolean(redirectUri),
@@ -62,10 +65,9 @@ export function getMetaOAuthReadiness(purpose: MetaPurpose) {
 }
 
 export function getMetaOAuthConfig(purpose: MetaPurpose) {
-  // Este app usa Facebook Login for Business. Nesse fluxo as permissões são
-  // definidas na configuração de login da Meta (config_id), não no parâmetro
-  // scope enviado pelo navegador.
-  const clientId = process.env.META_CLIENT_ID?.trim();
+  // Facebook Login for Business: permissões vêm do config_id da Meta.
+  // O App ID público fica fixo no código; somente o App Secret permanece no ambiente.
+  const clientId = TELA_SOCIAL_META_APP_ID;
   const clientSecret = process.env.META_CLIENT_SECRET?.trim();
   const loginConfigId = process.env.META_LOGIN_CONFIG_ID?.trim();
   const graphBaseUrl = getMetaGraphBaseUrl();
@@ -80,7 +82,6 @@ export function getMetaOAuthConfig(purpose: MetaPurpose) {
     !readiness.clientSecretPresent ||
     !readiness.loginConfigIdValid ||
     !readiness.redirectUriPresent ||
-    !clientId ||
     !clientSecret ||
     !loginConfigId ||
     !redirectUri
