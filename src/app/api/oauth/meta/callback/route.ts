@@ -286,15 +286,7 @@ export async function GET(request: NextRequest) {
       }
 
       if (!matchingAssetId) {
-        const mark = await admin.rpc("server_mark_instagram_meta_authorized", {
-          p_connection_id: connectionId,
-          p_link_required: true,
-        });
-        if (mark.error) {
-          console.warn("meta_oauth_authorized_state_persist_failed", { code: mark.error.code ?? null });
-          throw new Error("instagram_advanced_persist_failed");
-        }
-        return redirectResult(request, returnTo, "instagram_advanced_link_required", discovered);
+        return redirectResult(request, returnTo, "instagram_advanced_not_linked", discovered);
       }
 
       const enable = await admin.rpc("server_enable_instagram_advanced", {
