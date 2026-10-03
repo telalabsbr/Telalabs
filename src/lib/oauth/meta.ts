@@ -1,10 +1,22 @@
 import "server-only";
 
-export type MetaPlatform = "instagram" | "facebook";
+export type MetaPurpose = "facebook" | "instagram_advanced";
+
+const DEFAULT_GRAPH_BASE_URL = "https://graph.facebook.com/v26.0";
+const DEFAULT_AUTHORIZE_URL = "https://www.facebook.com/v26.0/dialog/oauth";
+
+const PURPOSE_SCOPES: Record<MetaPurpose, string[]> = {
+  facebook: ["pages_show_list", "pages_read_engagement", "pages_manage_posts"],
+  instagram_advanced: [
+    "pages_show_list",
+    "pages_read_engagement",
+    "instagram_basic",
+    "instagram_content_publish",
+  ],
+};
 
 export function getMetaGraphBaseUrl() {
-  const graphBaseUrl = process.env.META_GRAPH_BASE_URL;
-  return graphBaseUrl ? graphBaseUrl.replace(/\/$/, "") : null;
+  return (process.env.META_GRAPH_BASE_URL || DEFAULT_GRAPH_BASE_URL).replace(/\/$/, "");
 }
 
 function getMetaRedirectUri() {
@@ -18,21 +30,30 @@ function getMetaRedirectUri() {
   }
 }
 
-export function getMetaOAuthConfig() {
-  const clientId = process.env.META_CLIENT_ID;
-  const clientSecret = process.env.META_CLIENT_SECRET;
-  const authorizeUrl = process.env.META_OAUTH_AUTHORIZE_URL;
-  const tokenUrl = process.env.META_OAUTH_TOKEN_URL;
-  const graphBaseUrl = getMetaGraphBaseUrl();
-  const redirectUri = getMetaRedirectUri();
-  const scopes = (process.env.META_OAUTH_SCOPES ?? "")
+function extraScopes() {
+  return (process.env.META_OAUTH_SCOPES ?? "")
     .split(",")
     .map(value => value.trim())
     .filter(Boolean);
+}
 
-  if (!clientId || !clientSecret || !authorizeUrl || !tokenUrl || !graphBaseUrl || !redirectUri || !scopes.length) {
-    return null;
-  }
+export function scopesForMetaPurpose(purpose: MetaPurpose) {
+  return Array.from(new Set([...PURPOSE_SCOPES[purpose], ...extraScopes()]));
+}
+
+export function getMetaOAuthConfig(purpose: MetaPurpose) {
+  // Instagram Login e Facebook Login podem coexistir no mesmo app Meta.
+  // Se variáveis META específicas não existirem, reaproveitamos App ID/Secret
+  // já configurados para o Instagram direto, sem expor qualquer segredo ao browser.
+  const clientId = process.env.META_CLIENT_ID || process.env.INSTAGRAM_CLIENT_ID;
+  const clientSecret = process.env.META_CLIENT_SECRET || process.env.INSTAGRAM_CLIENT_SECRET;
+  const graphBaseUrl = getMetaGraphBaseUrl();
+  const authorizeUrl = process.env.META_OAUTH_AUTHORIZE_URL || DEFAULT_AUTHORIZE_URL;
+  const tokenUrl = process.env.META_OAUTH_TOKEN_URL || `${graphBaseUrl}/oauth/access_token`;
+  const redirectUri = getMetaRedirectUri();
+  const scopes = scopesForMetaPurpose(purpose);
+
+  if (!clientId || !clientSecret || !redirectUri || !scopes.length) return null;
 
   return {
     clientId,
@@ -45,6 +66,6 @@ export function getMetaOAuthConfig() {
   };
 }
 
-export function isMetaPlatform(value: string | null): value is MetaPlatform {
-  return value === "instagram" || value === "facebook";
+export function isMetaPurpose(value: string | null): value is MetaPurpose {
+  return value === "facebook" || value === "instagram_advanced";
 }
