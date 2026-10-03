@@ -27,7 +27,6 @@ function resolvePurpose(request: NextRequest): MetaPurpose | "instagram_direct" 
   const explicit = request.nextUrl.searchParams.get("purpose");
   if (isMetaPurpose(explicit)) return explicit;
 
-  // Compatibilidade com links antigos da tela de conexões.
   const platform = request.nextUrl.searchParams.get("platform");
   if (platform === "facebook") return "facebook";
   if (platform === "instagram") return "instagram_direct";
@@ -61,6 +60,7 @@ export async function GET(request: NextRequest) {
     console.warn("meta_oauth_not_configured", { purpose, ...readiness });
     if (!readiness.clientIdValid) return redirectWithError(request, "meta_client_id_invalid");
     if (!readiness.clientSecretPresent) return redirectWithError(request, "meta_client_secret_missing");
+    if (!readiness.loginConfigIdValid) return redirectWithError(request, "meta_login_config_missing");
     if (!readiness.redirectUriPresent) return redirectWithError(request, "meta_redirect_missing");
     return redirectWithError(request, "meta_not_configured");
   }
@@ -107,9 +107,8 @@ export async function GET(request: NextRequest) {
   authorization.searchParams.set("client_id", config.clientId);
   authorization.searchParams.set("redirect_uri", config.redirectUri);
   authorization.searchParams.set("response_type", "code");
-  authorization.searchParams.set("scope", config.scopes.join(","));
+  authorization.searchParams.set("config_id", config.loginConfigId);
   authorization.searchParams.set("state", state);
-  authorization.searchParams.set("auth_type", "rerequest");
 
   const response = NextResponse.redirect(authorization);
   const cookieOptions = {
