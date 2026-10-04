@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from "react";
 import {
+  CheckCircle2,
   CircleAlert,
+  CircleHelp,
   Link2,
   MoreHorizontal,
   Music2,
@@ -43,6 +45,11 @@ function normalizeUsername(value: string | null | undefined) {
   return (value ?? "").trim().replace(/^@+/, "").toLowerCase();
 }
 
+function metadataString(connection: TenantConnection, key: string) {
+  const value = connection.metadata?.[key];
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
 export default function ConnectionsPage() {
   const tenant = useTenantData();
   const [notice, setNotice] = useState("");
@@ -67,19 +74,19 @@ export default function ConnectionsPage() {
     const count = Number(params.get("count") ?? "0");
     const messages: Record<string, string> = {
       meta_assets_ready: count > 1
-        ? `${count} Páginas da Meta foram autorizadas. Escolha quais deseja conectar ao Facebook.`
-        : "Autorização Meta concluída. Escolha a Página do Facebook que deseja conectar.",
-      instagram_advanced_enabled: "Recursos avançados do Instagram ativados.",
-      instagram_advanced_link_required: "Meta autorizada com sucesso. Falta apenas vincular este Instagram profissional à Página correspondente no Facebook/Meta. Depois, use Verificar vínculo.",
-      instagram_advanced_not_linked: "A Meta foi autorizada. Falta vincular este Instagram profissional à Página correspondente no Facebook/Meta.",
-      instagram_advanced_invalid_connection: "Não foi possível identificar a conexão do Instagram escolhida.",
-      meta_no_eligible_accounts: "A autorização funcionou, mas não encontramos Páginas elegíveis nesta conta Meta.",
-      meta_not_configured: "A integração Meta ainda não está completamente configurada neste ambiente.",
-      meta_token_failed: "A Meta não concluiu a autorização inicial. Tente novamente.",
-      meta_long_token_failed: "A Meta autorizou o login, mas não foi possível concluir a credencial de longa duração.",
-      meta_account_discovery_failed: "A Meta autorizou o login, mas não foi possível carregar as Páginas disponíveis.",
+        ? `Facebook autorizado. Encontramos ${count} Páginas disponíveis. Escolha quais deseja usar para publicar.`
+        : "Facebook autorizado. Escolha a Página que deseja usar para publicar.",
+      instagram_advanced_enabled: "Recursos avançados ativados para este Instagram.",
+      instagram_advanced_not_linked: "Não encontramos este Instagram no Facebook usado. Entre com o Facebook que administra este Instagram. Se você usou a conta certa, confira também se o Instagram está vinculado à Página no Facebook.",
+      instagram_advanced_link_required: "Ainda não encontramos este Instagram entre as Páginas autorizadas nesse Facebook. Use o Facebook que administra este Instagram ou confira o vínculo com a Página.",
+      instagram_advanced_invalid_connection: "Não foi possível identificar o Instagram escolhido. Tente novamente.",
+      meta_no_eligible_accounts: "O login no Facebook funcionou, mas não encontramos Páginas disponíveis nessa conta.",
+      meta_not_configured: "A integração com Facebook (Meta) ainda não está completamente configurada neste ambiente.",
+      meta_token_failed: "O Facebook não concluiu a autorização. Tente novamente.",
+      meta_long_token_failed: "O Facebook autorizou o login, mas não foi possível concluir a conexão segura.",
+      meta_account_discovery_failed: "O Facebook autorizou o login, mas não foi possível carregar as Páginas disponíveis.",
       meta_state_invalid: "A autorização expirou ou não pôde ser validada. Inicie a conexão novamente.",
-      meta_callback_failed: "Não foi possível concluir a conexão da Meta.",
+      meta_callback_failed: "Não foi possível concluir a conexão com Facebook (Meta).",
       session_expired: "Sua sessão expirou durante a autorização. Entre novamente.",
       brand_not_accessible: "A marca selecionada não está acessível para esta sessão.",
       server_not_configured: "A integração segura do servidor ainda não está completamente configurada.",
@@ -136,7 +143,7 @@ export default function ConnectionsPage() {
       });
       const body = await response.json() as { assets?: MetaAsset[]; error?: string };
       if (!response.ok) {
-        setNotice("Não foi possível carregar as Páginas já autorizadas da Meta.");
+        setNotice("Não foi possível carregar as Páginas do Facebook já autorizadas.");
         return [];
       }
       const assets = body.assets ?? [];
@@ -177,11 +184,13 @@ export default function ConnectionsPage() {
       });
       const body = await response.json() as { error?: string };
       if (!response.ok) {
-        setNotice(body.error === "facebook_connect_failed" ? "Não foi possível conectar esta Página do Facebook." : "A Página selecionada não pôde ser conectada.");
+        setNotice(body.error === "facebook_connect_failed"
+          ? "Não foi possível conectar esta Página do Facebook para publicação."
+          : "A Página selecionada não pôde ser conectada.");
         return;
       }
       await tenant.refresh();
-      setNotice("Página do Facebook conectada com sucesso.");
+      setNotice("Página do Facebook conectada para publicação.");
     } finally {
       setMetaBusy(null);
     }
@@ -208,10 +217,10 @@ export default function ConnectionsPage() {
 
       await tenant.refresh();
       if (body.linked) {
-        setNotice("Vínculo encontrado. Recursos avançados ativados.");
+        setNotice("Vínculo confirmado. Recursos avançados ativados para este Instagram.");
       } else {
         const handle = connection.handle ?? connection.username ?? "este Instagram";
-        setNotice(`A Meta já está autorizada. Falta vincular ${handle} à Página do Facebook correspondente. Depois disso, clique em Verificar vínculo.`);
+        setNotice(`Ainda não encontramos ${handle} entre as Páginas autorizadas nesse Facebook. Use o Facebook que administra esse Instagram ou confira o vínculo com a Página.`);
       }
     } finally {
       setMetaBusy(null);
@@ -256,7 +265,7 @@ export default function ConnectionsPage() {
         });
         if (response.ok) {
           await tenant.refresh();
-          setNotice("Recursos avançados do Instagram ativados usando a autorização Meta que já existia.");
+          setNotice("Recursos avançados ativados usando a autorização do Facebook que já existia.");
           return;
         }
       }
@@ -293,7 +302,7 @@ export default function ConnectionsPage() {
 
   function demoOnlyUpdate(id: string, status: ConnectionStatus) {
     if (tenant.source !== "demo") {
-      setNotice("Esta ação será persistida quando a camada segura de OAuth estiver conectada. Nenhum token real foi alterado.");
+      setNotice("Esta conta usa autorização oficial e deve ser gerenciada pelo fluxo seguro de conexão.");
       setOpenMenu(null);
       return;
     }
@@ -335,7 +344,7 @@ export default function ConnectionsPage() {
 
   function demoOnlyRemove(id: string) {
     if (tenant.source !== "demo") {
-      setNotice("A remoção real será feita pelo backend seguro da integração. Esta versão não apaga credenciais reais.");
+      setNotice("A remoção real é feita pelo fluxo seguro da integração.");
       setOpenMenu(null);
       return;
     }
@@ -353,13 +362,13 @@ export default function ConnectionsPage() {
       <div>
         <p className="eyebrow">Integrações</p>
         <h1 className="mt-2 text-2xl font-black tracking-tight text-slate-950 sm:text-3xl">Contas conectadas</h1>
-        <p className="mt-1 text-sm leading-6 text-slate-500">Conecte cada rede separadamente. Autorizações Meta já existentes são reaproveitadas quando possível.</p>
+        <p className="mt-1 text-sm leading-6 text-slate-500">Conecte as contas que deseja usar. O Tela Social reaproveita autorizações do Facebook quando possível.</p>
       </div>
       <button onClick={() => setConnectOpen(true)} className="btn-primary self-start"><Plus size={16}/> Adicionar conta</button>
     </section>
 
     {tenant.source === "supabase" && <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">
-      Instagram direto e autorizações Meta ficam separados: ativar Facebook ou recursos avançados não substitui a conexão normal do Instagram.
+      O Instagram é conectado diretamente. Facebook e recursos avançados usam a autorização oficial da Meta, sem compartilhar sua senha com o Tela Social.
     </div>}
 
     {tenant.source === "needs_setup" && <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
@@ -383,6 +392,10 @@ export default function ConnectionsPage() {
           const advancedInstagram = connection.platform === "instagram" && connection.metadata?.meta_advanced_enabled === true;
           const metaAuthorizedInstagram = connection.platform === "instagram" && connection.metadata?.meta_authorized === true;
           const metaLinkRequired = metaAuthorizedInstagram && !advancedInstagram && connection.metadata?.meta_link_required === true;
+          const linkedPageId = metadataString(connection, "linked_page_id");
+          const linkedPageName = metadataString(connection, "linked_page_name");
+          const linkedMetaAssetId = metadataString(connection, "meta_asset_id");
+          const linkedFacebookConnected = Boolean(linkedPageId && connectedFacebookIds.has(linkedPageId));
 
           return <article key={connection.id} className="card relative min-w-0 p-4">
             <div className="flex min-w-0 items-start gap-3">
@@ -404,22 +417,52 @@ export default function ConnectionsPage() {
               <div className="flex items-start gap-2">
                 {advancedInstagram ? <Sparkles size={17} className="mt-0.5 shrink-0 text-indigo-600"/> : <Music2 size={17} className={`mt-0.5 shrink-0 ${metaAuthorizedInstagram ? "text-amber-700" : "text-slate-600"}`}/>}
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-black text-slate-900">Recursos avançados</p>
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-sm font-black text-slate-900">Recursos avançados</p>
+                    <span className="group relative inline-flex">
+                      <button type="button" aria-label="Como funciona a ativação dos recursos avançados" className="rounded-full text-slate-400 outline-none hover:text-indigo-600 focus:text-indigo-600">
+                        <CircleHelp size={15}/>
+                      </button>
+                      <span role="tooltip" className="pointer-events-none absolute left-1/2 top-6 z-30 w-64 -translate-x-1/2 rounded-lg bg-slate-950 px-3 py-2 text-[11px] font-medium leading-4 text-white opacity-0 shadow-xl transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+                        Para ativar, use o Facebook que administra este Instagram. A autorização acontece nas telas oficiais da Meta. Se você entrar com outro Facebook, o login pode concluir, mas os recursos não serão ativados.
+                      </span>
+                    </span>
+                    <span className={`ml-auto rounded-full px-2 py-0.5 text-[10px] font-black ${advancedInstagram ? "bg-indigo-100 text-indigo-700" : metaAuthorizedInstagram ? "bg-amber-100 text-amber-800" : "bg-slate-200 text-slate-600"}`}>
+                      {advancedInstagram ? "Ativos" : metaAuthorizedInstagram ? "Verificar" : "Não ativados"}
+                    </span>
+                  </div>
+
                   {advancedInstagram
-                    ? <p className="mt-1 text-xs leading-5 text-indigo-800">Ativos via Meta. Esta conta já tem a autorização avançada vinculada.</p>
+                    ? <p className="mt-1 text-xs leading-5 text-indigo-800">Ativos para este Instagram pelo Facebook (Meta).</p>
                     : metaLinkRequired
-                      ? <p className="mt-1 text-xs leading-5 text-amber-800">Meta autorizada. Falta vincular este Instagram profissional à Página correspondente no Facebook/Meta. Depois, basta verificar o vínculo.</p>
-                      : <p className="mt-1 text-xs leading-5 text-slate-600">A ativação abre a autorização oficial da Meta. Esse consentimento é necessário apenas na primeira vez.</p>}
+                      ? <p className="mt-1 text-xs leading-5 text-amber-800">A autorização existe, mas ainda precisamos confirmar que esse Facebook administra este Instagram.</p>
+                      : <p className="mt-1 text-xs leading-5 text-slate-600"><strong>Use o Facebook que administra este Instagram.</strong> Se usar outro Facebook, os recursos não serão ativados.</p>}
                 </div>
               </div>
+
               {!advancedInstagram && <button
                 onClick={() => void activateInstagramAdvanced(connection)}
                 disabled={metaBusy === connection.id}
                 className="mt-3 w-full rounded-lg border border-indigo-200 bg-white px-3 py-2 text-xs font-black text-indigo-700 hover:bg-indigo-50 disabled:opacity-60"
               >{metaBusy === connection.id
-                ? metaAuthorizedInstagram ? "Verificando vínculo..." : "Abrindo autorização Meta..."
+                ? metaAuthorizedInstagram ? "Verificando vínculo..." : "Abrindo Facebook..."
                 : metaAuthorizedInstagram ? "Verificar vínculo" : "Ativar recursos avançados"}</button>}
-              {advancedInstagram && <div className="mt-3 flex items-center gap-2 text-xs font-bold text-indigo-700"><Music2 size={14}/> Autorização avançada ativa</div>}
+
+              {advancedInstagram && <div className="mt-3 space-y-2">
+                <div className="flex items-center gap-2 text-xs font-bold text-indigo-700"><CheckCircle2 size={14}/> Recursos avançados ativos</div>
+                {linkedPageName && <div className="rounded-lg border border-indigo-100 bg-white/80 p-2.5 text-xs leading-5 text-slate-600">
+                  <p><span className="font-bold text-slate-800">Página vinculada:</span> {linkedPageName}</p>
+                  {linkedFacebookConnected
+                    ? <p className="mt-1 flex items-center gap-1.5 font-bold text-emerald-700"><CheckCircle2 size={13}/> Facebook também conectado para publicar</p>
+                    : linkedMetaAssetId && linkedPageId
+                      ? <button
+                          onClick={() => void connectFacebookAsset(linkedMetaAssetId)}
+                          disabled={metaBusy === linkedMetaAssetId}
+                          className="mt-2 rounded-lg border border-indigo-200 px-2.5 py-1.5 font-black text-indigo-700 hover:bg-indigo-50 disabled:opacity-60"
+                        >{metaBusy === linkedMetaAssetId ? "Conectando Página..." : "Conectar esta Página para publicar"}</button>
+                      : null}
+                </div>}
+              </div>}
             </div>}
 
             {connection.platform === "tiktok" && <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
@@ -442,7 +485,7 @@ export default function ConnectionsPage() {
           </article>;
         })}
 
-        {!tenant.loading && !connections.length && <div className="card md:col-span-2 2xl:col-span-3 p-8 text-center">
+        {!tenant.loading && !connections.length && <div className="card md:col-span-2 2xl:grid-cols-3 p-8 text-center">
           <Link2 className="mx-auto text-slate-400" size={28}/>
           <p className="mt-3 font-black text-slate-900">Nenhuma conta social conectada</p>
           <p className="mt-1 text-sm text-slate-500">Use “Adicionar conta” para escolher a primeira rede.</p>
@@ -453,7 +496,7 @@ export default function ConnectionsPage() {
 
     <section className="flex gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
       <ShieldCheck className="shrink-0" size={20}/>
-      <div><p className="font-bold">Credenciais protegidas.</p><p className="mt-1 text-xs leading-5 text-emerald-800">O Tela Social nunca recebe sua senha do Instagram ou Facebook. O login acontece nas telas oficiais da Meta e apenas tokens criptografados ficam no backend.</p></div>
+      <div><p className="font-bold">Credenciais protegidas.</p><p className="mt-1 text-xs leading-5 text-emerald-800">O Tela Social nunca recebe sua senha do Instagram ou Facebook. O login acontece nas telas oficiais das plataformas e apenas credenciais autorizadas ficam protegidas no backend.</p></div>
     </section>
 
     {connectOpen && <>
@@ -462,7 +505,7 @@ export default function ConnectionsPage() {
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 className="text-lg font-black text-slate-950">Adicionar conta</h2>
-            <p className="mt-1 text-sm leading-6 text-slate-500">Instagram e Facebook podem ser conectados separadamente. Você decide quais recursos quer usar.</p>
+            <p className="mt-1 text-sm leading-6 text-slate-500">Escolha a rede que deseja conectar para publicar.</p>
           </div>
           <button onClick={() => setConnectOpen(false)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"><X size={18}/></button>
         </div>
@@ -472,24 +515,24 @@ export default function ConnectionsPage() {
             <PlatformIcon platform={platform}/>
             <span className="min-w-0 flex-1">
               <span className="block truncate text-sm font-black text-slate-900">{platformLabels[platform]}</span>
-              <span className="mt-0.5 block text-xs text-slate-500">{platform === "instagram" ? "Login direto do Instagram" : platform === "facebook" ? "Escolher Páginas do Facebook" : "Conectar nova conta"}</span>
+              <span className="mt-0.5 block text-xs text-slate-500">{platform === "instagram" ? "Entrar diretamente no Instagram" : platform === "facebook" ? "Escolher Página para publicar" : "Conectar nova conta"}</span>
             </span>
           </button>)}
         </div>
 
         <div className="mt-4 rounded-xl bg-slate-50 p-3 text-xs leading-5 text-slate-600">
-          A autorização Meta usa as telas oficiais da Meta. Depois da primeira autorização, o Tela Social reaproveita a conexão e evita pedir o mesmo consentimento novamente.
+          Facebook e recursos avançados do Instagram usam a autorização oficial da Meta. Se você já autorizou esse Facebook antes, o Tela Social reaproveita a autorização e evita pedir o mesmo login novamente.
         </div>
       </section>
     </>}
 
     {metaAssetsOpen && <>
-      <button aria-label="Fechar Páginas Meta" className="fixed inset-0 z-50 bg-slate-950/35 backdrop-blur-[1px]" onClick={() => setMetaAssetsOpen(false)}/>
+      <button aria-label="Fechar Páginas do Facebook" className="fixed inset-0 z-50 bg-slate-950/35 backdrop-blur-[1px]" onClick={() => setMetaAssetsOpen(false)}/>
       <section className="fixed inset-x-3 bottom-[84px] z-[60] max-h-[72vh] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl sm:left-1/2 sm:top-1/2 sm:bottom-auto sm:w-[560px] sm:-translate-x-1/2 sm:-translate-y-1/2">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h2 className="text-lg font-black text-slate-950">Páginas autorizadas na Meta</h2>
-            <p className="mt-1 text-sm leading-6 text-slate-500">Escolha somente as Páginas do Facebook que deseja conectar ao Tela Social.</p>
+            <h2 className="text-lg font-black text-slate-950">Páginas do Facebook disponíveis</h2>
+            <p className="mt-1 text-sm leading-6 text-slate-500">Estas Páginas já estão disponíveis nas suas autorizações do Facebook (Meta). Escolha somente as que deseja usar para publicar. Nada é conectado automaticamente.</p>
           </div>
           <button onClick={() => setMetaAssetsOpen(false)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"><X size={18}/></button>
         </div>
@@ -509,15 +552,15 @@ export default function ConnectionsPage() {
                   disabled={alreadyConnected || metaBusy === asset.id}
                   onClick={() => void connectFacebookAsset(asset.id)}
                   className="shrink-0 rounded-lg border border-indigo-200 px-3 py-2 text-xs font-black text-indigo-700 disabled:border-emerald-100 disabled:bg-emerald-50 disabled:text-emerald-700"
-                >{alreadyConnected ? "Conectada" : metaBusy === asset.id ? "Conectando..." : "Conectar"}</button>
+                >{alreadyConnected ? "Conectada" : metaBusy === asset.id ? "Conectando..." : "Conectar para publicar"}</button>
               </div>
             </div>;
           })}
-          {!metaAssetsLoading && !metaAssets.length && <div className="rounded-xl bg-slate-50 p-4 text-sm text-slate-500">Nenhuma Página autorizada foi encontrada.</div>}
+          {!metaAssetsLoading && !metaAssets.length && <div className="rounded-xl bg-slate-50 p-4 text-sm text-slate-500">Nenhuma Página do Facebook foi encontrada nessa autorização.</div>}
         </div>
 
         <button onClick={() => startMetaOAuth("facebook")} className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-black text-slate-700 hover:bg-slate-50">
-          <RefreshCw size={15}/> Atualizar autorização Meta
+          <RefreshCw size={15}/> Usar outra conta do Facebook
         </button>
       </section>
     </>}
