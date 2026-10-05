@@ -83,6 +83,20 @@ export function classifyMetaFailure(response: MetaResponse<unknown>): PublishAda
   const safeMessage = error?.error_user_msg || error?.error_user_title || error?.message || "A Meta recusou a publicação.";
   const code = error?.code ? `META_${error.code}` : `META_HTTP_${response.status}`;
 
+  // A Meta pode devolver HTTP 403 junto do código 4 quando aplica limite de
+  // solicitações. Isso não significa token expirado e deve entrar no fluxo de
+  // retentativa, em vez de pedir uma reconexão desnecessária ao usuário.
+  if (error?.code === 4 || response.status === 429) {
+    return {
+      outcome: "RATE_LIMIT",
+      httpStatus: response.status,
+      errorCode: code,
+      errorMessageSafe: "A Meta limitou temporariamente novas solicitações. O Tela Social tentará novamente.",
+      providerRequestId: response.requestId,
+      retryAfterSeconds: response.retryAfterSeconds ?? 300,
+    };
+  }
+
   if (response.status === 401 || response.status === 403 || error?.code === 190) {
     return {
       outcome: "AUTH_REQUIRED",
@@ -90,17 +104,6 @@ export function classifyMetaFailure(response: MetaResponse<unknown>): PublishAda
       errorCode: code,
       errorMessageSafe: "A autorização da conta precisa ser renovada.",
       providerRequestId: response.requestId,
-    };
-  }
-
-  if (response.status === 429) {
-    return {
-      outcome: "RATE_LIMIT",
-      httpStatus: response.status,
-      errorCode: code,
-      errorMessageSafe: "A Meta limitou temporariamente novas solicitações.",
-      providerRequestId: response.requestId,
-      retryAfterSeconds: response.retryAfterSeconds,
     };
   }
 
