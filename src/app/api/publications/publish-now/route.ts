@@ -48,6 +48,11 @@ function toWorkerJob(row: ClaimedJobRow): PublicationWorkerJob {
   };
 }
 
+function surfaceFromPayload(payload: Json) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+  return typeof payload.surface === "string" && payload.surface.trim() ? payload.surface : null;
+}
+
 function wait(milliseconds: number) {
   return new Promise(resolve => setTimeout(resolve, milliseconds));
 }
@@ -143,7 +148,10 @@ export async function POST(request: NextRequest) {
   const jobs = ((claim.data ?? []) as ClaimedJobRow[]).map(toWorkerJob);
   const results: Array<{
     jobId: string;
+    postTargetId: string;
     provider: string;
+    contentIntent: string;
+    surface: string | null;
     outcome: string;
     finalizedAs?: string;
     errorCode?: string | null;
@@ -170,6 +178,18 @@ export async function POST(request: NextRequest) {
       };
     }
 
+    const resultBase = {
+      jobId: job.jobId,
+      postTargetId: job.postTargetId,
+      provider: job.provider,
+      contentIntent: job.contentIntent,
+      surface: surfaceFromPayload(job.payload),
+      outcome: providerResult.outcome,
+      errorCode: providerResult.errorCode ?? null,
+      providerRequestId: providerResult.providerRequestId ?? null,
+      publicUrl: providerResult.publicUrl ?? null,
+    };
+
     const finish = await admin.rpc("worker_finish_publication_job", {
       p_job_id: job.jobId,
       ...normalizeResult(providerResult),
@@ -177,26 +197,16 @@ export async function POST(request: NextRequest) {
 
     if (finish.error) {
       results.push({
-        jobId: job.jobId,
-        provider: job.provider,
-        outcome: providerResult.outcome,
-        errorCode: providerResult.errorCode ?? null,
+        ...resultBase,
         errorMessage: finish.error.message,
-        providerRequestId: providerResult.providerRequestId ?? null,
-        publicUrl: providerResult.publicUrl ?? null,
       });
       continue;
     }
 
     results.push({
-      jobId: job.jobId,
-      provider: job.provider,
-      outcome: providerResult.outcome,
+      ...resultBase,
       finalizedAs: typeof finish.data === "string" ? finish.data : undefined,
-      errorCode: providerResult.errorCode ?? null,
       errorMessage: providerResult.errorMessageSafe ?? null,
-      providerRequestId: providerResult.providerRequestId ?? null,
-      publicUrl: providerResult.publicUrl ?? null,
     });
   }
 
