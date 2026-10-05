@@ -1,0 +1,37 @@
+name: One-off media text UX
+
+on:
+  push:
+    branches:
+      - feat/ui-redesign-v1
+    paths:
+      - scripts/patch_media_text_ux.py
+      - scripts/media-text-ux-trigger.txt
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/ui-redesign-v1
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply media text UX patch
+        run: python scripts/patch_media_text_ux.py
+      - name: Commit changes
+        run: |
+          if git diff --quiet; then
+            echo "No changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/components/publication-editor.tsx src/components/video-cover-editor.tsx src/lib/supabase/database.types.ts
+          git commit -m "feat: editor de texto para stories e capas"
+          git push origin HEAD:feat/ui-redesign-v1
