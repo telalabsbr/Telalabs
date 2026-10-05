@@ -2,6 +2,7 @@
 
 import { Minus, Move, Plus, RotateCcw, Upload, Video } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { defaultTextOverlay, drawTextOverlay, overlayFontLabels, type OverlayBackground, type OverlayFont, type TextOverlayConfig } from "@/lib/media/text-overlay";
 
 type CoverMode = "auto" | "frame" | "upload";
 type Aspect = "9:16" | "4:5" | "1:1" | "16:9";
@@ -117,6 +118,7 @@ export function VideoCoverEditor({
   const [panY, setPanY] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [textOverlay, setTextOverlay] = useState<TextOverlayConfig>({ ...defaultTextOverlay });
   const ownedUrl = useRef<string | null>(null);
   const sourceImageRef = useRef<HTMLImageElement | null>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -179,7 +181,8 @@ export function VideoCoverEditor({
     const context = canvas.getContext("2d");
     if (!context) return;
     drawCover(context, image, output.width, output.height, zoom, panX, panY);
-  }, [aspect, zoom, panX, panY, sourceSize]);
+    drawTextOverlay(context, output.width, output.height, textOverlay);
+  }, [aspect, zoom, panX, panY, sourceSize, textOverlay]);
 
   function resetPosition() {
     setZoom(1);
@@ -243,6 +246,7 @@ export function VideoCoverEditor({
       if (!context) throw new Error("cover_canvas_failed");
 
       drawCover(context, image, output.width, output.height, zoom, panX, panY);
+      drawTextOverlay(context, output.width, output.height, textOverlay);
 
       const blob = await canvasBlob(canvas, "image/jpeg", 0.92);
       const file = new File([blob], `${sourceName}-${aspect.replace(":", "x")}.jpg`, {
@@ -403,6 +407,35 @@ export function VideoCoverEditor({
       <p className="mt-2 flex items-center justify-center gap-1 text-center text-[11px] leading-4 text-slate-500"><Move size={12}/> Arraste em qualquer direção para escolher a região exata. Use −/+ ou pinça para ampliar.</p>
       <p className="mt-1 text-center text-[11px] font-semibold text-slate-500">A prévia acima é o recorte que será gerado ao aplicar a capa.</p>
     </>}
+
+    {mode !== "auto" && sourceUrl && <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50/50 p-3">
+      <p className="text-xs font-black text-slate-900">Texto na capa</p>
+      <p className="mt-1 text-[11px] leading-4 text-slate-500">Opcional. Você pode escrever, usar emoji e escolher um estilo antes de gerar a capa.</p>
+      <textarea value={textOverlay.text} onChange={event => setTextOverlay(current => ({ ...current, text: event.target.value }))} className="field mt-3 min-h-20 resize-y p-3 text-sm" placeholder="Texto da capa..." maxLength={180}/>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {["✨", "🔥", "❤️", "😍", "👏", "😂", "🚀", "💡"].map(emoji => <button type="button" key={emoji} onClick={() => setTextOverlay(current => ({ ...current, text: `${current.text}${current.text ? " " : ""}${emoji}` }))} className="grid h-8 w-8 place-items-center rounded-lg border border-slate-200 bg-white text-base">{emoji}</button>)}
+      </div>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+        <label className="text-[11px] font-bold text-slate-700">Fonte
+          <select value={textOverlay.font} onChange={event => setTextOverlay(current => ({ ...current, font: event.target.value as OverlayFont }))} className="field mt-1 px-2 text-xs">
+            {(Object.keys(overlayFontLabels) as OverlayFont[]).map(font => <option key={font} value={font}>{overlayFontLabels[font]}</option>)}
+          </select>
+        </label>
+        <label className="text-[11px] font-bold text-slate-700">Fundo
+          <select value={textOverlay.background} onChange={event => setTextOverlay(current => ({ ...current, background: event.target.value as OverlayBackground }))} className="field mt-1 px-2 text-xs">
+            <option value="none">Sem fundo</option><option value="dark">Escuro</option><option value="light">Claro</option><option value="blue">Azul</option>
+          </select>
+        </label>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {["#ffffff", "#111827", "#2563eb", "#dc2626", "#f59e0b", "#16a34a"].map(color => <button type="button" key={color} aria-label={`Cor ${color}`} onClick={() => setTextOverlay(current => ({ ...current, color }))} className={`h-7 w-7 rounded-full border-2 ${textOverlay.color === color ? "border-blue-600 ring-2 ring-blue-100" : "border-white ring-1 ring-slate-200"}`} style={{ backgroundColor: color }}/>) }
+      </div>
+      <label className="mt-3 block text-[11px] font-bold text-slate-700">Tamanho<input type="range" min={0.04} max={0.16} step={0.005} value={textOverlay.size} onChange={event => setTextOverlay(current => ({ ...current, size: Number(event.target.value) }))} className="mt-1 w-full"/></label>
+      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+        <label className="text-[11px] font-bold text-slate-700">Horizontal<input type="range" min={0.08} max={0.92} step={0.01} value={textOverlay.x} onChange={event => setTextOverlay(current => ({ ...current, x: Number(event.target.value) }))} className="mt-1 w-full"/></label>
+        <label className="text-[11px] font-bold text-slate-700">Vertical<input type="range" min={0.08} max={0.92} step={0.01} value={textOverlay.y} onChange={event => setTextOverlay(current => ({ ...current, y: Number(event.target.value) }))} className="mt-1 w-full"/></label>
+      </div>
+    </div>}
 
     {error && <p className="mt-3 rounded-lg bg-red-50 p-2 text-xs font-semibold text-red-700">{error}</p>}
 

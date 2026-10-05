@@ -1213,6 +1213,15 @@ export type Database = {
         Args: { p_media_asset_id: string; p_post_id: string }
         Returns: number
       }
+      attach_media_to_surface_targets: {
+        Args: {
+          p_media_asset_id: string
+          p_post_id: string
+          p_provider: string
+          p_surface: string
+        }
+        Returns: number
+      }
       bootstrap_account: {
         Args: { p_brand_name?: string }
         Returns: {

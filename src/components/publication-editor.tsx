@@ -31,6 +31,7 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { uploadMediaFile } from "@/lib/media/upload";
 import { prepareMediaFile, type PreparedMediaMetadata } from "@/lib/media/compatibility";
 import { VideoCoverEditor, type CoverSelection } from "./video-cover-editor";
+import { MediaTextEditor } from "./media-text-editor";
 
 type PublishMode = "now" | "schedule";
 type RetentionMode = "delete" | "library";
@@ -237,6 +238,11 @@ export function PublicationEditor() {
   const [stagedCover, setStagedCover] = useState<{ key: string; mediaId: string } | null>(null);
   const [coverSelection, setCoverSelection] = useState<CoverSelection>({ mode: "auto", file: null, previewUrl: null, aspect: "9:16" });
   const [instagramPlacement, setInstagramPlacement] = useState<InstagramPlacement>("feed");
+  const [feedEditedFile, setFeedEditedFile] = useState<File | null>(null);
+  const [feedEditedPreviewUrl, setFeedEditedPreviewUrl] = useState<string | null>(null);
+  const [storyEditedFile, setStoryEditedFile] = useState<File | null>(null);
+  const [storyEditedPreviewUrl, setStoryEditedPreviewUrl] = useState<string | null>(null);
+  const [stagedStoryMedia, setStagedStoryMedia] = useState<{ key: string; mediaId: string } | null>(null);
   const [publishedUrl, setPublishedUrl] = useState<string | null>(null);
   const [publishComplete, setPublishComplete] = useState(false);
   const [publishResults, setPublishResults] = useState<PublishAttemptResult[]>([]);
@@ -455,6 +461,13 @@ export function PublicationEditor() {
     setPublishResults([]);
     setPublishedUrl(null);
     setStagedCover(null);
+    setStagedStoryMedia(null);
+    if (feedEditedPreviewUrl) URL.revokeObjectURL(feedEditedPreviewUrl);
+    if (storyEditedPreviewUrl) URL.revokeObjectURL(storyEditedPreviewUrl);
+    setFeedEditedFile(null);
+    setFeedEditedPreviewUrl(null);
+    setStoryEditedFile(null);
+    setStoryEditedPreviewUrl(null);
     if (coverSelection.previewUrl) URL.revokeObjectURL(coverSelection.previewUrl);
     setCoverSelection({ mode: "auto", file: null, previewUrl: null, aspect: "9:16" });
 
@@ -503,6 +516,13 @@ export function PublicationEditor() {
     setMediaMetadata({ durationMs: null, width: null, height: null });
     setStagedMedia(null);
     setStagedCover(null);
+    setStagedStoryMedia(null);
+    if (feedEditedPreviewUrl) URL.revokeObjectURL(feedEditedPreviewUrl);
+    if (storyEditedPreviewUrl) URL.revokeObjectURL(storyEditedPreviewUrl);
+    setFeedEditedFile(null);
+    setFeedEditedPreviewUrl(null);
+    setStoryEditedFile(null);
+    setStoryEditedPreviewUrl(null);
     setPublishComplete(false);
     setPublishResults([]);
     setPublishedUrl(null);
@@ -618,9 +638,13 @@ export function PublicationEditor() {
       return;
     }
 
+    const baseMediaFile = selectedFile
+      ? (instagramPlacement === "story" ? selectedFile : (feedEditedFile ?? selectedFile))
+      : null;
+
     let mediaId: string | null = null;
-    if (selectedFile) {
-      const mediaKey = [selectedFile.name, selectedFile.size, selectedFile.lastModified, retention].join(":");
+    if (baseMediaFile) {
+      const mediaKey = [baseMediaFile.name, baseMediaFile.size, baseMediaFile.lastModified, retention].join(":");
 
       if (stagedMedia?.key === mediaKey) {
         mediaId = stagedMedia.mediaId;
@@ -630,7 +654,7 @@ export function PublicationEditor() {
 
         try {
           const uploaded = await uploadMediaFile({
-            file: selectedFile,
+            file: baseMediaFile,
             brandId: tenant.activeBrand.id,
             retention,
             metadata: mediaMetadata,
@@ -720,6 +744,41 @@ export function PublicationEditor() {
 
       if (mediaResult.error) {
         setSaveError("A publicação foi salva, mas não conseguimos vincular a mídia. Tente novamente antes de publicar.");
+        setSaving(false);
+        return;
+      }
+    }
+
+    if (storyEditedFile && hasInstagram && instagramPlacement !== "feed" && postId) {
+      const storyKey = [storyEditedFile.name, storyEditedFile.size, storyEditedFile.lastModified, retention].join(":");
+      let storyMediaId = stagedStoryMedia?.key === storyKey ? stagedStoryMedia.mediaId : null;
+
+      if (!storyMediaId) {
+        setSaveMessage("Enviando versão dos Stories...");
+        try {
+          const uploadedStory = await uploadMediaFile({
+            file: storyEditedFile,
+            brandId: tenant.activeBrand.id,
+            retention,
+            metadata: mediaMetadata,
+          });
+          storyMediaId = uploadedStory.mediaId;
+          setStagedStoryMedia({ key: storyKey, mediaId: uploadedStory.mediaId });
+        } catch {
+          setSaveError("A publicação foi salva, mas não conseguimos enviar a versão editada dos Stories.");
+          setSaving(false);
+          return;
+        }
+      }
+
+      const storyMediaResult = await client.rpc("attach_media_to_surface_targets", {
+        p_post_id: postId,
+        p_provider: "instagram",
+        p_surface: "story",
+        p_media_asset_id: storyMediaId,
+      });
+      if (storyMediaResult.error) {
+        setSaveError("A publicação foi salva, mas não conseguimos vincular a versão editada aos Stories.");
         setSaving(false);
         return;
       }
@@ -898,6 +957,40 @@ export function PublicationEditor() {
               }}
             />
           </div>}
+
+          {fileType === "image" && previewUrl && selectedFile && instagramPlacement !== "story" && <div className="mt-4">
+            <MediaTextEditor
+              sourceFile={selectedFile}
+              sourceUrl={previewUrl}
+              kind="image"
+              width={mediaMetadata.width}
+              height={mediaMetadata.height}
+              title="Texto na imagem do Feed"
+              onChange={(file, nextPreviewUrl) => {
+                if (feedEditedPreviewUrl && feedEditedPreviewUrl !== nextPreviewUrl) URL.revokeObjectURL(feedEditedPreviewUrl);
+                setFeedEditedFile(file);
+                setFeedEditedPreviewUrl(nextPreviewUrl);
+                setStagedMedia(null);
+              }}
+            />
+          </div>}
+
+          {previewUrl && selectedFile && hasInstagram && instagramPlacement !== "feed" && <div className="mt-4">
+            <MediaTextEditor
+              sourceFile={selectedFile}
+              sourceUrl={previewUrl}
+              kind={fileType === "video" ? "video" : "image"}
+              width={mediaMetadata.width}
+              height={mediaMetadata.height}
+              title="Texto nos Stories"
+              onChange={(file, nextPreviewUrl) => {
+                if (storyEditedPreviewUrl && storyEditedPreviewUrl !== nextPreviewUrl) URL.revokeObjectURL(storyEditedPreviewUrl);
+                setStoryEditedFile(file);
+                setStoryEditedPreviewUrl(nextPreviewUrl);
+                setStagedStoryMedia(null);
+              }}
+            />
+          </div>}
         </section>
 
         <section className="card min-w-0 p-4 sm:p-5">
@@ -931,7 +1024,7 @@ export function PublicationEditor() {
               </div>
               {activeOption && <div className="mt-4">
                 {activeOption.platform === "youtube" && activeOption.contentIntent === "LONG_FORM" && <label className="mb-3 block text-sm font-bold text-slate-700 sm:text-xs">Título do YouTube<input value={titles[activeOption.id] ?? ""} onChange={event => setTitles(current => ({ ...current, [activeOption.id]: event.target.value }))} className="field mt-1 px-3 text-base sm:text-sm" placeholder="Título do vídeo"/></label>}
-                {activeOption.platform === "instagram" && instagramPlacement === "story" ? <div className="rounded-xl border border-fuchsia-100 bg-fuchsia-50 p-4 text-sm leading-6 text-fuchsia-800">Este Instagram está configurado para publicar somente em Stories. A descrição não é enviada para o Story.</div> : <>
+                {activeOption.platform === "instagram" && instagramPlacement === "story" ? <div className="rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm leading-6 text-blue-800">Este Instagram está configurado para publicar somente em Stories. A descrição não é enviada para o Story.</div> : <>
                   <textarea value={effectiveText(activeOption)} onChange={event => setTexts(current => ({ ...current, [activeOption.id]: event.target.value }))} className="field min-h-36 resize-y p-4 text-base sm:text-sm"/>
                   <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
                     <p className="text-sm text-slate-500 sm:text-xs">Personalização de {activeOption.label}.</p>
@@ -1007,22 +1100,21 @@ export function PublicationEditor() {
             </div>}
           </div>}
 
-          {hasInstagram && <div className="mt-4 rounded-xl border border-fuchsia-100 bg-fuchsia-50/60 p-4">
+          {hasInstagram && <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50/50 p-4">
             <div>
-              <p className="text-sm font-black text-slate-900">Instagram — onde publicar?</p>
-              <p className="mt-1 text-xs leading-5 text-slate-600">Escolha como o conteúdo será enviado para todos os Instagrams selecionados.</p>
+              <p className="text-sm font-black text-slate-900">Formato da publicação</p>
+              <p className="mt-1 text-xs leading-5 text-slate-600">Escolha onde o conteúdo deve aparecer.</p>
             </div>
             <div className="mt-3 grid gap-2 sm:grid-cols-3">
               {([
                 { value: "feed" as const, label: "Feed / Reels", detail: "Só no perfil" },
                 { value: "story" as const, label: "Stories", detail: "Só nos Stories" },
                 { value: "both" as const, label: "Ambos", detail: "Feed/Reels + Stories" },
-              ]).map(item => <button key={item.value} type="button" onClick={() => { setInstagramPlacement(item.value); setSaveMessage(""); }} aria-pressed={instagramPlacement === item.value} className={`rounded-xl border px-3 py-3 text-left transition-colors ${instagramPlacement === item.value ? "border-fuchsia-400 bg-white shadow-sm" : "border-fuchsia-100 bg-white/60 hover:bg-white"}`}>
-                <span className={`block text-sm font-black ${instagramPlacement === item.value ? "text-fuchsia-800" : "text-slate-800"}`}>{item.label}</span>
-                <span className="mt-0.5 block text-xs text-slate-500">{item.detail}</span>
+              ]).map(item => <button key={item.value} type="button" onClick={() => { setInstagramPlacement(item.value); setSaveMessage(""); }} aria-pressed={instagramPlacement === item.value} className={`rounded-xl border px-3 py-3 text-left transition-colors ${instagramPlacement === item.value ? "border-blue-500 bg-blue-600 shadow-sm" : "border-blue-100 bg-white hover:border-blue-200 hover:bg-blue-50"}`}>
+                <span className={`block text-sm font-black ${instagramPlacement === item.value ? "text-white" : "text-slate-800"}`}>{item.label}</span>
+                <span className={`mt-0.5 block text-xs ${instagramPlacement === item.value ? "text-blue-100" : "text-slate-500"}`}>{item.detail}</span>
               </button>)}
             </div>
-            <p className="mt-3 text-xs leading-5 text-slate-600">Cada formato vira um destino independente no envio. Se escolher <strong>Ambos</strong>, Feed/Reels e Stories terão status e retentativas separados.</p>
           </div>}
         </section>
 
@@ -1030,7 +1122,7 @@ export function PublicationEditor() {
           <h2 className="text-base font-bold text-slate-950 sm:text-sm">4. Quando publicar?</h2>
           <p className="mt-1 text-xs text-slate-500">Horários salvos no fuso da marca: <strong>{tenant.activeBrand.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"}</strong>.</p>
           <div className="mt-4 grid gap-2 sm:grid-cols-2">
-            <button onClick={() => setMode("now")} className={`flex items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-bold ${mode === "now" ? "border-indigo-300 bg-indigo-50 text-indigo-800" : "border-slate-200 text-slate-700"}`}><Send size={16}/> Publicar agora</button>
+            <button onClick={() => setMode("now")} className={`flex items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-bold ${mode === "now" ? "border-blue-400 bg-blue-50 text-blue-800" : "border-slate-200 text-slate-700"}`}><Send size={16}/> Imediatamente</button>
             <button onClick={() => setMode("schedule")} className={`flex items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-bold ${mode === "schedule" ? "border-indigo-300 bg-indigo-50 text-indigo-800" : "border-slate-200 text-slate-700"}`}><CalendarClock size={16}/> Agendar</button>
           </div>
 
@@ -1173,7 +1265,7 @@ export function PublicationEditor() {
             </div>}
             {activeOption.platform !== "tiktok" && activeOption.platform !== "kwai" && !(activeOption.platform === "instagram" && instagramPlacement === "story") && <PreviewChrome platform={activeOption.platform}/>} 
           </div> : <p className="text-sm text-slate-500">Selecione um destino para visualizar.</p>}
-          {hasInstagram && instagramPlacement !== "feed" && <div className="mt-3 rounded-xl border border-fuchsia-100 bg-fuchsia-50 p-3 text-xs font-semibold leading-5 text-fuchsia-800">{instagramPlacement === "story" ? "O Instagram será publicado somente nos Stories." : "Também será criado um Story independente para cada Instagram selecionado."}</div>}
+          {hasInstagram && instagramPlacement !== "feed" && <div className="mt-3 rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs font-semibold leading-5 text-blue-800">{instagramPlacement === "story" ? "O Instagram será publicado somente nos Stories." : "Também será criado um Story independente para cada Instagram selecionado."}</div>}
         </div>
       </div>
     </div>}
