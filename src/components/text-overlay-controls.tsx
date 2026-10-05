@@ -372,7 +372,7 @@ export function TextOverlayControls({
     <textarea
       value={config.text}
       onChange={event => patch({ text: event.target.value })}
-      className="field min-h-20 resize-y p-3 text-base sm:text-sm"
+      className="field min-h-20 touch-pan-y resize-y p-3 text-base sm:text-sm"
       placeholder="Digite o texto ou adicione um emoji..."
       maxLength={240}
     />

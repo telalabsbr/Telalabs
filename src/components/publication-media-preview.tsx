@@ -35,19 +35,19 @@ export function PublicationMediaPreview({
 
   const dots = useMemo(() => carouselItems.map(item => item.id), [carouselItems]);
 
-  return <div data-overlay-stage className="relative h-full w-full overflow-hidden">
+  return <div data-overlay-stage className="relative h-full w-full touch-pan-y overflow-hidden">
     {activeUrl && (fileType === "video" && !isCarousel
       ? <video
           src={activeUrl}
           poster={posterUrl || undefined}
-          className="h-full w-full object-cover"
+          className="h-full w-full touch-pan-y object-cover"
           controls
           playsInline
           preload="metadata"
           onTimeUpdate={event => setCurrentMs(event.currentTarget.currentTime * 1000)}
           onSeeked={event => setCurrentMs(event.currentTarget.currentTime * 1000)}
         />
-      : <img src={activeUrl} alt="Prévia final da mídia" className="h-full w-full object-cover"/>)}
+      : <img src={activeUrl} alt="Prévia final da mídia" className="h-full w-full touch-pan-y object-cover"/>)}
 
     {activeUrl && <TextOverlayLayer config={textConfig} onChange={() => {}} visible={visible} interactive={false}/>} 
 

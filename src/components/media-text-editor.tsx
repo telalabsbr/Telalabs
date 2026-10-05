@@ -38,6 +38,7 @@ export function MediaTextEditor({
 }) {
   const [config, setConfig] = useState<TextOverlayConfig>({ ...defaultTextOverlay });
   const [currentMs, setCurrentMs] = useState(0);
+  const [positionEditing, setPositionEditing] = useState(false);
 
   const aspectRatio = width && height && width > 0 && height > 0
     ? width / height
@@ -51,7 +52,7 @@ export function MediaTextEditor({
   const editor = <div className="space-y-4">
     <div
       data-overlay-stage
-      className="relative mx-auto w-full max-w-[360px] touch-none overflow-hidden rounded-xl bg-black shadow-sm"
+      className={`relative mx-auto w-full max-w-[360px] overflow-hidden rounded-xl bg-black shadow-sm ${positionEditing ? "touch-none" : "touch-pan-y"}`}
       style={{ aspectRatio }}
     >
       {kind === "video"
@@ -61,18 +62,30 @@ export function MediaTextEditor({
             playsInline
             controls
             preload="metadata"
-            className="h-full w-full object-contain"
+            className="h-full w-full touch-pan-y object-contain"
             onTimeUpdate={event => setCurrentMs(event.currentTarget.currentTime * 1000)}
             onSeeked={event => setCurrentMs(event.currentTarget.currentTime * 1000)}
           />
-        : <img src={sourceUrl} alt="Prévia com texto" className="h-full w-full object-contain"/>}
+        : <img src={sourceUrl} alt="Prévia com texto" className="h-full w-full touch-pan-y object-contain"/>}
       <TextOverlayLayer
         config={config}
         onChange={update}
         visible={kind !== "video" || overlayVisibleAt(config, currentMs, durationMs)}
+        interactive={positionEditing}
       />
       <div className="pointer-events-none absolute inset-x-[6%] inset-y-[4%] rounded-lg border border-dashed border-white/35"/>
     </div>
+
+    <div className="flex justify-center">
+      <button
+        type="button"
+        onClick={() => setPositionEditing(current => !current)}
+        className={`rounded-lg border px-3 py-2 text-xs font-black ${positionEditing ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-blue-200 bg-blue-50 text-blue-700"}`}
+      >
+        {positionEditing ? "Concluir ajuste" : "Ajustar texto na mídia"}
+      </button>
+    </div>
+    <p className="text-center text-[11px] leading-4 text-slate-500">{positionEditing ? "Enquanto ajusta, arraste o texto e use o canto para redimensionar." : "A mídia está bloqueada para edição por toque; você pode rolar a página normalmente sobre ela."}</p>
 
     <TextOverlayControls config={config} onChange={update} compact/>
 

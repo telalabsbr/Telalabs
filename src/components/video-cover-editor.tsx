@@ -120,6 +120,7 @@ export function VideoCoverEditor({
   const [savingAuto, setSavingAuto] = useState(false);
   const [error, setError] = useState("");
   const [textOverlay, setTextOverlay] = useState<TextOverlayConfig>({ ...defaultTextOverlay });
+  const [coverEditing, setCoverEditing] = useState(false);
   const ownedUrl = useRef<string | null>(null);
   const sourceImageRef = useRef<HTMLImageElement | null>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -306,6 +307,7 @@ export function VideoCoverEditor({
   }
 
   function onTouchStart(event: React.TouchEvent<HTMLDivElement>) {
+    if (!coverEditing) return;
     if (event.touches.length === 2) {
       const [a, b] = [event.touches[0], event.touches[1]];
       pinchRef.current = { distance: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY), zoom };
@@ -316,6 +318,7 @@ export function VideoCoverEditor({
   }
 
   function onTouchMove(event: React.TouchEvent<HTMLDivElement>) {
+    if (!coverEditing) return;
     if (event.touches.length === 2 && pinchRef.current) {
       const [a, b] = [event.touches[0], event.touches[1]];
       const distance = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
@@ -370,7 +373,7 @@ export function VideoCoverEditor({
       <div className="mt-3 flex justify-center">
         <div
           data-overlay-stage
-          className="relative w-full max-w-[360px] touch-none overflow-hidden rounded-xl bg-black shadow-inner"
+          className={`relative w-full max-w-[360px] overflow-hidden rounded-xl bg-black shadow-inner ${coverEditing ? "touch-none" : "touch-pan-y"}`}
           style={{ aspectRatio: ratio }}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
@@ -381,10 +384,21 @@ export function VideoCoverEditor({
           onTouchEnd={endGesture}
         >
           {sourceUrl ? <canvas ref={previewCanvasRef} className="pointer-events-none h-full w-full select-none"/> : <div className="grid h-full place-items-center px-6 text-center text-xs text-white/70">{busyFrame ? "Carregando frame..." : "Escolha um ponto do vídeo."}</div>}
-          <TextOverlayLayer config={textOverlay} onChange={setTextOverlay} visible={!!sourceUrl}/>
+          <TextOverlayLayer config={textOverlay} onChange={setTextOverlay} visible={!!sourceUrl} interactive={coverEditing}/>
           <div className="pointer-events-none absolute inset-x-[7%] inset-y-[5%] rounded-lg border border-dashed border-white/40"/>
         </div>
       </div>
+
+      <div className="mt-3 flex justify-center">
+        <button
+          type="button"
+          onClick={() => { endGesture(); setCoverEditing(current => !current); }}
+          className={`rounded-lg border px-3 py-2 text-xs font-black ${coverEditing ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-blue-200 bg-blue-50 text-blue-700"}`}
+        >
+          {coverEditing ? "Concluir ajuste" : "Ajustar enquadramento e texto"}
+        </button>
+      </div>
+      <p className="mt-2 text-center text-[11px] leading-4 text-slate-500">{coverEditing ? "Modo de ajuste ativo: arraste a capa ou o texto." : "A capa está bloqueada para toque; deslize sobre ela para rolar a página."}</p>
 
       <div className="mt-3 flex items-center justify-center gap-2">
         <button type="button" onClick={() => setZoom(current => clamp(current - 0.1, 1, 4))} className="btn-secondary !px-3"><Minus size={15}/></button>

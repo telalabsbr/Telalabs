@@ -1217,14 +1217,14 @@ export function PublicationEditor() {
               <p className="text-sm font-black text-slate-900">Formato da publicação</p>
               <p className="mt-1 text-xs leading-5 text-slate-600">Escolha onde o conteúdo deve aparecer.</p>
             </div>
-            <div className="mt-3 grid gap-2 sm:grid-cols-3">
+            <div className="mt-3 grid grid-cols-3 gap-2">
               {([
                 { value: "feed" as const, label: "Feed / Reels", detail: "Só no perfil" },
                 { value: "story" as const, label: "Stories", detail: "Só nos Stories" },
                 { value: "both" as const, label: "Ambos", detail: "Feed/Reels + Stories" },
-              ]).map(item => <button key={item.value} type="button" onClick={() => { setInstagramPlacement(item.value); setSaveMessage(""); }} aria-pressed={instagramPlacement === item.value} className={`rounded-xl border px-3 py-3 text-left transition-colors ${instagramPlacement === item.value ? "border-blue-500 bg-blue-600 shadow-sm" : "border-blue-100 bg-white hover:border-blue-200 hover:bg-blue-50"}`}>
-                <span className={`block text-sm font-black ${instagramPlacement === item.value ? "text-white" : "text-slate-800"}`}>{item.label}</span>
-                <span className={`mt-0.5 block text-xs ${instagramPlacement === item.value ? "text-blue-100" : "text-slate-500"}`}>{item.detail}</span>
+              ]).map(item => <button key={item.value} type="button" onClick={() => { setInstagramPlacement(item.value); setSaveMessage(""); }} aria-pressed={instagramPlacement === item.value} className={`min-w-0 rounded-xl border px-2 py-2.5 text-center transition-colors sm:px-3 sm:py-3 sm:text-left ${instagramPlacement === item.value ? "border-blue-500 bg-blue-600 shadow-sm" : "border-blue-100 bg-white hover:border-blue-200 hover:bg-blue-50"}`}>
+                <span className={`block truncate text-xs font-black sm:text-sm ${instagramPlacement === item.value ? "text-white" : "text-slate-800"}`}>{item.label}</span>
+                <span className={`mt-0.5 hidden text-xs sm:block ${instagramPlacement === item.value ? "text-blue-100" : "text-slate-500"}`}>{item.detail}</span>
               </button>)}
             </div>
           </div>}
@@ -1256,8 +1256,7 @@ export function PublicationEditor() {
               </div>}
               <div className="mt-4 flex flex-wrap gap-2">
                 <label className="btn-secondary cursor-pointer"><UploadCloud size={15}/> Substituir<input type="file" accept=".jpg,.jpeg,.png,.webp,.avif,.heic,.heif,.bmp,.gif,.mp4,.mov,.webm,.avi,.mkv,.mpeg,.mpg,.m4v,.3gp,.ogv,.mp3,.wav,.m4a,.aac,.ogg,.flac,image/jpeg,image/png,image/webp,image/avif,image/heic,image/heif,image/bmp,image/gif,video/mp4,video/quicktime,video/webm,video/x-msvideo,video/x-matroska,video/mpeg,video/x-m4v,video/3gpp,video/ogg,audio/mpeg,audio/wav,audio/mp4,audio/aac,audio/ogg,audio/flac" className="sr-only" onChange={event => handleFile(event.target.files?.[0])}/></label>
-                <label className="btn-secondary cursor-pointer"><ImagePlus size={15}/> Carrossel<input type="file" multiple accept=".jpg,.jpeg,.png,.webp,.avif,.heic,.heif,.bmp,image/jpeg,image/png,image/webp,image/avif,image/heic,image/heif,image/bmp" className="sr-only" onChange={event => void handleCarouselFiles(event.target.files)}/></label>
-                {selectedFile && <button onClick={removeFile} className="btn-secondary !text-red-600"><Trash2 size={15}/> Cancelar substituição</button>}
+                {selectedFile && <button onClick={removeFile} className="btn-secondary !text-red-600"><Trash2 size={15}/> Cancelar</button>}
               </div>
               {isCarousel && <div className="mt-4 border-t border-slate-200 pt-4">
                 <p className="text-xs font-black text-slate-700">Ordem do carrossel</p>
@@ -1274,7 +1273,7 @@ export function PublicationEditor() {
                 <p className="mt-1 text-[11px] leading-4 text-slate-500">De 2 a 10 imagens. A primeira imagem será a capa visual do carrossel.</p>
               </div>}
               <div className="mt-4 border-t border-slate-200 pt-4">
-                <p className="text-sm font-bold text-slate-700 sm:text-xs">Depois de concluir todos os destinos</p>
+                <p className="text-sm font-bold text-slate-700 sm:text-xs">Depois de concluir todos os envios</p>
                 <div className="mt-2 flex flex-col gap-2 text-sm text-slate-600 sm:flex-row sm:gap-4 sm:text-xs">
                   <label className="flex items-center gap-2"><input type="radio" checked={retention === "delete"} onChange={() => setRetention("delete")}/> Excluir automaticamente</label>
                   <label className="flex items-center gap-2"><input type="radio" checked={retention === "library"} onChange={() => setRetention("library")}/> Manter na biblioteca</label>
@@ -1367,7 +1366,7 @@ export function PublicationEditor() {
           </div>
 
           {!customize ? <div className="mt-4">
-            <textarea value={base} onChange={event => { setBase(event.target.value); setSaveMessage(""); }} placeholder={requiresDescription ? "Escreva a descrição principal aqui..." : "Descrição opcional para organizar esta publicação..."} className="field min-h-36 resize-y p-4 text-base sm:text-sm"/>
+            <textarea value={base} onChange={event => { setBase(event.target.value); setSaveMessage(""); }} placeholder={requiresDescription ? "Escreva a descrição principal aqui..." : "Descrição opcional para organizar esta publicação..."} className="field min-h-36 touch-pan-y resize-y p-4 text-base sm:text-sm"/>
             <div className="mt-2"><InlineEmojiPicker value={base} onChange={value => { setBase(value); setSaveMessage(""); }}/></div>
             <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <span className="text-sm text-slate-500 sm:text-xs">{base.length} caracteres</span>
@@ -1387,7 +1386,7 @@ export function PublicationEditor() {
               {activeOption && <div className="mt-4">
                 {activeOption.platform === "youtube" && activeOption.contentIntent === "LONG_FORM" && <label className="mb-3 block text-sm font-bold text-slate-700 sm:text-xs">Título do YouTube<input value={titles[activeOption.id] ?? ""} onChange={event => setTitles(current => ({ ...current, [activeOption.id]: event.target.value }))} className="field mt-1 px-3 text-base sm:text-sm" placeholder="Título do vídeo"/></label>}
                 {activeOption.platform === "instagram" && instagramPlacement === "story" ? <div className="rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm leading-6 text-blue-800">Este Instagram está configurado para publicar somente em Stories. A descrição não é enviada para o Story.</div> : <>
-                  <textarea value={effectiveText(activeOption)} onChange={event => setTexts(current => ({ ...current, [activeOption.id]: event.target.value }))} className="field min-h-36 resize-y p-4 text-base sm:text-sm"/>
+                  <textarea value={effectiveText(activeOption)} onChange={event => setTexts(current => ({ ...current, [activeOption.id]: event.target.value }))} className="field min-h-36 touch-pan-y resize-y p-4 text-base sm:text-sm"/>
                   <div className="mt-2"><InlineEmojiPicker value={effectiveText(activeOption)} onChange={value => setTexts(current => ({ ...current, [activeOption.id]: value }))}/></div>
                   <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
                     <p className="text-sm text-slate-500 sm:text-xs">Personalização de {activeOption.label}.</p>
