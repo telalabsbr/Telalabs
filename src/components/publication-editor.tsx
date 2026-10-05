@@ -45,6 +45,17 @@ interface DestinationOption {
   connectionId?: string;
   surface?: "short" | "video";
   contentIntent?: "SHORT_FORM" | "LONG_FORM";
+  advancedEnabled?: boolean;
+}
+
+interface PublishAttemptResult {
+  postTargetId?: string;
+  provider: string;
+  contentIntent?: string;
+  surface?: string | null;
+  outcome: string;
+  errorMessage?: string | null;
+  publicUrl?: string | null;
 }
 
 const aiSuffixPlain: Partial<Record<SocialPlatform, string>> = {
@@ -101,6 +112,28 @@ function defaultScheduleParts() {
   return { date: `${yyyy}-${mm}-${dd}`, time: `${hh}:${min}` };
 }
 
+function resultLabel(result: PublishAttemptResult) {
+  if (result.provider === "instagram" && result.surface === "story") return "Instagram Story";
+  if (result.provider === "instagram") return "Instagram";
+  if (result.provider === "facebook") return "Facebook";
+  if (result.provider === "youtube" && result.contentIntent === "LONG_FORM") return "YouTube — Vídeo";
+  if (result.provider === "youtube") return "YouTube Shorts";
+  if (result.provider === "tiktok") return "TikTok";
+  if (result.provider === "linkedin") return "LinkedIn";
+  if (result.provider === "kwai") return "Kwai";
+  if (result.provider === "x") return "X";
+  return result.provider;
+}
+
+function resultPresentation(outcome: string) {
+  if (outcome === "SUCCEEDED") return { text: "Publicado", className: "border-emerald-200 bg-emerald-50 text-emerald-800" };
+  if (["TRANSIENT_FAILURE", "RATE_LIMIT", "UNKNOWN"].includes(outcome)) {
+    return { text: "Aguardando nova tentativa", className: "border-amber-200 bg-amber-50 text-amber-800" };
+  }
+  if (outcome === "AUTH_REQUIRED") return { text: "Reconexão necessária", className: "border-red-200 bg-red-50 text-red-800" };
+  return { text: "Falhou", className: "border-red-200 bg-red-50 text-red-800" };
+}
+
 export function PublicationEditor() {
   const tenant = useTenantData();
   const initialized = useRef(false);
@@ -114,6 +147,7 @@ export function PublicationEditor() {
           handle: connection.handle ?? connection.displayName ?? platformLabels[connection.platform],
           status: connection.status,
           connectionId: connection.id,
+          advancedEnabled: connection.platform === "instagram" && connection.metadata?.meta_advanced_enabled === true,
         };
 
         if (connection.platform === "youtube") {
@@ -204,6 +238,7 @@ export function PublicationEditor() {
   const [publishToStory, setPublishToStory] = useState(false);
   const [publishedUrl, setPublishedUrl] = useState<string | null>(null);
   const [publishComplete, setPublishComplete] = useState(false);
+  const [publishResults, setPublishResults] = useState<PublishAttemptResult[]>([]);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [existingMedia, setExistingMedia] = useState<{ id: string; name: string; type: "image" | "video"; size: number } | null>(null);
   const [editingPostId, setEditingPostId] = useState<string | null>(null);
@@ -412,6 +447,7 @@ export function PublicationEditor() {
     setSaveMessage("Preparando mídia...");
     setMediaNotice("");
     setPublishComplete(false);
+    setPublishResults([]);
     setPublishedUrl(null);
     setStagedCover(null);
     if (coverSelection.previewUrl) URL.revokeObjectURL(coverSelection.previewUrl);
@@ -463,6 +499,7 @@ export function PublicationEditor() {
     setStagedMedia(null);
     setStagedCover(null);
     setPublishComplete(false);
+    setPublishResults([]);
     setPublishedUrl(null);
     if (coverSelection.previewUrl) URL.revokeObjectURL(coverSelection.previewUrl);
     setCoverSelection({ mode: "auto", file: null, previewUrl: null, aspect: "9:16" });
@@ -546,6 +583,7 @@ export function PublicationEditor() {
     setSaveError("");
     setSaveMessage("");
     setPublishComplete(false);
+    setPublishResults([]);
     setPublishedUrl(null);
 
     if (tenant.source !== "supabase") {
@@ -734,7 +772,7 @@ export function PublicationEditor() {
         failed?: number;
         message?: string;
         error?: string;
-        results?: Array<{ provider: string; outcome: string; errorMessage?: string | null; publicUrl?: string | null }>;
+        results?: PublishAttemptResult[];
       };
 
       if (!publishResponse.ok) {
@@ -743,17 +781,23 @@ export function PublicationEditor() {
         return;
       }
 
+      const results = publishResult?.results ?? [];
+      setPublishResults(results);
+
       const succeeded = publishResult?.succeeded ?? 0;
       const needsRetry = publishResult?.needsRetry ?? 0;
       const failed = publishResult?.failed ?? 0;
 
       if (failed > 0) {
-        const firstFailure = publishResult?.results?.find(item => !["SUCCEEDED", "TRANSIENT_FAILURE", "RATE_LIMIT", "UNKNOWN"].includes(item.outcome));
+        const firstFailure = results.find(item => !["SUCCEEDED", "TRANSIENT_FAILURE", "RATE_LIMIT", "UNKNOWN"].includes(item.outcome));
+        if (succeeded > 0) setSaveMessage(`${succeeded} destino${succeeded === 1 ? " publicado" : "s publicados"}.`);
         setSaveError(firstFailure?.errorMessage ?? "A publicação foi processada, mas um dos destinos recusou o conteúdo.");
       } else if (needsRetry > 0) {
-        setSaveMessage("Envio iniciado. A rede ainda está processando a mídia e o worker fará a próxima verificação automaticamente.");
+        setSaveMessage(succeeded > 0
+          ? `${succeeded} destino${succeeded === 1 ? " publicado" : "s publicados"}. ${needsRetry} aguardando nova tentativa automática.`
+          : "Envio iniciado. Os destinos abaixo aguardam nova tentativa automática.");
       } else if (succeeded > 0) {
-        const directUrl = publishResult?.results?.find(item => item.outcome === "SUCCEEDED" && item.publicUrl)?.publicUrl ?? null;
+        const directUrl = results.find(item => item.outcome === "SUCCEEDED" && item.publicUrl)?.publicUrl ?? null;
         setPublishedUrl(directUrl);
         setPublishComplete(true);
         setSaveMessage(succeeded === 1 ? "Publicado." : `${succeeded} destinos publicados.`);
@@ -849,9 +893,50 @@ export function PublicationEditor() {
         </section>
 
         <section className="card min-w-0 p-4 sm:p-5">
+          <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-base font-bold text-slate-950 sm:text-sm">2. Descrição</h2>
+              <p className="mt-1 text-sm text-slate-500 sm:text-xs">Use uma descrição base e personalize somente quando quiser.</p>
+            </div>
+            <div className="flex max-w-full rounded-lg bg-slate-100 p-1 text-sm font-bold sm:text-xs">
+              <button onClick={() => setCustomize(false)} className={`rounded-md px-3 py-2 ${!customize ? "bg-white text-slate-900 shadow-sm" : "text-slate-500"}`}>Descrição base</button>
+              <button onClick={() => setCustomize(true)} className={`rounded-md px-3 py-2 ${customize ? "bg-white text-slate-900 shadow-sm" : "text-slate-500"}`}>Por destino</button>
+            </div>
+          </div>
+
+          {!customize ? <div className="mt-4">
+            <textarea value={base} onChange={event => { setBase(event.target.value); setSaveMessage(""); }} placeholder="Escreva a descrição principal aqui..." className="field min-h-36 resize-y p-4 text-base sm:text-sm"/>
+            <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <span className="text-sm text-slate-500 sm:text-xs">{base.length} caracteres</span>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <label className="flex items-center gap-2 text-sm font-semibold text-slate-600 sm:text-xs">
+                  <input type="checkbox" checked={includeEmojis} onChange={event => setIncludeEmojis(event.target.checked)}/>
+                  Usar emojis
+                </label>
+                <button onClick={adaptAll} disabled={!base.trim() || !selectedOptions.length} className="btn-primary disabled:cursor-not-allowed disabled:opacity-40"><Sparkles size={16}/> Adaptar para todas</button>
+              </div>
+            </div>
+          </div> : <div className="mt-4 min-w-0">
+            {selectedOptions.length ? <>
+              <div className="app-scrollbar flex max-w-full gap-1 overflow-x-auto border-b border-slate-200">
+                {selectedOptions.map(option => <button key={option.id} onClick={() => setActiveId(option.id)} className={`flex max-w-44 shrink-0 items-center gap-2 border-b-2 px-3 py-2.5 text-sm font-bold sm:text-xs ${activeId === option.id ? "border-indigo-600 text-indigo-700" : "border-transparent text-slate-500"}`}><PlatformIcon platform={option.platform} small/><span className="truncate">{option.label}</span></button>)}
+              </div>
+              {activeOption && <div className="mt-4">
+                {activeOption.platform === "youtube" && activeOption.contentIntent === "LONG_FORM" && <label className="mb-3 block text-sm font-bold text-slate-700 sm:text-xs">Título do YouTube<input value={titles[activeOption.id] ?? ""} onChange={event => setTitles(current => ({ ...current, [activeOption.id]: event.target.value }))} className="field mt-1 px-3 text-base sm:text-sm" placeholder="Título do vídeo"/></label>}
+                <textarea value={effectiveText(activeOption)} onChange={event => setTexts(current => ({ ...current, [activeOption.id]: event.target.value }))} className="field min-h-36 resize-y p-4 text-base sm:text-sm"/>
+                <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm text-slate-500 sm:text-xs">Personalização de {activeOption.label}.</p>
+                  <button onClick={() => setTexts(current => ({ ...current, [activeOption.id]: base }))} className="text-sm font-bold text-indigo-600 sm:text-xs">Usar descrição base</button>
+                </div>
+              </div>}
+            </> : <p className="rounded-xl bg-slate-50 p-5 text-sm text-slate-500">Selecione ao menos uma conta para personalizar.</p>}
+          </div>}
+        </section>
+
+        <section className="card min-w-0 p-4 sm:p-5">
           <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
             <div className="min-w-0">
-              <h2 className="text-base font-bold text-slate-950 sm:text-sm">2. Onde publicar?</h2>
+              <h2 className="text-base font-bold text-slate-950 sm:text-sm">3. Onde publicar?</h2>
               <p className="mt-1 text-sm text-slate-500 sm:text-xs">{tenant.source === "supabase" ? "Cada conta conectada é um destino independente." : "Modo demonstração: escolha as redes para simular o fluxo."}</p>
             </div>
             {!!shortOptions.length && <button onClick={() => {
@@ -881,6 +966,7 @@ export function PublicationEditor() {
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm font-bold text-slate-900 sm:text-xs">{option.label}</span>
                       <span className={`block truncate text-sm sm:text-xs ${blocked ? "text-amber-600" : "text-slate-500"}`}>{blocked ? "Reconexão necessária" : option.handle}</span>
+                      {option.platform === "instagram" && <span className={`mt-0.5 block text-[10px] font-bold ${option.advancedEnabled ? "text-indigo-600" : "text-slate-400"}`}>{option.advancedEnabled ? "Recursos avançados ativos" : "Recursos avançados não ativados"}</span>}
                     </span>
                     <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-md border ${active ? "border-indigo-600 bg-indigo-600 text-white" : "border-slate-300"}`}>{active && <Check size={12}/>}</span>
                   </button>;
@@ -918,47 +1004,6 @@ export function PublicationEditor() {
               <span className="mt-1 block text-xs leading-5 text-slate-600">O Tela cria um envio independente para o Story, no mesmo horário, com status e retentativa próprios.</span>
             </span>
           </label>}
-        </section>
-
-        <section className="card min-w-0 p-4 sm:p-5">
-          <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="text-base font-bold text-slate-950 sm:text-sm">3. Descrição</h2>
-              <p className="mt-1 text-sm text-slate-500 sm:text-xs">Use uma descrição base e personalize somente quando quiser.</p>
-            </div>
-            <div className="flex max-w-full rounded-lg bg-slate-100 p-1 text-sm font-bold sm:text-xs">
-              <button onClick={() => setCustomize(false)} className={`rounded-md px-3 py-2 ${!customize ? "bg-white text-slate-900 shadow-sm" : "text-slate-500"}`}>Descrição base</button>
-              <button onClick={() => setCustomize(true)} className={`rounded-md px-3 py-2 ${customize ? "bg-white text-slate-900 shadow-sm" : "text-slate-500"}`}>Por destino</button>
-            </div>
-          </div>
-
-          {!customize ? <div className="mt-4">
-            <textarea value={base} onChange={event => { setBase(event.target.value); setSaveMessage(""); }} placeholder="Escreva a descrição principal aqui..." className="field min-h-36 resize-y p-4 text-base sm:text-sm"/>
-            <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <span className="text-sm text-slate-500 sm:text-xs">{base.length} caracteres</span>
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                <label className="flex items-center gap-2 text-sm font-semibold text-slate-600 sm:text-xs">
-                  <input type="checkbox" checked={includeEmojis} onChange={event => setIncludeEmojis(event.target.checked)}/>
-                  Usar emojis
-                </label>
-                <button onClick={adaptAll} disabled={!base.trim() || !selectedOptions.length} className="btn-primary disabled:cursor-not-allowed disabled:opacity-40"><Sparkles size={16}/> Adaptar para todas</button>
-              </div>
-            </div>
-          </div> : <div className="mt-4 min-w-0">
-            {selectedOptions.length ? <>
-              <div className="app-scrollbar flex max-w-full gap-1 overflow-x-auto border-b border-slate-200">
-                {selectedOptions.map(option => <button key={option.id} onClick={() => setActiveId(option.id)} className={`flex max-w-44 shrink-0 items-center gap-2 border-b-2 px-3 py-2.5 text-sm font-bold sm:text-xs ${activeId === option.id ? "border-indigo-600 text-indigo-700" : "border-transparent text-slate-500"}`}><PlatformIcon platform={option.platform} small/><span className="truncate">{option.label}</span></button>)}
-              </div>
-              {activeOption && <div className="mt-4">
-                {activeOption.platform === "youtube" && activeOption.contentIntent === "LONG_FORM" && <label className="mb-3 block text-sm font-bold text-slate-700 sm:text-xs">Título do YouTube<input value={titles[activeOption.id] ?? ""} onChange={event => setTitles(current => ({ ...current, [activeOption.id]: event.target.value }))} className="field mt-1 px-3 text-base sm:text-sm" placeholder="Título do vídeo"/></label>}
-                <textarea value={effectiveText(activeOption)} onChange={event => setTexts(current => ({ ...current, [activeOption.id]: event.target.value }))} className="field min-h-36 resize-y p-4 text-base sm:text-sm"/>
-                <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-sm text-slate-500 sm:text-xs">Personalização de {activeOption.label}.</p>
-                  <button onClick={() => setTexts(current => ({ ...current, [activeOption.id]: base }))} className="text-sm font-bold text-indigo-600 sm:text-xs">Usar descrição base</button>
-                </div>
-              </div>}
-            </> : <p className="rounded-xl bg-slate-50 p-5 text-sm text-slate-500">Selecione ao menos uma conta para personalizar.</p>}
-          </div>}
         </section>
 
         <section className="card p-4 sm:p-5">
@@ -1057,12 +1102,26 @@ export function PublicationEditor() {
             <button disabled={saving || !canSubmit} onClick={() => void persist(mode === "now" ? "publish_now" : "schedule")} className="btn-primary w-full disabled:cursor-not-allowed disabled:opacity-40">{mode === "now" ? <Send size={16}/> : <Clock3 size={16}/>} {saving ? (mode === "now" ? "Publicando..." : "Salvando...") : mode === "now" ? "Publicar agora" : "Agendar publicação"}</button>
           </div>
           {saveMessage && <p role="status" className="mt-3 rounded-lg bg-emerald-50 p-3 text-sm font-semibold leading-5 text-emerald-700 sm:text-xs">{saveMessage}</p>}
+          {!!publishResults.length && <div className="mt-3 space-y-2">
+            <p className="text-xs font-black uppercase tracking-wide text-slate-400">Resultado por destino</p>
+            {publishResults.map((result, index) => {
+              const presentation = resultPresentation(result.outcome);
+              return <div key={result.postTargetId ?? `${result.provider}-${result.surface ?? "main"}-${index}`} className={`rounded-lg border px-3 py-2.5 ${presentation.className}`}>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-xs font-black">{resultLabel(result)}</span>
+                  <span className="text-[10px] font-black uppercase tracking-wide">{presentation.text}</span>
+                </div>
+                {result.errorMessage && result.outcome !== "SUCCEEDED" && <p className="mt-1 text-[11px] leading-4 opacity-80">{result.errorMessage}</p>}
+                {result.publicUrl && result.outcome === "SUCCEEDED" && <a href={result.publicUrl} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-[11px] font-black underline"><ExternalLink size={11}/> Ver publicação</a>}
+              </div>;
+            })}
+          </div>}
           {publishComplete && <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
             <button type="button" onClick={() => window.location.assign("/publicacoes/nova")} className="btn-primary w-full">Criar nova publicação</button>
             {publishedUrl && <a href={publishedUrl} target="_blank" rel="noreferrer" className="btn-secondary w-full"><ExternalLink size={15}/> Ver publicação</a>}
           </div>}
           {saveError && <p role="alert" className="mt-3 rounded-lg bg-red-50 p-3 text-sm font-semibold leading-5 text-red-700 sm:text-xs">{saveError}</p>}
-          {tenant.source === "supabase" && <p className="mt-3 text-xs leading-5 text-slate-500">O Instagram já publica pelo worker real. Destinos futuros entram aqui conforme cada adapter for validado.</p>}
+          {tenant.source === "supabase" && <p className="mt-3 text-xs leading-5 text-slate-500">Instagram e Facebook já publicam pelo worker real. Cada destino mantém status e retentativa independentes.</p>}
         </section>
       </aside>
     </div>
