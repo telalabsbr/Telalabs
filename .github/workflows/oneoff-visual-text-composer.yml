@@ -32,6 +32,6 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/components/publication-editor.tsx
-          git commit -m "feat: editor visual mobile para mídia e vídeo"
+          git add src/components/video-cover-editor.tsx
+          git commit -m "fix: estabilizar capa automática no editor visual"
           git push origin HEAD:feat/ui-redesign-v1
