@@ -35,6 +35,7 @@ import { VideoCoverEditor, type CoverSelection } from "./video-cover-editor";
 type PublishMode = "now" | "schedule";
 type RetentionMode = "delete" | "library";
 type SaveIntent = "draft" | "publish_now" | "schedule";
+type InstagramPlacement = "feed" | "story" | "both";
 
 interface DestinationOption {
   id: string;
@@ -235,7 +236,7 @@ export function PublicationEditor() {
   const [stagedMedia, setStagedMedia] = useState<{ key: string; mediaId: string } | null>(null);
   const [stagedCover, setStagedCover] = useState<{ key: string; mediaId: string } | null>(null);
   const [coverSelection, setCoverSelection] = useState<CoverSelection>({ mode: "auto", file: null, previewUrl: null, aspect: "9:16" });
-  const [publishToStory, setPublishToStory] = useState(false);
+  const [instagramPlacement, setInstagramPlacement] = useState<InstagramPlacement>("feed");
   const [publishedUrl, setPublishedUrl] = useState<string | null>(null);
   const [publishComplete, setPublishComplete] = useState(false);
   const [publishResults, setPublishResults] = useState<PublishAttemptResult[]>([]);
@@ -316,15 +317,17 @@ export function PublicationEditor() {
       const nextTitles: Record<string, string> = {};
       const nextTimes: Record<string, string> = {};
       const clockValues: string[] = [];
-      let nextPublishToStory = false;
+      let hasInstagramFeedTarget = false;
+      let hasInstagramStoryTarget = false;
 
       for (const target of targets) {
         const targetConfig = target.provider_config && typeof target.provider_config === "object" && !Array.isArray(target.provider_config)
           ? target.provider_config as Record<string, unknown>
           : {};
-        if (target.provider === "instagram" && targetConfig.surface === "story") {
-          nextPublishToStory = true;
-          continue;
+        const isInstagramStory = target.provider === "instagram" && targetConfig.surface === "story";
+        if (target.provider === "instagram") {
+          if (isInstagramStory) hasInstagramStoryTarget = true;
+          else hasInstagramFeedTarget = true;
         }
 
         const optionId = target.provider === "youtube" && target.content_intent_override === "SHORT_FORM"
@@ -334,7 +337,7 @@ export function PublicationEditor() {
             : target.social_connection_id;
 
         if (!destinationOptions.some(option => option.id === optionId)) continue;
-        selected.push(optionId);
+        if (!selected.includes(optionId)) selected.push(optionId);
 
         if (target.caption_override) nextTexts[optionId] = target.caption_override;
         if (target.title_override) nextTitles[optionId] = target.title_override;
@@ -355,7 +358,7 @@ export function PublicationEditor() {
       setActiveId(selected[0] ?? "");
       setTexts(nextTexts);
       setTitles(nextTitles);
-      setPublishToStory(nextPublishToStory);
+      setInstagramPlacement(hasInstagramStoryTarget ? (hasInstagramFeedTarget ? "both" : "story") : "feed");
 
       const firstScheduled = targets.find(target => {
         if (!target.scheduled_at) return false;
@@ -363,7 +366,7 @@ export function PublicationEditor() {
           ? target.provider_config as Record<string, unknown>
           : {};
         return config.surface !== "story";
-      })?.scheduled_at;
+      })?.scheduled_at ?? targets.find(target => !!target.scheduled_at)?.scheduled_at;
       if (firstScheduled) {
         const scheduled = new Date(firstScheduled);
         const yyyy = scheduled.getFullYear();
@@ -440,6 +443,8 @@ export function PublicationEditor() {
   const selectedOptions = destinationOptions.filter(option => selectedIds.includes(option.id));
   const activeOption = selectedOptions.find(option => option.id === activeId) ?? selectedOptions[0] ?? destinationOptions[0];
   const hasInstagram = selectedOptions.some(option => option.platform === "instagram");
+  const requiresDescription = selectedOptions.some(option => !(option.platform === "instagram" && instagramPlacement === "story"));
+  const canSaveDraft = selectedOptions.length > 0 && (!requiresDescription || !!base.trim());
 
   async function handleFile(file?: File) {
     if (!file) return;
@@ -533,6 +538,7 @@ export function PublicationEditor() {
     const next = { ...texts };
     const nextTitles = { ...titles };
     selectedOptions.forEach(option => {
+      if (option.platform === "instagram" && instagramPlacement === "story") return;
       next[option.id] = base + (suffixes[option.platform] ?? "");
       if (option.platform === "youtube" && option.contentIntent === "LONG_FORM" && !nextTitles[option.id]) {
         nextTitles[option.id] = base.slice(0, 80) || "Novo vídeo";
@@ -547,7 +553,8 @@ export function PublicationEditor() {
   const effectiveText = (option: DestinationOption) => texts[option.id] ?? base;
 
   const checks = selectedOptions.map(option => {
-    if (!base.trim()) return { option, level: "error" as const, text: "Adicione a descrição base" };
+    const storyOnly = option.platform === "instagram" && instagramPlacement === "story";
+    if (!storyOnly && !base.trim()) return { option, level: "error" as const, text: "Adicione a descrição base" };
     if (tenant.source === "supabase" && option.status !== "connected") return { option, level: "error" as const, text: "Conta precisa ser reconectada" };
 
     if (mode === "schedule") {
@@ -560,10 +567,10 @@ export function PublicationEditor() {
 
     if (option.platform === "instagram") {
       if (!fileType && !existingMedia) return { option, level: "error" as const, text: "Adicione uma imagem ou vídeo" };
-      if (fileType === "video" && mediaMetadata.durationMs !== null && mediaMetadata.durationMs < 3_000) return { option, level: "error" as const, text: "Reel precisa ter ao menos 3 segundos" };
-      if (fileType === "video" && mediaMetadata.durationMs !== null && mediaMetadata.durationMs > 15 * 60 * 1000) return { option, level: "error" as const, text: "Reel ultrapassa 15 minutos" };
-      if (fileType === "video" && mediaMetadata.width !== null && mediaMetadata.width > 1920) return { option, level: "error" as const, text: "Reduza a largura do Reel para até 1920 px" };
-      if (fileType === "video" && fileSize > 1024 * 1024 * 1024) return { option, level: "error" as const, text: "Reel ultrapassa 1 GB" };
+      if (!storyOnly && fileType === "video" && mediaMetadata.durationMs !== null && mediaMetadata.durationMs < 3_000) return { option, level: "error" as const, text: "Reel precisa ter ao menos 3 segundos" };
+      if (!storyOnly && fileType === "video" && mediaMetadata.durationMs !== null && mediaMetadata.durationMs > 15 * 60 * 1000) return { option, level: "error" as const, text: "Reel ultrapassa 15 minutos" };
+      if (!storyOnly && fileType === "video" && mediaMetadata.width !== null && mediaMetadata.width > 1920) return { option, level: "error" as const, text: "Reduza a largura do Reel para até 1920 px" };
+      if (fileType === "video" && fileSize > 1024 * 1024 * 1024) return { option, level: "error" as const, text: "Vídeo do Instagram ultrapassa 1 GB" };
     }
 
     if (option.contentIntent === "LONG_FORM") {
@@ -572,11 +579,11 @@ export function PublicationEditor() {
       if (!(titles[option.id]?.trim())) return { option, level: "warning" as const, text: "Adicione um título ao vídeo" };
     }
 
-    if (effectiveText(option).length > 2000) return { option, level: "warning" as const, text: "Revise o tamanho da descrição" };
-    return { option, level: "ok" as const, text: "Pronto" };
+    if (!storyOnly && effectiveText(option).length > 2000) return { option, level: "warning" as const, text: "Revise o tamanho da descrição" };
+    return { option, level: "ok" as const, text: storyOnly ? "Pronto para Story" : "Pronto" };
   });
 
-  const canSubmit = !!base.trim() && selectedOptions.length > 0 && !checks.some(check => check.level === "error");
+  const canSubmit = selectedOptions.length > 0 && (!requiresDescription || !!base.trim()) && !checks.some(check => check.level === "error");
 
   async function persist(intent: SaveIntent) {
     setSaving(true);
@@ -656,23 +663,24 @@ export function PublicationEditor() {
     const timezone = tenant.activeBrand.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
     const targets = selectedOptions.map(option => {
       const targetTime = differentTimes ? (destinationTimes[option.id] || time) : time;
+      const storyOnly = option.platform === "instagram" && instagramPlacement === "story";
       return {
         connection_id: option.connectionId as string,
         provider: option.platform,
         scheduled_at: intent === "publish_now" ? new Date().toISOString() : toIso(date, targetTime),
         scheduled_timezone: timezone,
-        caption_override: effectiveText(option) === base ? "" : effectiveText(option),
+        caption_override: storyOnly ? "" : effectiveText(option) === base ? "" : effectiveText(option),
         title_override: titles[option.id] ?? "",
         requested_action: intent,
         retention: retention,
-        surface: option.surface ?? null,
+        surface: storyOnly ? "story" : option.surface ?? null,
         content_intent: option.contentIntent ?? "AUTO",
         file_size_bytes: fileSize || null,
       };
     });
 
     const postPayload = {
-      p_internal_title: base.trim().slice(0, 80) || "Nova publicação",
+      p_internal_title: base.trim().slice(0, 80) || (hasInstagram && instagramPlacement === "story" ? "Story do Instagram" : "Nova publicação"),
       p_base_caption: base.trim(),
       p_targets: targets,
     };
@@ -695,10 +703,10 @@ export function PublicationEditor() {
 
     const postId = typeof result.data === "string" ? result.data : editingPostId;
 
-    if (publishToStory && hasInstagram && postId) {
+    if (instagramPlacement === "both" && hasInstagram && postId) {
       const storyResult = await client.rpc("add_instagram_story_targets", { p_post_id: postId });
       if (storyResult.error) {
-        setSaveError("A publicação foi salva, mas não conseguimos preparar o Story. Tente novamente antes de publicar.");
+        setSaveError("A publicação foi salva, mas não conseguimos preparar a cópia para os Stories. Tente novamente antes de publicar.");
         setSaving(false);
         return;
       }
@@ -717,7 +725,7 @@ export function PublicationEditor() {
       }
     }
 
-    if (coverSelection.file && fileType === "video" && hasInstagram && postId) {
+    if (coverSelection.file && fileType === "video" && hasInstagram && instagramPlacement !== "story" && postId) {
       const coverKey = [coverSelection.file.name, coverSelection.file.size, coverSelection.file.lastModified, retention].join(":");
       let coverMediaId = stagedCover?.key === coverKey ? stagedCover.mediaId : null;
 
@@ -878,7 +886,7 @@ export function PublicationEditor() {
             </button>
           </div>}
 
-          {fileType === "video" && previewUrl && hasInstagram && <div className="mt-4">
+          {fileType === "video" && previewUrl && hasInstagram && instagramPlacement !== "story" && <div className="mt-4">
             <VideoCoverEditor
               videoUrl={previewUrl}
               durationMs={mediaMetadata.durationMs}
@@ -896,7 +904,7 @@ export function PublicationEditor() {
           <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-base font-bold text-slate-950 sm:text-sm">2. Descrição</h2>
-              <p className="mt-1 text-sm text-slate-500 sm:text-xs">Use uma descrição base e personalize somente quando quiser.</p>
+              <p className="mt-1 text-sm text-slate-500 sm:text-xs">{requiresDescription ? "Use uma descrição base e personalize somente quando quiser." : "Para publicação somente em Stories, a descrição é opcional."}</p>
             </div>
             <div className="flex max-w-full rounded-lg bg-slate-100 p-1 text-sm font-bold sm:text-xs">
               <button onClick={() => setCustomize(false)} className={`rounded-md px-3 py-2 ${!customize ? "bg-white text-slate-900 shadow-sm" : "text-slate-500"}`}>Descrição base</button>
@@ -905,7 +913,7 @@ export function PublicationEditor() {
           </div>
 
           {!customize ? <div className="mt-4">
-            <textarea value={base} onChange={event => { setBase(event.target.value); setSaveMessage(""); }} placeholder="Escreva a descrição principal aqui..." className="field min-h-36 resize-y p-4 text-base sm:text-sm"/>
+            <textarea value={base} onChange={event => { setBase(event.target.value); setSaveMessage(""); }} placeholder={requiresDescription ? "Escreva a descrição principal aqui..." : "Descrição opcional para organizar esta publicação..."} className="field min-h-36 resize-y p-4 text-base sm:text-sm"/>
             <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <span className="text-sm text-slate-500 sm:text-xs">{base.length} caracteres</span>
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -913,7 +921,7 @@ export function PublicationEditor() {
                   <input type="checkbox" checked={includeEmojis} onChange={event => setIncludeEmojis(event.target.checked)}/>
                   Usar emojis
                 </label>
-                <button onClick={adaptAll} disabled={!base.trim() || !selectedOptions.length} className="btn-primary disabled:cursor-not-allowed disabled:opacity-40"><Sparkles size={16}/> Adaptar para todas</button>
+                <button onClick={adaptAll} disabled={!base.trim() || !selectedOptions.some(option => !(option.platform === "instagram" && instagramPlacement === "story"))} className="btn-primary disabled:cursor-not-allowed disabled:opacity-40"><Sparkles size={16}/> Adaptar para todas</button>
               </div>
             </div>
           </div> : <div className="mt-4 min-w-0">
@@ -923,11 +931,13 @@ export function PublicationEditor() {
               </div>
               {activeOption && <div className="mt-4">
                 {activeOption.platform === "youtube" && activeOption.contentIntent === "LONG_FORM" && <label className="mb-3 block text-sm font-bold text-slate-700 sm:text-xs">Título do YouTube<input value={titles[activeOption.id] ?? ""} onChange={event => setTitles(current => ({ ...current, [activeOption.id]: event.target.value }))} className="field mt-1 px-3 text-base sm:text-sm" placeholder="Título do vídeo"/></label>}
-                <textarea value={effectiveText(activeOption)} onChange={event => setTexts(current => ({ ...current, [activeOption.id]: event.target.value }))} className="field min-h-36 resize-y p-4 text-base sm:text-sm"/>
-                <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-sm text-slate-500 sm:text-xs">Personalização de {activeOption.label}.</p>
-                  <button onClick={() => setTexts(current => ({ ...current, [activeOption.id]: base }))} className="text-sm font-bold text-indigo-600 sm:text-xs">Usar descrição base</button>
-                </div>
+                {activeOption.platform === "instagram" && instagramPlacement === "story" ? <div className="rounded-xl border border-fuchsia-100 bg-fuchsia-50 p-4 text-sm leading-6 text-fuchsia-800">Este Instagram está configurado para publicar somente em Stories. A descrição não é enviada para o Story.</div> : <>
+                  <textarea value={effectiveText(activeOption)} onChange={event => setTexts(current => ({ ...current, [activeOption.id]: event.target.value }))} className="field min-h-36 resize-y p-4 text-base sm:text-sm"/>
+                  <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-sm text-slate-500 sm:text-xs">Personalização de {activeOption.label}.</p>
+                    <button onClick={() => setTexts(current => ({ ...current, [activeOption.id]: base }))} className="text-sm font-bold text-indigo-600 sm:text-xs">Usar descrição base</button>
+                  </div>
+                </>}
               </div>}
             </> : <p className="rounded-xl bg-slate-50 p-5 text-sm text-slate-500">Selecione ao menos uma conta para personalizar.</p>}
           </div>}
@@ -997,13 +1007,23 @@ export function PublicationEditor() {
             </div>}
           </div>}
 
-          {hasInstagram && <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-xl border border-fuchsia-100 bg-fuchsia-50/60 p-4">
-            <input type="checkbox" checked={publishToStory} onChange={event => setPublishToStory(event.target.checked)} className="mt-1"/>
-            <span>
-              <span className="block text-sm font-black text-slate-900">Publicar também nos Stories</span>
-              <span className="mt-1 block text-xs leading-5 text-slate-600">O Tela cria um envio independente para o Story, no mesmo horário, com status e retentativa próprios.</span>
-            </span>
-          </label>}
+          {hasInstagram && <div className="mt-4 rounded-xl border border-fuchsia-100 bg-fuchsia-50/60 p-4">
+            <div>
+              <p className="text-sm font-black text-slate-900">Instagram — onde publicar?</p>
+              <p className="mt-1 text-xs leading-5 text-slate-600">Escolha como o conteúdo será enviado para todos os Instagrams selecionados.</p>
+            </div>
+            <div className="mt-3 grid gap-2 sm:grid-cols-3">
+              {([
+                { value: "feed" as const, label: "Feed / Reels", detail: "Só no perfil" },
+                { value: "story" as const, label: "Stories", detail: "Só nos Stories" },
+                { value: "both" as const, label: "Ambos", detail: "Feed/Reels + Stories" },
+              ]).map(item => <button key={item.value} type="button" onClick={() => { setInstagramPlacement(item.value); setSaveMessage(""); }} aria-pressed={instagramPlacement === item.value} className={`rounded-xl border px-3 py-3 text-left transition-colors ${instagramPlacement === item.value ? "border-fuchsia-400 bg-white shadow-sm" : "border-fuchsia-100 bg-white/60 hover:bg-white"}`}>
+                <span className={`block text-sm font-black ${instagramPlacement === item.value ? "text-fuchsia-800" : "text-slate-800"}`}>{item.label}</span>
+                <span className="mt-0.5 block text-xs text-slate-500">{item.detail}</span>
+              </button>)}
+            </div>
+            <p className="mt-3 text-xs leading-5 text-slate-600">Cada formato vira um destino independente no envio. Se escolher <strong>Ambos</strong>, Feed/Reels e Stories terão status e retentativas separados.</p>
+          </div>}
         </section>
 
         <section className="card p-4 sm:p-5">
@@ -1068,20 +1088,20 @@ export function PublicationEditor() {
                   <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-indigo-100 text-[10px] font-black text-indigo-700">{tenant.activeBrand.initials}</span>
                   <div className="min-w-0 flex-1">
                     <p className={`truncate text-xs font-bold ${activeOption.platform === "tiktok" || activeOption.platform === "kwai" ? "text-white" : "text-slate-900"}`}>{activeOption.handle}</p>
-                    <p className={`text-[11px] ${activeOption.platform === "tiktok" || activeOption.platform === "kwai" ? "text-white/70" : "text-slate-400"}`}>{platformLabels[activeOption.platform]}</p>
+                    <p className={`text-[11px] ${activeOption.platform === "tiktok" || activeOption.platform === "kwai" ? "text-white/70" : "text-slate-400"}`}>{platformLabels[activeOption.platform]}{activeOption.platform === "instagram" && instagramPlacement === "story" ? " · Story" : ""}</p>
                   </div>
                   <MoreHorizontal size={17} className={activeOption.platform === "tiktok" || activeOption.platform === "kwai" ? "text-white/70" : "text-slate-400"}/>
                 </div>
-                <div className={`relative bg-gradient-to-br from-indigo-50 via-slate-100 to-violet-100 ${activeOption.platform === "youtube" && activeOption.contentIntent === "LONG_FORM" ? "aspect-video" : "aspect-[4/5]"}`}>
+                <div className={`relative bg-gradient-to-br from-indigo-50 via-slate-100 to-violet-100 ${activeOption.platform === "youtube" && activeOption.contentIntent === "LONG_FORM" ? "aspect-video" : activeOption.platform === "instagram" && instagramPlacement === "story" ? "aspect-[9/16]" : "aspect-[4/5]"}`}>
                   {previewUrl && (fileType === "video" ? <video src={previewUrl} className="h-full w-full object-cover" controls playsInline preload="metadata"/> : <img src={previewUrl} alt="" className="h-full w-full object-cover"/>)}
                   {!previewUrl && <div className="grid h-full place-items-center text-slate-400"><Play size={30}/></div>}
                   {(activeOption.platform === "tiktok" || activeOption.platform === "kwai") && <PreviewChrome platform={activeOption.platform}/>} 
                 </div>
-                <div className="p-3">
+                {!(activeOption.platform === "instagram" && instagramPlacement === "story") && <div className="p-3">
                   {activeOption.platform === "youtube" && activeOption.contentIntent === "LONG_FORM" && titles[activeOption.id] && <p className="mb-1 text-base font-black text-slate-950">{titles[activeOption.id]}</p>}
                   <p className={`whitespace-pre-line text-sm leading-5 ${activeOption.platform === "tiktok" || activeOption.platform === "kwai" ? "text-white" : "text-slate-700"}`}>{effectiveText(activeOption) || "Sua descrição aparecerá aqui."}</p>
-                </div>
-                {activeOption.platform !== "tiktok" && activeOption.platform !== "kwai" && <PreviewChrome platform={activeOption.platform}/>} 
+                </div>}
+                {activeOption.platform !== "tiktok" && activeOption.platform !== "kwai" && !(activeOption.platform === "instagram" && instagramPlacement === "story") && <PreviewChrome platform={activeOption.platform}/>} 
               </div>
             </div>}
           </> : <div className="p-6 text-center text-sm text-slate-500">Selecione ao menos um destino para ver a prévia.</div>}
@@ -1091,6 +1111,9 @@ export function PublicationEditor() {
           <div className="flex items-center justify-between text-sm sm:text-xs">
             <span className="text-slate-500">Destinos</span><strong className="text-slate-900">{selectedOptions.length}</strong>
           </div>
+          {hasInstagram && <div className="mt-2 flex items-center justify-between gap-3 text-sm sm:text-xs">
+            <span className="text-slate-500">Instagram</span><strong className="text-right text-slate-900">{instagramPlacement === "feed" ? "Feed / Reels" : instagramPlacement === "story" ? "Stories" : "Feed/Reels + Stories"}</strong>
+          </div>}
           <div className="mt-2 flex items-center justify-between text-sm sm:text-xs">
             <span className="text-slate-500">Envio</span><strong className="text-slate-900">{mode === "now" ? "Agora" : "Agendado"}</strong>
           </div>
@@ -1098,7 +1121,7 @@ export function PublicationEditor() {
             <span className="text-slate-500">Arquivo após publicar</span><strong className="text-right text-slate-900">{retention === "delete" ? "Excluir" : "Biblioteca"}</strong>
           </div>
           <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
-            <button disabled={saving || !base.trim()} onClick={() => void persist("draft")} className="btn-secondary w-full disabled:opacity-50">Salvar rascunho</button>
+            <button disabled={saving || !canSaveDraft} onClick={() => void persist("draft")} className="btn-secondary w-full disabled:opacity-50">Salvar rascunho</button>
             <button disabled={saving || !canSubmit} onClick={() => void persist(mode === "now" ? "publish_now" : "schedule")} className="btn-primary w-full disabled:cursor-not-allowed disabled:opacity-40">{mode === "now" ? <Send size={16}/> : <Clock3 size={16}/>} {saving ? (mode === "now" ? "Publicando..." : "Salvando...") : mode === "now" ? "Publicar agora" : "Agendar publicação"}</button>
           </div>
           {saveMessage && <p role="status" className="mt-3 rounded-lg bg-emerald-50 p-3 text-sm font-semibold leading-5 text-emerald-700 sm:text-xs">{saveMessage}</p>}
@@ -1137,20 +1160,20 @@ export function PublicationEditor() {
         </div>
         <div className="max-h-[80vh] overflow-y-auto bg-slate-50 p-4">
           {activeOption ? <div className={`relative overflow-hidden rounded-xl border border-slate-200 ${activeOption.platform === "tiktok" || activeOption.platform === "kwai" ? "bg-slate-950" : "bg-white"}`}>
-            <div className={activeOption.platform === "tiktok" || activeOption.platform === "kwai" ? "relative aspect-[9/16]" : "relative aspect-square bg-slate-100"}>
+            <div className={activeOption.platform === "tiktok" || activeOption.platform === "kwai" || (activeOption.platform === "instagram" && instagramPlacement === "story") ? "relative aspect-[9/16]" : "relative aspect-square bg-slate-100"}>
               {previewUrl && (fileType === "video"
                 ? <video src={previewUrl} className="h-full w-full object-cover" controls playsInline preload="metadata"/>
                 : <img src={previewUrl} alt="Prévia ampliada" className="h-full w-full object-cover"/>)}
               {!previewUrl && <div className="grid h-full place-items-center text-slate-400"><Play size={34}/></div>}
               {(activeOption.platform === "tiktok" || activeOption.platform === "kwai") && <PreviewChrome platform={activeOption.platform}/>} 
             </div>
-            <div className="p-4">
+            {!(activeOption.platform === "instagram" && instagramPlacement === "story") && <div className="p-4">
               {activeOption.platform === "youtube" && activeOption.contentIntent === "LONG_FORM" && titles[activeOption.id] && <p className="mb-2 text-base font-black text-slate-950">{titles[activeOption.id]}</p>}
               <p className={`whitespace-pre-line text-sm leading-6 ${activeOption.platform === "tiktok" || activeOption.platform === "kwai" ? "text-white" : "text-slate-700"}`}>{effectiveText(activeOption) || "Sua descrição aparecerá aqui."}</p>
-            </div>
-            {activeOption.platform !== "tiktok" && activeOption.platform !== "kwai" && <PreviewChrome platform={activeOption.platform}/>} 
+            </div>}
+            {activeOption.platform !== "tiktok" && activeOption.platform !== "kwai" && !(activeOption.platform === "instagram" && instagramPlacement === "story") && <PreviewChrome platform={activeOption.platform}/>} 
           </div> : <p className="text-sm text-slate-500">Selecione um destino para visualizar.</p>}
-          {publishToStory && hasInstagram && <div className="mt-3 rounded-xl border border-fuchsia-100 bg-fuchsia-50 p-3 text-xs font-semibold leading-5 text-fuchsia-800">Também será criado um Story independente no Instagram.</div>}
+          {hasInstagram && instagramPlacement !== "feed" && <div className="mt-3 rounded-xl border border-fuchsia-100 bg-fuchsia-50 p-3 text-xs font-semibold leading-5 text-fuchsia-800">{instagramPlacement === "story" ? "O Instagram será publicado somente nos Stories." : "Também será criado um Story independente para cada Instagram selecionado."}</div>}
         </div>
       </div>
     </div>}
