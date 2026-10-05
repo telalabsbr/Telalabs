@@ -1,0 +1,37 @@
+name: One-off mobile composer scroll v1
+
+on:
+  push:
+    branches:
+      - feat/ui-redesign-v1
+    paths:
+      - scripts/patch_mobile_composer_scroll_v1.py
+      - .github/workflows/oneoff-mobile-composer-scroll-v1.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/ui-redesign-v1
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply patch
+        run: python scripts/patch_mobile_composer_scroll_v1.py
+      - name: Commit changes
+        run: |
+          if git diff --quiet && [ -z "$(git status --porcelain)" ]; then
+            echo "No changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/components/publication-editor.tsx src/components/media-text-editor.tsx src/components/video-cover-editor.tsx src/components/text-overlay-controls.tsx src/components/publication-media-preview.tsx
+          git commit -m "feat: melhorar experiência mobile do composer"
+          git push origin HEAD:feat/ui-redesign-v1
