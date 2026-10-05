@@ -5,6 +5,7 @@ const MAX_VIDEO_OVERLAY_BYTES = 350 * 1024 * 1024;
 
 export type OverlayFont = "clean" | "classic" | "modern" | "strong" | "mono" | "hand";
 export type OverlayBackground = "none" | "dark" | "light" | "blue";
+export type OverlayTimingMode = "all" | "range";
 
 export type TextOverlayConfig = {
   text: string;
@@ -14,6 +15,10 @@ export type TextOverlayConfig = {
   background: OverlayBackground;
   x: number;
   y: number;
+  boxWidth: number;
+  timingMode: OverlayTimingMode;
+  startMs: number;
+  endMs: number | null;
 };
 
 export const defaultTextOverlay: TextOverlayConfig = {
@@ -24,6 +29,10 @@ export const defaultTextOverlay: TextOverlayConfig = {
   background: "none",
   x: 0.5,
   y: 0.5,
+  boxWidth: 0.72,
+  timingMode: "all",
+  startMs: 0,
+  endMs: null,
 };
 
 export const overlayFontLabels: Record<OverlayFont, string> = {
@@ -90,7 +99,33 @@ function wrapLines(context: CanvasRenderingContext2D, text: string, maxWidth: nu
     if (current) result.push(current);
   }
 
-  return result.slice(0, 8);
+  return result.slice(0, 12);
+}
+
+export function normalizeTextOverlay(config: TextOverlayConfig, durationMs?: number | null): TextOverlayConfig {
+  const duration = Math.max(0, durationMs ?? 0);
+  const startMs = clamp(Number.isFinite(config.startMs) ? config.startMs : 0, 0, duration || Number.MAX_SAFE_INTEGER);
+  const rawEnd = config.endMs == null ? duration || null : config.endMs;
+  const endMs = rawEnd == null
+    ? null
+    : clamp(rawEnd, Math.min(startMs + 100, duration || rawEnd), duration || rawEnd);
+
+  return {
+    ...config,
+    size: clamp(config.size, 0.04, 0.2),
+    x: clamp(config.x, 0.05, 0.95),
+    y: clamp(config.y, 0.05, 0.95),
+    boxWidth: clamp(config.boxWidth || 0.72, 0.2, 0.92),
+    startMs,
+    endMs,
+  };
+}
+
+export function overlayVisibleAt(config: TextOverlayConfig, currentMs: number, durationMs?: number | null) {
+  if (config.timingMode !== "range") return true;
+  const normalized = normalizeTextOverlay(config, durationMs);
+  const end = normalized.endMs ?? durationMs ?? Number.MAX_SAFE_INTEGER;
+  return currentMs >= normalized.startMs && currentMs <= end;
 }
 
 export function drawTextOverlay(
@@ -102,31 +137,32 @@ export function drawTextOverlay(
   const text = config.text.trim();
   if (!text) return;
 
-  const fontSize = clamp(Math.round(Math.min(width, height) * config.size), 28, Math.round(Math.min(width, height) * 0.2));
-  const weight = config.font === "strong" ? 900 : 700;
+  const normalized = normalizeTextOverlay(config);
+  const fontSize = clamp(Math.round(Math.min(width, height) * normalized.size), 28, Math.round(Math.min(width, height) * 0.22));
+  const weight = normalized.font === "strong" ? 900 : 700;
   context.save();
-  context.font = `${weight} ${fontSize}px ${overlayFontFamilies[config.font]}`;
+  context.font = `${weight} ${fontSize}px ${overlayFontFamilies[normalized.font]}`;
   context.textAlign = "center";
   context.textBaseline = "middle";
   context.lineJoin = "round";
 
-  const maxTextWidth = width * 0.82;
+  const maxTextWidth = width * normalized.boxWidth;
   const lines = wrapLines(context, text, maxTextWidth);
   const lineHeight = fontSize * 1.16;
   const totalHeight = Math.max(lineHeight, lines.length * lineHeight);
-  const centerX = clamp(config.x, 0.08, 0.92) * width;
-  const centerY = clamp(config.y, 0.08, 0.92) * height;
+  const centerX = normalized.x * width;
+  const centerY = normalized.y * height;
   const widest = Math.max(...lines.map(line => context.measureText(line || " ").width), fontSize);
   const padX = fontSize * 0.34;
   const padY = fontSize * 0.24;
 
-  if (config.background !== "none") {
+  if (normalized.background !== "none") {
     const fills: Record<Exclude<OverlayBackground, "none">, string> = {
       dark: "rgba(0,0,0,0.68)",
       light: "rgba(255,255,255,0.88)",
       blue: "rgba(37,99,235,0.90)",
     };
-    context.fillStyle = fills[config.background];
+    context.fillStyle = fills[normalized.background];
     roundRect(
       context,
       centerX - widest / 2 - padX,
@@ -138,10 +174,10 @@ export function drawTextOverlay(
     context.fill();
   }
 
-  context.fillStyle = config.color;
-  context.shadowColor = config.background === "none" ? "rgba(0,0,0,0.72)" : "transparent";
-  context.shadowBlur = config.background === "none" ? Math.max(6, fontSize * 0.08) : 0;
-  context.shadowOffsetY = config.background === "none" ? Math.max(2, fontSize * 0.035) : 0;
+  context.fillStyle = normalized.color;
+  context.shadowColor = normalized.background === "none" ? "rgba(0,0,0,0.72)" : "transparent";
+  context.shadowBlur = normalized.background === "none" ? Math.max(6, fontSize * 0.08) : 0;
+  context.shadowOffsetY = normalized.background === "none" ? Math.max(2, fontSize * 0.035) : 0;
 
   const startY = centerY - ((lines.length - 1) * lineHeight) / 2;
   lines.forEach((line, index) => {
@@ -263,10 +299,15 @@ export async function composeTextOnVideo(
     await ffmpeg.writeFile(inputName, await fetchFile(file));
     await ffmpeg.writeFile(overlayName, await fetchFile(overlayBlob));
 
+    const normalized = normalizeTextOverlay(config);
+    const timing = normalized.timingMode === "range"
+      ? `:enable='between(t,${(normalized.startMs / 1000).toFixed(3)},${((normalized.endMs ?? normalized.startMs + 100) / 1000).toFixed(3)})'`
+      : "";
+
     const exitCode = await ffmpeg.exec([
       "-i", inputName,
       "-i", overlayName,
-      "-filter_complex", "[0:v][1:v]overlay=0:0:format=auto",
+      "-filter_complex", `[0:v][1:v]overlay=0:0:format=auto${timing}`,
       "-c:v", "libx264",
       "-preset", "veryfast",
       "-crf", "23",
