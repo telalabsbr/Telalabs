@@ -30,6 +30,7 @@ import { useTenantData } from "@/components/tenant-provider";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { uploadMediaFile } from "@/lib/media/upload";
 import { prepareMediaFile, type PreparedMediaMetadata } from "@/lib/media/compatibility";
+import { composeTextOnMedia, defaultTextOverlay, type TextOverlayConfig } from "@/lib/media/text-overlay";
 import { VideoCoverEditor, type CoverSelection } from "./video-cover-editor";
 import { MediaTextEditor } from "./media-text-editor";
 
@@ -238,10 +239,8 @@ export function PublicationEditor() {
   const [stagedCover, setStagedCover] = useState<{ key: string; mediaId: string } | null>(null);
   const [coverSelection, setCoverSelection] = useState<CoverSelection>({ mode: "auto", file: null, previewUrl: null, aspect: "9:16" });
   const [instagramPlacement, setInstagramPlacement] = useState<InstagramPlacement>("feed");
-  const [feedEditedFile, setFeedEditedFile] = useState<File | null>(null);
-  const [feedEditedPreviewUrl, setFeedEditedPreviewUrl] = useState<string | null>(null);
-  const [storyEditedFile, setStoryEditedFile] = useState<File | null>(null);
-  const [storyEditedPreviewUrl, setStoryEditedPreviewUrl] = useState<string | null>(null);
+  const [feedTextConfig, setFeedTextConfig] = useState<TextOverlayConfig>({ ...defaultTextOverlay });
+  const [storyTextConfig, setStoryTextConfig] = useState<TextOverlayConfig>({ ...defaultTextOverlay });
   const [stagedStoryMedia, setStagedStoryMedia] = useState<{ key: string; mediaId: string } | null>(null);
   const [publishedUrl, setPublishedUrl] = useState<string | null>(null);
   const [publishComplete, setPublishComplete] = useState(false);
@@ -462,12 +461,8 @@ export function PublicationEditor() {
     setPublishedUrl(null);
     setStagedCover(null);
     setStagedStoryMedia(null);
-    if (feedEditedPreviewUrl) URL.revokeObjectURL(feedEditedPreviewUrl);
-    if (storyEditedPreviewUrl) URL.revokeObjectURL(storyEditedPreviewUrl);
-    setFeedEditedFile(null);
-    setFeedEditedPreviewUrl(null);
-    setStoryEditedFile(null);
-    setStoryEditedPreviewUrl(null);
+    setFeedTextConfig({ ...defaultTextOverlay });
+    setStoryTextConfig({ ...defaultTextOverlay });
     if (coverSelection.previewUrl) URL.revokeObjectURL(coverSelection.previewUrl);
     setCoverSelection({ mode: "auto", file: null, previewUrl: null, aspect: "9:16" });
 
@@ -517,12 +512,8 @@ export function PublicationEditor() {
     setStagedMedia(null);
     setStagedCover(null);
     setStagedStoryMedia(null);
-    if (feedEditedPreviewUrl) URL.revokeObjectURL(feedEditedPreviewUrl);
-    if (storyEditedPreviewUrl) URL.revokeObjectURL(storyEditedPreviewUrl);
-    setFeedEditedFile(null);
-    setFeedEditedPreviewUrl(null);
-    setStoryEditedFile(null);
-    setStoryEditedPreviewUrl(null);
+    setFeedTextConfig({ ...defaultTextOverlay });
+    setStoryTextConfig({ ...defaultTextOverlay });
     setPublishComplete(false);
     setPublishResults([]);
     setPublishedUrl(null);
@@ -638,9 +629,46 @@ export function PublicationEditor() {
       return;
     }
 
-    const baseMediaFile = selectedFile
-      ? (instagramPlacement === "story" ? selectedFile : (feedEditedFile ?? selectedFile))
-      : null;
+    const selectedKind: "image" | "video" = fileType ?? (selectedFile?.type.startsWith("video/") ? "video" : "image");
+    let baseMediaFile = selectedFile;
+    let storyMediaFile: File | null = null;
+
+    try {
+      if (selectedFile && instagramPlacement === "story" && storyTextConfig.text.trim()) {
+        setSaveMessage(selectedKind === "video" ? "Preparando texto no Story..." : "Preparando imagem do Story...");
+        baseMediaFile = await composeTextOnMedia(selectedFile, selectedKind, storyTextConfig, (progress, message) => {
+          setUploadProgress(progress);
+          setSaveMessage(message);
+        });
+      } else if (selectedFile && instagramPlacement !== "story" && feedTextConfig.text.trim()) {
+        setSaveMessage(selectedKind === "video" ? "Preparando texto no vídeo..." : "Preparando texto na imagem...");
+        baseMediaFile = await composeTextOnMedia(selectedFile, selectedKind, feedTextConfig, (progress, message) => {
+          setUploadProgress(progress);
+          setSaveMessage(message);
+        });
+      }
+
+      if (selectedFile && instagramPlacement === "both" && (storyTextConfig.text.trim() || feedTextConfig.text.trim())) {
+        if (storyTextConfig.text.trim()) {
+          setSaveMessage(selectedKind === "video" ? "Preparando versão dos Stories..." : "Preparando imagem dos Stories...");
+          storyMediaFile = await composeTextOnMedia(selectedFile, selectedKind, storyTextConfig, (progress, message) => {
+            setUploadProgress(progress);
+            setSaveMessage(message);
+          });
+        } else {
+          storyMediaFile = selectedFile;
+        }
+      }
+    } catch (overlayError) {
+      const code = overlayError instanceof Error ? overlayError.message : "text_overlay_failed";
+      setSaveError(code === "text_overlay_video_too_large"
+        ? "Este vídeo é grande demais para aplicar texto no navegador. Remova o texto do vídeo ou use um arquivo menor."
+        : "Não foi possível preparar o texto sobre a mídia. Revise a edição e tente novamente.");
+      setSaveMessage("");
+      setUploadProgress(null);
+      setSaving(false);
+      return;
+    }
 
     let mediaId: string | null = null;
     if (baseMediaFile) {
@@ -749,15 +777,15 @@ export function PublicationEditor() {
       }
     }
 
-    if (storyEditedFile && hasInstagram && instagramPlacement !== "feed" && postId) {
-      const storyKey = [storyEditedFile.name, storyEditedFile.size, storyEditedFile.lastModified, retention].join(":");
+    if (storyMediaFile && hasInstagram && instagramPlacement === "both" && postId) {
+      const storyKey = [storyMediaFile.name, storyMediaFile.size, storyMediaFile.lastModified, retention].join(":");
       let storyMediaId = stagedStoryMedia?.key === storyKey ? stagedStoryMedia.mediaId : null;
 
       if (!storyMediaId) {
         setSaveMessage("Enviando versão dos Stories...");
         try {
           const uploadedStory = await uploadMediaFile({
-            file: storyEditedFile,
+            file: storyMediaFile,
             brandId: tenant.activeBrand.id,
             retention,
             metadata: mediaMetadata,
@@ -958,18 +986,19 @@ export function PublicationEditor() {
             />
           </div>}
 
-          {fileType === "image" && previewUrl && selectedFile && instagramPlacement !== "story" && <div className="mt-4">
+          {previewUrl && selectedFile && instagramPlacement !== "story" && <div className="mt-4">
             <MediaTextEditor
               sourceFile={selectedFile}
               sourceUrl={previewUrl}
-              kind="image"
+              kind={fileType === "video" ? "video" : "image"}
               width={mediaMetadata.width}
               height={mediaMetadata.height}
-              title="Texto na imagem do Feed"
-              onChange={(file, nextPreviewUrl) => {
-                if (feedEditedPreviewUrl && feedEditedPreviewUrl !== nextPreviewUrl) URL.revokeObjectURL(feedEditedPreviewUrl);
-                setFeedEditedFile(file);
-                setFeedEditedPreviewUrl(nextPreviewUrl);
+              durationMs={mediaMetadata.durationMs}
+              title={fileType === "video" ? "Texto no vídeo" : "Texto na imagem do Feed"}
+              collapsible={fileType === "video"}
+              defaultOpen={fileType !== "video"}
+              onChange={(_file, _nextPreviewUrl, config) => {
+                setFeedTextConfig(config);
                 setStagedMedia(null);
               }}
             />
@@ -982,11 +1011,12 @@ export function PublicationEditor() {
               kind={fileType === "video" ? "video" : "image"}
               width={mediaMetadata.width}
               height={mediaMetadata.height}
+              durationMs={mediaMetadata.durationMs}
               title="Texto nos Stories"
-              onChange={(file, nextPreviewUrl) => {
-                if (storyEditedPreviewUrl && storyEditedPreviewUrl !== nextPreviewUrl) URL.revokeObjectURL(storyEditedPreviewUrl);
-                setStoryEditedFile(file);
-                setStoryEditedPreviewUrl(nextPreviewUrl);
+              collapsible
+              defaultOpen={false}
+              onChange={(_file, _nextPreviewUrl, config) => {
+                setStoryTextConfig(config);
                 setStagedStoryMedia(null);
               }}
             />
