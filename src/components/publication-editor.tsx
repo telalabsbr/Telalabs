@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CalendarClock,
   Check,
-  CheckCircle2,
+  ChevronDown,
   CircleAlert,
   Clock3,
   ExternalLink,
@@ -61,6 +61,12 @@ interface PublishAttemptResult {
   outcome: string;
   errorMessage?: string | null;
   publicUrl?: string | null;
+}
+
+interface ComposerCheck {
+  option: DestinationOption;
+  level: "error" | "warning" | "ok";
+  text: string;
 }
 
 interface CarouselItem {
@@ -146,6 +152,25 @@ function resultPresentation(outcome: string) {
   return { text: "Falhou", className: "border-red-200 bg-red-50 text-red-800" };
 }
 
+function ContextualChecks({ checks, onSelect }: { checks: ComposerCheck[]; onSelect?: (check: ComposerCheck) => void }) {
+  if (!checks.length) return null;
+  return <div className="mt-4 space-y-2">
+    {checks.map(check => <button
+      key={`${check.option.id}:${check.text}`}
+      type="button"
+      onClick={() => onSelect?.(check)}
+      className={`flex w-full min-w-0 items-center gap-3 rounded-xl border p-3 text-left ${check.level === "error" ? "border-red-200 bg-red-50" : "border-amber-200 bg-amber-50"}`}
+    >
+      <PlatformIcon platform={check.option.platform} small/>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-xs font-black text-slate-900">{check.option.label}</span>
+        <span className={`mt-0.5 block text-xs leading-5 ${check.level === "error" ? "text-red-700" : "text-amber-700"}`}>{check.text}</span>
+      </span>
+      <CircleAlert size={16} className={`shrink-0 ${check.level === "error" ? "text-red-600" : "text-amber-600"}`}/>
+    </button>)}
+  </div>;
+}
+
 export function PublicationEditor() {
   const tenant = useTenantData();
   const initialized = useRef(false);
@@ -224,6 +249,7 @@ export function PublicationEditor() {
   }, [tenant.source, tenant.connections]);
 
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [networksOpen, setNetworksOpen] = useState(false);
   const [activeId, setActiveId] = useState("");
   const [base, setBase] = useState("");
   const [customize, setCustomize] = useState(false);
@@ -684,7 +710,7 @@ export function PublicationEditor() {
 
   const effectiveText = (option: DestinationOption) => texts[option.id] ?? base;
 
-  const checks = selectedOptions.map(option => {
+  const checks: ComposerCheck[] = selectedOptions.map(option => {
     const storyOnly = option.platform === "instagram" && instagramPlacement === "story";
     if (!storyOnly && !base.trim()) return { option, level: "error" as const, text: "Adicione a descrição base" };
     if (tenant.source === "supabase" && option.status !== "connected") return { option, level: "error" as const, text: "Conta precisa ser reconectada" };
@@ -721,6 +747,16 @@ export function PublicationEditor() {
     if (!storyOnly && effectiveText(option).length > 2000) return { option, level: "warning" as const, text: "Revise o tamanho da descrição" };
     return { option, level: "ok" as const, text: storyOnly ? "Pronto para Story" : "Pronto" };
   });
+
+  const actionableChecks = checks.filter(check => check.level !== "ok");
+  const whereChecks = actionableChecks.filter(check => check.text === "Conta precisa ser reconectada");
+  const scheduleChecks = actionableChecks.filter(check => check.text.startsWith("Escolha um horário"));
+  const descriptionChecks = actionableChecks.filter(check =>
+    check.text.includes("descrição") || check.text.includes("título")
+  );
+  const mediaChecks = actionableChecks.filter(check =>
+    !whereChecks.includes(check) && !scheduleChecks.includes(check) && !descriptionChecks.includes(check)
+  );
 
   const canSubmit = selectedOptions.length > 0 && (!requiresDescription || !!base.trim()) && !checks.some(check => check.level === "error");
 
@@ -1095,16 +1131,109 @@ export function PublicationEditor() {
     <section>
       <p className="eyebrow">{editingPostId ? "Edição" : "Publicação"}</p>
       <h1 className="mt-2 text-2xl font-black tracking-tight text-slate-950 sm:text-3xl">{editingPostId ? "Editar publicação" : "Criar publicação"}</h1>
-      <p className="mt-1 text-sm leading-6 text-slate-500">{editingPostId ? "Altere conteúdo, destinos e horário antes da primeira tentativa de envio." : "Mídia, descrição, destinos e horário em um único fluxo."}</p>
+      <p className="mt-1 text-sm leading-6 text-slate-500">{editingPostId ? "Altere conteúdo, destinos e horário antes da primeira tentativa de envio." : "Destinos, mídia, descrição e horário em um único fluxo."}</p>
       {loadingEdit && <p className="mt-2 text-xs font-bold text-indigo-600">Carregando publicação...</p>}
       {tenant.source === "supabase" && <p className="mt-2 inline-flex rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700">Dados reais da marca: {tenant.activeBrand.name}</p>}
     </section>
 
     <div className="grid w-full max-w-full gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
       <div className="min-w-0 space-y-4">
+        <section className="card min-w-0 p-4 sm:p-5">
+          <div className="min-w-0">
+            <h2 className="text-base font-bold text-slate-950 sm:text-sm">1. Onde publicar?</h2>
+            <p className="mt-1 text-sm text-slate-500 sm:text-xs">Escolha primeiro os destinos. O Tela Social adapta as próximas etapas ao que você selecionar.</p>
+          </div>
+
+          <div className="mt-4 overflow-hidden rounded-xl border border-slate-200 bg-white">
+            <button type="button" onClick={() => setNetworksOpen(current => !current)} aria-expanded={networksOpen} className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left">
+              <span className="min-w-0">
+                <span className="block text-sm font-black text-slate-900">Redes conectadas</span>
+                <span className="mt-0.5 block truncate text-xs text-slate-500">{selectedOptions.length ? `${selectedOptions.length} destino${selectedOptions.length === 1 ? " selecionado" : "s selecionados"}` : "Toque para escolher onde publicar"}</span>
+              </span>
+              <ChevronDown size={18} className={`shrink-0 text-blue-600 transition-transform ${networksOpen ? "rotate-180" : ""}`}/>
+            </button>
+            {networksOpen && <div className="border-t border-slate-200 p-3 sm:p-4">
+              {!!shortOptions.length && <button type="button" onClick={() => {
+                const shortIds = shortOptions.map(option => option.id);
+                const allShortSelected = shortIds.every(id => selectedIds.includes(id));
+                setSelectedIds(current => allShortSelected
+                  ? current.filter(id => !shortIds.includes(id))
+                  : Array.from(new Set([...current, ...shortIds])));
+              }} className="mb-3 text-sm font-bold text-blue-700 sm:text-xs">
+                {shortOptions.every(option => selectedIds.includes(option.id)) ? "Limpar seleção" : "Selecionar todos"}
+              </button>}
+          {tenant.source === "supabase" && !destinationOptions.length ? <div className="mt-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-5 text-center">
+            <p className="text-sm font-bold text-slate-900">Nenhuma conta social conectada ainda.</p>
+            <p className="mt-1 text-sm text-slate-500">Conecte pelo menos uma conta antes de criar destinos reais.</p>
+            <Link href="/conexoes" className="btn-secondary mt-3">Ir para Contas</Link>
+          </div> : <div className="mt-4 space-y-4">
+            <div>
+              <p className="text-xs font-black uppercase tracking-wide text-slate-400">Redes conectadas</p>
+              <div className="mt-2 grid w-full max-w-full grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+                {shortOptions.map(option => {
+                  const active = selectedIds.includes(option.id);
+                  const blocked = tenant.source === "supabase" && option.status !== "connected";
+                  return <button key={option.id} onClick={() => toggle(option)} aria-pressed={active} className={`focusable flex min-w-0 items-center gap-3 rounded-xl border p-3 text-left transition-colors ${active ? "border-indigo-300 bg-indigo-50" : "border-slate-200 bg-white hover:bg-slate-50"}`}>
+                    <PlatformIcon platform={option.platform} small/>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-bold text-slate-900 sm:text-xs">{option.label}</span>
+                      <span className={`block truncate text-sm sm:text-xs ${blocked ? "text-amber-600" : "text-slate-500"}`}>{blocked ? "Reconexão necessária" : option.handle}</span>
+                      {option.platform === "instagram" && <span className={`mt-0.5 block text-[10px] font-bold ${option.advancedEnabled ? "text-indigo-600" : "text-slate-400"}`}>{option.advancedEnabled ? "Recursos avançados ativos" : "Recursos avançados não ativados"}</span>}
+                    </span>
+                    <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-md border ${active ? "border-indigo-600 bg-indigo-600 text-white" : "border-slate-300"}`}>{active && <Check size={12}/>}</span>
+                  </button>;
+                })}
+              </div>
+            </div>
+
+            {!!longYouTubeOptions.length && <div className="border-t border-slate-200 pt-4">
+              <div className="mb-2">
+                <p className="text-xs font-black uppercase tracking-wide text-slate-400">Vídeo longo</p>
+                <p className="mt-1 text-xs leading-5 text-slate-500">YouTube tradicional fica separado dos destinos curtos. Até <strong>10 GB por vídeo</strong>; arquivos grandes podem levar mais tempo para processar e publicar.</p>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {longYouTubeOptions.map(option => {
+                  const active = selectedIds.includes(option.id);
+                  const blocked = tenant.source === "supabase" && option.status !== "connected";
+                  return <button key={option.id} onClick={() => toggle(option)} aria-pressed={active} className={`focusable flex min-w-0 items-center gap-3 rounded-xl border p-3 text-left transition-colors ${active ? "border-indigo-300 bg-indigo-50" : "border-slate-200 bg-white hover:bg-slate-50"}`}>
+                    <PlatformIcon platform="youtube" small/>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-bold text-slate-900 sm:text-xs">YouTube — Vídeo</span>
+                      <span className={`block truncate text-sm sm:text-xs ${blocked ? "text-amber-600" : "text-slate-500"}`}>{blocked ? "Reconexão necessária" : option.handle}</span>
+                      <span className="mt-0.5 block text-[11px] font-semibold text-slate-400">Até 10 GB</span>
+                    </span>
+                    <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-md border ${active ? "border-indigo-600 bg-indigo-600 text-white" : "border-slate-300"}`}>{active && <Check size={12}/>}</span>
+                  </button>;
+                })}
+              </div>
+            </div>}
+          </div>}
+
+            </div>}
+          </div>
+
+          {hasInstagram && <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50/50 p-4">
+            <div>
+              <p className="text-sm font-black text-slate-900">Formato da publicação</p>
+              <p className="mt-1 text-xs leading-5 text-slate-600">Escolha onde o conteúdo deve aparecer.</p>
+            </div>
+            <div className="mt-3 grid gap-2 sm:grid-cols-3">
+              {([
+                { value: "feed" as const, label: "Feed / Reels", detail: "Só no perfil" },
+                { value: "story" as const, label: "Stories", detail: "Só nos Stories" },
+                { value: "both" as const, label: "Ambos", detail: "Feed/Reels + Stories" },
+              ]).map(item => <button key={item.value} type="button" onClick={() => { setInstagramPlacement(item.value); setSaveMessage(""); }} aria-pressed={instagramPlacement === item.value} className={`rounded-xl border px-3 py-3 text-left transition-colors ${instagramPlacement === item.value ? "border-blue-500 bg-blue-600 shadow-sm" : "border-blue-100 bg-white hover:border-blue-200 hover:bg-blue-50"}`}>
+                <span className={`block text-sm font-black ${instagramPlacement === item.value ? "text-white" : "text-slate-800"}`}>{item.label}</span>
+                <span className={`mt-0.5 block text-xs ${instagramPlacement === item.value ? "text-blue-100" : "text-slate-500"}`}>{item.detail}</span>
+              </button>)}
+            </div>
+          </div>}
+          <ContextualChecks checks={whereChecks} onSelect={check => { setNetworksOpen(true); setActiveId(check.option.id); }}/>
+        </section>
+
         <section className="card p-4 sm:p-5">
           <div>
-            <h2 className="text-base font-bold text-slate-950 sm:text-sm">1. Mídia</h2>
+            <h2 className="text-base font-bold text-slate-950 sm:text-sm">2. Mídia</h2>
             <p className="mt-1 text-sm text-slate-500 sm:text-xs">Envie um arquivo ou escolha algo que já está na biblioteca.</p>
           </div>
 
@@ -1222,12 +1351,13 @@ export function PublicationEditor() {
               }}
             />
           </div>}
+          <ContextualChecks checks={mediaChecks} onSelect={check => setActiveId(check.option.id)}/>
         </section>
 
         <section className="card min-w-0 p-4 sm:p-5">
           <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
             <div>
-              <h2 className="text-base font-bold text-slate-950 sm:text-sm">2. Descrição</h2>
+              <h2 className="text-base font-bold text-slate-950 sm:text-sm">3. Descrição</h2>
               <p className="mt-1 text-sm text-slate-500 sm:text-xs">{requiresDescription ? "Use uma descrição base e personalize somente quando quiser." : "Para publicação somente em Stories, a descrição é opcional."}</p>
             </div>
             <div className="flex max-w-full rounded-lg bg-slate-100 p-1 text-sm font-bold sm:text-xs">
@@ -1267,88 +1397,7 @@ export function PublicationEditor() {
               </div>}
             </> : <p className="rounded-xl bg-slate-50 p-5 text-sm text-slate-500">Selecione ao menos uma conta para personalizar.</p>}
           </div>}
-        </section>
-
-        <section className="card min-w-0 p-4 sm:p-5">
-          <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0">
-              <h2 className="text-base font-bold text-slate-950 sm:text-sm">3. Onde publicar?</h2>
-              <p className="mt-1 text-sm text-slate-500 sm:text-xs">{tenant.source === "supabase" ? "Cada conta conectada é um destino independente." : "Modo demonstração: escolha as redes para simular o fluxo."}</p>
-            </div>
-            {!!shortOptions.length && <button onClick={() => {
-              const shortIds = shortOptions.map(option => option.id);
-              const allShortSelected = shortIds.every(id => selectedIds.includes(id));
-              setSelectedIds(current => allShortSelected
-                ? current.filter(id => !shortIds.includes(id))
-                : Array.from(new Set([...current, ...shortIds])));
-            }} className="shrink-0 text-sm font-bold text-indigo-600 sm:text-xs">
-              {shortOptions.every(option => selectedIds.includes(option.id)) ? "Limpar sociais" : "Selecionar todos"}
-            </button>}
-          </div>
-
-          {tenant.source === "supabase" && !destinationOptions.length ? <div className="mt-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-5 text-center">
-            <p className="text-sm font-bold text-slate-900">Nenhuma conta social conectada ainda.</p>
-            <p className="mt-1 text-sm text-slate-500">Conecte pelo menos uma conta antes de criar destinos reais.</p>
-            <Link href="/conexoes" className="btn-secondary mt-3">Ir para Contas</Link>
-          </div> : <div className="mt-4 space-y-4">
-            <div>
-              <p className="text-xs font-black uppercase tracking-wide text-slate-400">Conteúdo curto / social</p>
-              <div className="mt-2 grid w-full max-w-full grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
-                {shortOptions.map(option => {
-                  const active = selectedIds.includes(option.id);
-                  const blocked = tenant.source === "supabase" && option.status !== "connected";
-                  return <button key={option.id} onClick={() => toggle(option)} aria-pressed={active} className={`focusable flex min-w-0 items-center gap-3 rounded-xl border p-3 text-left transition-colors ${active ? "border-indigo-300 bg-indigo-50" : "border-slate-200 bg-white hover:bg-slate-50"}`}>
-                    <PlatformIcon platform={option.platform} small/>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-bold text-slate-900 sm:text-xs">{option.label}</span>
-                      <span className={`block truncate text-sm sm:text-xs ${blocked ? "text-amber-600" : "text-slate-500"}`}>{blocked ? "Reconexão necessária" : option.handle}</span>
-                      {option.platform === "instagram" && <span className={`mt-0.5 block text-[10px] font-bold ${option.advancedEnabled ? "text-indigo-600" : "text-slate-400"}`}>{option.advancedEnabled ? "Recursos avançados ativos" : "Recursos avançados não ativados"}</span>}
-                    </span>
-                    <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-md border ${active ? "border-indigo-600 bg-indigo-600 text-white" : "border-slate-300"}`}>{active && <Check size={12}/>}</span>
-                  </button>;
-                })}
-              </div>
-            </div>
-
-            {!!longYouTubeOptions.length && <div className="border-t border-slate-200 pt-4">
-              <div className="mb-2">
-                <p className="text-xs font-black uppercase tracking-wide text-slate-400">Vídeo longo</p>
-                <p className="mt-1 text-xs leading-5 text-slate-500">YouTube tradicional fica separado dos destinos curtos. Até <strong>10 GB por vídeo</strong>; arquivos grandes podem levar mais tempo para processar e publicar.</p>
-              </div>
-              <div className="grid gap-2 sm:grid-cols-2">
-                {longYouTubeOptions.map(option => {
-                  const active = selectedIds.includes(option.id);
-                  const blocked = tenant.source === "supabase" && option.status !== "connected";
-                  return <button key={option.id} onClick={() => toggle(option)} aria-pressed={active} className={`focusable flex min-w-0 items-center gap-3 rounded-xl border p-3 text-left transition-colors ${active ? "border-indigo-300 bg-indigo-50" : "border-slate-200 bg-white hover:bg-slate-50"}`}>
-                    <PlatformIcon platform="youtube" small/>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-bold text-slate-900 sm:text-xs">YouTube — Vídeo</span>
-                      <span className={`block truncate text-sm sm:text-xs ${blocked ? "text-amber-600" : "text-slate-500"}`}>{blocked ? "Reconexão necessária" : option.handle}</span>
-                      <span className="mt-0.5 block text-[11px] font-semibold text-slate-400">Até 10 GB</span>
-                    </span>
-                    <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-md border ${active ? "border-indigo-600 bg-indigo-600 text-white" : "border-slate-300"}`}>{active && <Check size={12}/>}</span>
-                  </button>;
-                })}
-              </div>
-            </div>}
-          </div>}
-
-          {hasInstagram && <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50/50 p-4">
-            <div>
-              <p className="text-sm font-black text-slate-900">Formato da publicação</p>
-              <p className="mt-1 text-xs leading-5 text-slate-600">Escolha onde o conteúdo deve aparecer.</p>
-            </div>
-            <div className="mt-3 grid gap-2 sm:grid-cols-3">
-              {([
-                { value: "feed" as const, label: "Feed / Reels", detail: "Só no perfil" },
-                { value: "story" as const, label: "Stories", detail: "Só nos Stories" },
-                { value: "both" as const, label: "Ambos", detail: "Feed/Reels + Stories" },
-              ]).map(item => <button key={item.value} type="button" onClick={() => { setInstagramPlacement(item.value); setSaveMessage(""); }} aria-pressed={instagramPlacement === item.value} className={`rounded-xl border px-3 py-3 text-left transition-colors ${instagramPlacement === item.value ? "border-blue-500 bg-blue-600 shadow-sm" : "border-blue-100 bg-white hover:border-blue-200 hover:bg-blue-50"}`}>
-                <span className={`block text-sm font-black ${instagramPlacement === item.value ? "text-white" : "text-slate-800"}`}>{item.label}</span>
-                <span className={`mt-0.5 block text-xs ${instagramPlacement === item.value ? "text-blue-100" : "text-slate-500"}`}>{item.detail}</span>
-              </button>)}
-            </div>
-          </div>}
+          <ContextualChecks checks={descriptionChecks} onSelect={check => { setCustomize(true); setActiveId(check.option.id); }}/>
         </section>
 
         <section className="card p-4 sm:p-5">
@@ -1372,25 +1421,10 @@ export function PublicationEditor() {
               {selectedOptions.map(option => <label key={option.id} className="flex min-w-0 items-center gap-2 rounded-lg border border-slate-200 bg-white p-2 text-sm font-bold text-slate-700 sm:text-xs"><PlatformIcon platform={option.platform} small/><span className="min-w-0 flex-1 truncate">{option.label}</span><input type="time" value={destinationTimes[option.id] ?? time} onChange={event => setDestinationTimes(current => ({ ...current, [option.id]: event.target.value }))} className="w-28 shrink-0 rounded-lg border border-slate-200 px-2 py-1.5 text-base sm:text-xs"/></label>)}
             </div>}
           </div>}
+          <ContextualChecks checks={scheduleChecks} onSelect={check => setActiveId(check.option.id)}/>
         </section>
 
-        <section className="card p-4 sm:p-5">
-          <div className="flex items-center gap-2">
-            <CheckCircle2 className="text-emerald-600" size={18}/>
-            <h2 className="text-base font-bold text-slate-950 sm:text-sm">5. Verificação</h2>
-          </div>
-          <p className="mt-1 text-sm text-slate-500 sm:text-xs">Avisos por destino antes de publicar.</p>
-          <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {checks.map(check => <button key={check.option.id} onClick={() => { setCustomize(true); setActiveId(check.option.id); }} className={`flex min-w-0 items-center gap-3 rounded-xl border p-3 text-left ${check.level === "error" ? "border-red-200 bg-red-50" : check.level === "warning" ? "border-amber-200 bg-amber-50" : "border-emerald-200 bg-emerald-50"}`}>
-              <PlatformIcon platform={check.option.platform} small/>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-bold text-slate-900 sm:text-xs">{check.option.label}</span>
-                <span className={`block truncate text-sm sm:text-xs ${check.level === "error" ? "text-red-700" : check.level === "warning" ? "text-amber-700" : "text-emerald-700"}`}>{check.text}</span>
-              </span>
-              {check.level === "ok" ? <CheckCircle2 size={15} className="shrink-0 text-emerald-600"/> : <CircleAlert size={15} className={`shrink-0 ${check.level === "error" ? "text-red-600" : "text-amber-600"}`}/>} 
-            </button>)}
-          </div>
-        </section>
+
       </div>
 
       <aside className="min-w-0 space-y-4 xl:sticky xl:top-20 xl:self-start">
