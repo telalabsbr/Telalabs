@@ -1,0 +1,37 @@
+name: One-off preview carousel v1
+
+on:
+  push:
+    branches:
+      - feat/ui-redesign-v1
+    paths:
+      - scripts/patch_preview_carousel_v1.py
+      - .github/workflows/oneoff-preview-carousel-v1.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/ui-redesign-v1
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply patch
+        run: python scripts/patch_preview_carousel_v1.py
+      - name: Commit changes
+        run: |
+          if git diff --quiet && [ -z "$(git status --porcelain)" ]; then
+            echo "No changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/components/publication-editor.tsx src/components/text-overlay-controls.tsx src/components/publication-media-preview.tsx src/lib/media/text-overlay.ts src/lib/supabase/database.app-types.ts src/integrations/social/runtime-context.ts src/integrations/social/instagram-adapter.ts src/integrations/social/facebook-adapter.ts supabase/migrations/042_carousel_media_and_worker_context.sql
+          git commit -m "feat: prévia fiel, emojis e carrossel"
+          git push origin HEAD:feat/ui-redesign-v1
