@@ -4,6 +4,7 @@ import { getMetaGraphBaseUrl } from "@/lib/oauth/meta";
 import type { Json } from "@/lib/supabase/database.types";
 import {
   accessTokenFromContext,
+  issueAttachedMediaDeliveryUrl,
   issueMediaDeliveryUrl,
   loadRuntimePublicationContext,
   revokeMediaDeliveryUrls,
@@ -17,6 +18,7 @@ import type {
 } from "./provider-registry";
 
 type FacebookPhotoCreated = { id?: string; post_id?: string };
+type FacebookFeedCreated = { id?: string };
 type FacebookReelStart = { video_id?: string; upload_url?: string };
 type FacebookReelFinish = { success?: boolean };
 type FacebookObject = {
@@ -359,6 +361,74 @@ async function publishPhoto(job: PublicationWorkerJob, accessToken: string) {
   };
 }
 
+
+async function publishCarousel(job: PublicationWorkerJob, accessToken: string) {
+  const context = await loadRuntimePublicationContext(job.postTargetId);
+  const items = context.media_items ?? [];
+  if (items.length < 2 || items.length > 10) {
+    return invalidContent("O carrossel do Facebook precisa ter entre 2 e 10 imagens.", "FACEBOOK_CAROUSEL_COUNT");
+  }
+
+  const childIds: string[] = [];
+  for (const item of items) {
+    if (!item.mime_type.startsWith("image/") || item.processing_status !== "READY" || !item.object_key) {
+      return invalidContent("O carrossel do Facebook precisa usar imagens prontas.", "FACEBOOK_CAROUSEL_MEDIA");
+    }
+    const deliveryUrl = await issueAttachedMediaDeliveryUrl(context, item);
+    const child = await metaGraphRequest<FacebookPhotoCreated>({
+      baseUrl: getMetaGraphBaseUrl(),
+      path: `/${encodeURIComponent(context.connection.provider_account_id)}/photos`,
+      method: "POST",
+      accessToken,
+      params: { url: deliveryUrl, published: false },
+    });
+    if (!child.ok || !child.data?.id) return classifyMetaFailure(child);
+    childIds.push(child.data.id);
+  }
+
+  const params: Record<string, string | boolean> = { message: context.target.caption };
+  childIds.forEach((id, index) => {
+    params[`attached_media[${index}]`] = JSON.stringify({ media_fbid: id });
+  });
+
+  const create = await metaGraphRequest<FacebookFeedCreated>({
+    baseUrl: getMetaGraphBaseUrl(),
+    path: `/${encodeURIComponent(context.connection.provider_account_id)}/feed`,
+    method: "POST",
+    accessToken,
+    params,
+  });
+  if (!create.ok || !create.data?.id) return classifyMetaFailure(create);
+
+  const details = await facebookObject(create.data.id, accessToken);
+  const permalink = details.ok ? details.data?.permalink_url ?? null : null;
+
+  try {
+    const admin = createSupabaseAdminClient();
+    if (!admin) throw new Error("SUPABASE_ADMIN_NOT_CONFIGURED");
+    const saved = await admin.from("provider_assets").upsert({
+      organization_id: job.organizationId,
+      post_target_id: job.postTargetId,
+      provider: "facebook",
+      provider_asset_id: create.data.id,
+      kind: "CAROUSEL",
+      state: "PUBLISHED",
+      metadata: { child_photo_ids: childIds, permalink, published_at: new Date().toISOString() },
+    }, { onConflict: "provider,provider_asset_id" });
+    if (saved.error) throw new Error(saved.error.message);
+    await revokeMediaDeliveryUrls(job.postTargetId);
+  } catch {
+    return {
+      outcome: "UNKNOWN" as const,
+      providerRequestId: create.data.id,
+      errorCode: "FACEBOOK_CAROUSEL_PERSIST_UNKNOWN",
+      errorMessageSafe: "O Facebook recebeu o carrossel, mas o Tela Social ainda precisa confirmar o registro local.",
+    };
+  }
+
+  return { outcome: "SUCCEEDED" as const, providerRequestId: create.data.id, publicUrl: permalink };
+}
+
 async function publishReel(job: PublicationWorkerJob, accessToken: string) {
   const context = await loadRuntimePublicationContext(job.postTargetId);
   if (!context.media) return invalidContent("Adicione um vídeo antes de publicar um Reel no Facebook.", "FACEBOOK_REEL_REQUIRED");
@@ -589,8 +659,11 @@ export const facebookPublishAdapter: PublishAdapter = {
       return invalidContent("Adicione uma imagem ou vídeo antes de publicar no Facebook.", "FACEBOOK_MEDIA_REQUIRED");
     }
 
-    const preflight = preflightMedia(context.media);
-    if (preflight) return preflight;
+    const isCarousel = context.target.content_intent === "CAROUSEL" && (context.media_items?.length ?? 0) > 1;
+    if (!isCarousel) {
+      const preflight = preflightMedia(context.media);
+      if (preflight) return preflight;
+    }
 
     const published = await existingPublishedAsset(job.postTargetId);
     if (published) {
@@ -601,6 +674,7 @@ export const facebookPublishAdapter: PublishAdapter = {
       };
     }
 
+    if (isCarousel) return publishCarousel(job, accessToken);
     if (context.media.mime_type.startsWith("video/")) return publishReel(job, accessToken);
     return publishPhoto(job, accessToken);
   },

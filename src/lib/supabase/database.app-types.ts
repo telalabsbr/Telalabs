@@ -20,6 +20,10 @@ export type Database = Omit<GeneratedDatabase, "public"> & {
         Args: { p_media_asset_id: string; p_post_id: string };
         Returns: number;
       };
+      attach_media_items_to_post: {
+        Args: { p_media_asset_ids: string[]; p_post_id: string };
+        Returns: number;
+      };
     };
   };
 };

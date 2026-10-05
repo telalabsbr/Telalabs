@@ -29,6 +29,12 @@ function backgroundCss(background: OverlayBackground) {
   if (background === "dark") return "rgba(0,0,0,0.68)";
   if (background === "light") return "rgba(255,255,255,0.88)";
   if (background === "blue") return "rgba(37,99,235,0.90)";
+  if (background === "red") return "rgba(220,38,38,0.90)";
+  if (background === "orange") return "rgba(234,88,12,0.90)";
+  if (background === "yellow") return "rgba(234,179,8,0.90)";
+  if (background === "green") return "rgba(22,163,74,0.90)";
+  if (background === "indigo") return "rgba(79,70,229,0.90)";
+  if (background === "violet") return "rgba(124,58,237,0.90)";
   return "transparent";
 }
 
@@ -41,14 +47,55 @@ function formatTime(ms: number) {
   return `${minutes}:${String(remainder).padStart(2, "0")}`;
 }
 
+export function InlineEmojiPicker({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const [moreEmojis, setMoreEmojis] = useState(false);
+  const [recent, setRecent] = useState<string[]>([]);
+
+  useEffect(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem(RECENT_KEY) ?? "[]") as string[];
+      setRecent(Array.isArray(stored) ? stored.slice(0, 8) : []);
+    } catch {
+      setRecent([]);
+    }
+  }, []);
+
+  const quick = useMemo(() => Array.from(new Set([...recent, ...QUICK_EMOJIS])).slice(0, 8), [recent]);
+
+  function appendEmoji(emoji: string) {
+    onChange(`${value}${value && !/\s$/.test(value) ? " " : ""}${emoji}`);
+    const next = [emoji, ...recent.filter(item => item !== emoji)].slice(0, 8);
+    setRecent(next);
+    try { localStorage.setItem(RECENT_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+  }
+
+  return <div>
+    <div className="flex flex-wrap items-center gap-1.5">
+      {quick.map(emoji => <button type="button" key={emoji} onClick={() => appendEmoji(emoji)} className="grid h-9 w-9 place-items-center rounded-lg border border-slate-200 bg-white text-lg active:scale-95">{emoji}</button>)}
+      <button type="button" onClick={() => setMoreEmojis(current => !current)} className={`flex h-9 items-center gap-1 rounded-lg border px-2.5 text-xs font-black ${moreEmojis ? "border-blue-300 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-600"}`}><SmilePlus size={16}/> +</button>
+    </div>
+    {moreEmojis && <div className="mt-2 grid max-h-40 grid-cols-8 gap-1 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 sm:grid-cols-10">
+      {EMOJI_LIBRARY.map(emoji => <button type="button" key={emoji} onClick={() => appendEmoji(emoji)} className="grid h-9 w-9 place-items-center rounded-lg text-lg hover:bg-slate-100">{emoji}</button>)}
+    </div>}
+  </div>;
+}
+
 export function TextOverlayLayer({
   config,
   onChange,
   visible = true,
+  interactive = true,
 }: {
   config: TextOverlayConfig;
   onChange: (config: TextOverlayConfig) => void;
   visible?: boolean;
+  interactive?: boolean;
 }) {
   const gesture = useRef<null | {
     type: "move" | "resize";
@@ -61,6 +108,26 @@ export function TextOverlayLayer({
   }>(null);
 
   if (!visible || !config.text.trim()) return null;
+
+  if (!interactive) {
+    return <div
+      className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 select-none"
+      style={{ left: `${config.x * 100}%`, top: `${config.y * 100}%`, width: `${config.boxWidth * 100}%`, zIndex: 4 }}
+    >
+      <div
+        className="whitespace-pre-wrap break-words rounded-lg px-2.5 py-1.5 text-center font-bold leading-tight shadow-sm"
+        style={{
+          color: config.color,
+          background: backgroundCss(config.background),
+          fontFamily: overlayFontFamilies[config.font],
+          fontSize: `${Math.max(14, config.size * 260)}px`,
+          textShadow: config.background === "none" ? "0 2px 8px rgba(0,0,0,.8)" : "none",
+        }}
+      >
+        {config.text}
+      </div>
+    </div>;
+  }
 
   function stageRect(target: HTMLElement) {
     const stage = target.closest<HTMLElement>("[data-overlay-stage]");
@@ -176,15 +243,15 @@ export function TextTimingControl({
   const [dragging, setDragging] = useState<"start" | "end" | null>(null);
   const trackRef = useRef<HTMLDivElement | null>(null);
   const start = clamp(config.startMs, 0, duration || 0);
-  const end = clamp(config.endMs ?? duration, Math.min(duration, start + 250), duration || 0);
+  const end = clamp(config.endMs ?? duration, start, duration || 0);
 
   function setMode(mode: "all" | "range") {
     if (mode === "all") {
       onChange({ ...config, timingMode: "all", startMs: 0, endMs: null });
       return;
     }
-    const initialEnd = duration ? Math.min(duration, Math.max(3000, duration * 0.4)) : 3000;
-    onChange({ ...config, timingMode: "range", startMs: 0, endMs: initialEnd });
+    const edge = Math.min(3000, duration / 2);
+    onChange({ ...config, timingMode: "range", startMs: edge, endMs: Math.max(edge, duration - edge) });
   }
 
   function updateFromPointer(clientX: number, handle: "start" | "end") {
@@ -192,9 +259,9 @@ export function TextTimingControl({
     if (!rect || !duration) return;
     const value = clamp(((clientX - rect.left) / Math.max(1, rect.width)) * duration, 0, duration);
     if (handle === "start") {
-      onChange({ ...config, timingMode: "range", startMs: Math.min(value, end - 250), endMs: end });
+      onChange({ ...config, timingMode: "range", startMs: Math.min(value, end), endMs: end });
     } else {
-      onChange({ ...config, timingMode: "range", startMs: start, endMs: Math.max(value, start + 250) });
+      onChange({ ...config, timingMode: "range", startMs: start, endMs: Math.max(value, start) });
     }
   }
 
@@ -218,7 +285,8 @@ export function TextTimingControl({
         onPointerCancel={() => setDragging(null)}
       >
         <div className="absolute left-0 right-0 top-1/2 h-2 -translate-y-1/2 rounded-full bg-slate-200"/>
-        <div className="absolute top-1/2 h-2 -translate-y-1/2 rounded-full bg-blue-500" style={{ left: `${(start / duration) * 100}%`, right: `${100 - (end / duration) * 100}%` }}/>
+        <div className="absolute left-0 top-1/2 h-2 -translate-y-1/2 rounded-l-full bg-blue-500" style={{ width: `${(start / duration) * 100}%` }}/>
+        <div className="absolute right-0 top-1/2 h-2 -translate-y-1/2 rounded-r-full bg-blue-500" style={{ width: `${((duration - end) / duration) * 100}%` }}/>
         {(["start", "end"] as const).map(handle => {
           const value = handle === "start" ? start : end;
           return <button
@@ -240,10 +308,10 @@ export function TextTimingControl({
         })}
       </div>
       <div className="mt-1 flex items-center justify-between text-[11px] font-bold text-slate-600">
-        <span>Início: {formatTime(start)}</span>
-        <span>Fim: {formatTime(end)}</span>
+        <span>No início: {formatTime(start)}</span>
+        <span>No fim: {formatTime(duration - end)}</span>
       </div>
-      <p className="mt-2 text-[11px] leading-4 text-slate-500">Arraste as duas bolinhas para escolher quando o texto aparece e desaparece.</p>
+      <p className="mt-2 text-[11px] leading-4 text-slate-500">A área azul mostra onde o texto aparece. Arraste a bolinha da esquerda para a direita para aumentar o tempo no início e a da direita para a esquerda para aumentar o tempo no fim. Se as duas se encontrarem, o texto cobre o vídeo inteiro.</p>
     </div>}
   </div>;
 }
@@ -257,31 +325,14 @@ export function TextOverlayControls({
   onChange: (config: TextOverlayConfig) => void;
   compact?: boolean;
 }) {
-  const [moreEmojis, setMoreEmojis] = useState(false);
-  const [recent, setRecent] = useState<string[]>([]);
   const [hasSavedStyle, setHasSavedStyle] = useState(false);
 
   useEffect(() => {
-    try {
-      const stored = JSON.parse(localStorage.getItem(RECENT_KEY) ?? "[]") as string[];
-      setRecent(Array.isArray(stored) ? stored.slice(0, 8) : []);
-      setHasSavedStyle(!!localStorage.getItem(STYLE_KEY));
-    } catch {
-      setRecent([]);
-    }
+    try { setHasSavedStyle(!!localStorage.getItem(STYLE_KEY)); } catch { setHasSavedStyle(false); }
   }, []);
-
-  const quick = useMemo(() => Array.from(new Set([...recent, ...QUICK_EMOJIS])).slice(0, 8), [recent]);
 
   function patch(next: Partial<TextOverlayConfig>) {
     onChange({ ...config, ...next });
-  }
-
-  function appendEmoji(emoji: string) {
-    patch({ text: `${config.text}${config.text ? " " : ""}${emoji}` });
-    const next = [emoji, ...recent.filter(item => item !== emoji)].slice(0, 8);
-    setRecent(next);
-    try { localStorage.setItem(RECENT_KEY, JSON.stringify(next)); } catch { /* ignore */ }
   }
 
   function saveStyle() {
@@ -326,15 +377,7 @@ export function TextOverlayControls({
       maxLength={240}
     />
 
-    <div>
-      <div className="flex flex-wrap items-center gap-1.5">
-        {quick.map(emoji => <button type="button" key={emoji} onClick={() => appendEmoji(emoji)} className="grid h-9 w-9 place-items-center rounded-lg border border-slate-200 bg-white text-lg active:scale-95">{emoji}</button>)}
-        <button type="button" onClick={() => setMoreEmojis(current => !current)} className={`flex h-9 items-center gap-1 rounded-lg border px-2.5 text-xs font-black ${moreEmojis ? "border-blue-300 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-600"}`}><SmilePlus size={16}/> +</button>
-      </div>
-      {moreEmojis && <div className="mt-2 grid max-h-40 grid-cols-8 gap-1 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 sm:grid-cols-10">
-        {EMOJI_LIBRARY.map(emoji => <button type="button" key={emoji} onClick={() => appendEmoji(emoji)} className="grid h-9 w-9 place-items-center rounded-lg text-lg hover:bg-slate-100">{emoji}</button>)}
-      </div>}
-    </div>
+    <InlineEmojiPicker value={config.text} onChange={text => patch({ text })}/>
 
     <div className="grid gap-3 sm:grid-cols-2">
       <label className="text-xs font-bold text-slate-700">Fonte
@@ -348,6 +391,12 @@ export function TextOverlayControls({
           <option value="dark">Escuro</option>
           <option value="light">Claro</option>
           <option value="blue">Azul</option>
+          <option value="red">Vermelho</option>
+          <option value="orange">Laranja</option>
+          <option value="yellow">Amarelo</option>
+          <option value="green">Verde</option>
+          <option value="indigo">Anil</option>
+          <option value="violet">Violeta</option>
         </select>
       </label>
     </div>

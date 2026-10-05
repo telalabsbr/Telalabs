@@ -4,7 +4,7 @@ const FFMPEG_CORE_BASE = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist
 const MAX_VIDEO_OVERLAY_BYTES = 350 * 1024 * 1024;
 
 export type OverlayFont = "clean" | "classic" | "modern" | "strong" | "mono" | "hand";
-export type OverlayBackground = "none" | "dark" | "light" | "blue";
+export type OverlayBackground = "none" | "dark" | "light" | "blue" | "red" | "orange" | "yellow" | "green" | "indigo" | "violet";
 export type OverlayTimingMode = "all" | "range";
 
 export type TextOverlayConfig = {
@@ -108,7 +108,7 @@ export function normalizeTextOverlay(config: TextOverlayConfig, durationMs?: num
   const rawEnd = config.endMs == null ? duration || null : config.endMs;
   const endMs = rawEnd == null
     ? null
-    : clamp(rawEnd, Math.min(startMs + 100, duration || rawEnd), duration || rawEnd);
+    : clamp(rawEnd, startMs, duration || rawEnd);
 
   return {
     ...config,
@@ -125,7 +125,9 @@ export function overlayVisibleAt(config: TextOverlayConfig, currentMs: number, d
   if (config.timingMode !== "range") return true;
   const normalized = normalizeTextOverlay(config, durationMs);
   const end = normalized.endMs ?? durationMs ?? Number.MAX_SAFE_INTEGER;
-  return currentMs >= normalized.startMs && currentMs <= end;
+  // No modo por trecho, as duas alças representam quanto do começo e quanto do
+  // final exibem o texto. O espaço central entre elas é a área sem texto.
+  return currentMs <= normalized.startMs || currentMs >= end;
 }
 
 export function drawTextOverlay(
@@ -161,6 +163,12 @@ export function drawTextOverlay(
       dark: "rgba(0,0,0,0.68)",
       light: "rgba(255,255,255,0.88)",
       blue: "rgba(37,99,235,0.90)",
+      red: "rgba(220,38,38,0.90)",
+      orange: "rgba(234,88,12,0.90)",
+      yellow: "rgba(234,179,8,0.90)",
+      green: "rgba(22,163,74,0.90)",
+      indigo: "rgba(79,70,229,0.90)",
+      violet: "rgba(124,58,237,0.90)",
     };
     context.fillStyle = fills[normalized.background];
     roundRect(
@@ -301,7 +309,7 @@ export async function composeTextOnVideo(
 
     const normalized = normalizeTextOverlay(config);
     const timing = normalized.timingMode === "range"
-      ? `:enable='between(t,${(normalized.startMs / 1000).toFixed(3)},${((normalized.endMs ?? normalized.startMs + 100) / 1000).toFixed(3)})'`
+      ? `:enable='lte(t,${(normalized.startMs / 1000).toFixed(3)})+gte(t,${((normalized.endMs ?? normalized.startMs) / 1000).toFixed(3)})'`
       : "";
 
     const exitCode = await ffmpeg.exec([

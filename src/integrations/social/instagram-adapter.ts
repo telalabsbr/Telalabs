@@ -114,7 +114,7 @@ async function rememberContainer(args: {
   organizationId: string;
   postTargetId: string;
   containerId: string;
-  mediaType: "IMAGE" | "REELS" | "STORIES";
+  mediaType: "IMAGE" | "REELS" | "STORIES" | "CAROUSEL";
 }) {
   const admin = createSupabaseAdminClient();
   if (!admin) throw new Error("SUPABASE_ADMIN_NOT_CONFIGURED");
@@ -319,11 +319,25 @@ export const instagramPublishAdapter: PublishAdapter = {
       return invalidContent("Adicione uma imagem ou vídeo antes de publicar no Instagram.", "INSTAGRAM_MEDIA_REQUIRED");
     }
 
-    const preflight = preflightMedia(context.media);
-    if (preflight) return preflight;
+    const isStory = surfaceFromConfig(context.target.provider_config) === "story";
+    const carouselItems = context.media_items ?? [];
+    const isCarousel = !isStory && context.target.content_intent === "CAROUSEL" && carouselItems.length > 1;
+
+    if (isCarousel) {
+      if (carouselItems.length < 2 || carouselItems.length > 10) {
+        return invalidContent("O carrossel do Instagram precisa ter entre 2 e 10 imagens.", "INSTAGRAM_CAROUSEL_COUNT");
+      }
+      for (const item of carouselItems) {
+        if (item.mime_type !== "image/jpeg" || item.processing_status !== "READY" || !item.object_key) {
+          return invalidContent("Neste momento, o carrossel do Instagram aceita imagens JPEG prontas.", "INSTAGRAM_CAROUSEL_MEDIA");
+        }
+      }
+    } else {
+      const preflight = preflightMedia(context.media);
+      if (preflight) return preflight;
+    }
 
     const isVideo = context.media.mime_type.startsWith("video/");
-    const isStory = surfaceFromConfig(context.target.provider_config) === "story";
     let container = await existingContainer(job.postTargetId);
 
     if (container?.state === "PUBLISHED") {
@@ -343,22 +357,43 @@ export const instagramPublishAdapter: PublishAdapter = {
         coverUrl = await issueAttachedMediaDeliveryUrl(context, context.cover_media);
       }
 
-      const createParams: Record<string, string | boolean> = isStory
-        ? isVideo
-          ? { media_type: "STORIES", video_url: deliveryUrl }
-          : { media_type: "STORIES", image_url: deliveryUrl }
-        : isVideo
-          ? {
-              media_type: "REELS",
-              video_url: deliveryUrl,
-              caption: context.target.caption,
-              share_to_feed: true,
-              ...(coverUrl ? { cover_url: coverUrl } : {}),
-            }
-          : {
-              image_url: deliveryUrl,
-              caption: context.target.caption,
-            };
+      let createParams: Record<string, string | boolean>;
+      if (isCarousel) {
+        const childIds: string[] = [];
+        for (const item of carouselItems) {
+          const itemUrl = await issueAttachedMediaDeliveryUrl(context, item);
+          const child = await metaGraphRequest<ContainerCreated>({
+            path: `/${encodeURIComponent(context.connection.provider_account_id)}/media`,
+            method: "POST",
+            accessToken,
+            params: { image_url: itemUrl, is_carousel_item: true },
+          });
+          if (!child.ok || !child.data?.id) return classifyMetaFailure(child);
+          childIds.push(child.data.id);
+        }
+        createParams = {
+          media_type: "CAROUSEL",
+          children: childIds.join(","),
+          caption: context.target.caption,
+        };
+      } else {
+        createParams = isStory
+          ? isVideo
+            ? { media_type: "STORIES", video_url: deliveryUrl }
+            : { media_type: "STORIES", image_url: deliveryUrl }
+          : isVideo
+            ? {
+                media_type: "REELS",
+                video_url: deliveryUrl,
+                caption: context.target.caption,
+                share_to_feed: true,
+                ...(coverUrl ? { cover_url: coverUrl } : {}),
+              }
+            : {
+                image_url: deliveryUrl,
+                caption: context.target.caption,
+              };
+      }
 
       const create = await metaGraphRequest<ContainerCreated>({
         path: `/${encodeURIComponent(context.connection.provider_account_id)}/media`,
@@ -376,7 +411,7 @@ export const instagramPublishAdapter: PublishAdapter = {
           organizationId: job.organizationId,
           postTargetId: job.postTargetId,
           containerId: create.data.id,
-          mediaType: isStory ? "STORIES" : isVideo ? "REELS" : "IMAGE",
+          mediaType: isCarousel ? "CAROUSEL" : isStory ? "STORIES" : isVideo ? "REELS" : "IMAGE",
         });
       } catch {
         return {

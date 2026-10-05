@@ -58,6 +58,7 @@ export type RuntimePublicationContext = {
     base_caption: string | null;
   };
   media: RuntimeMedia | null;
+  media_items: RuntimeMedia[];
   cover_media: RuntimeMedia | null;
 };
 

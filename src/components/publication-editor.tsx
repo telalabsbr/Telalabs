@@ -33,6 +33,8 @@ import { prepareMediaFile, type PreparedMediaMetadata } from "@/lib/media/compat
 import { composeTextOnMedia, defaultTextOverlay, type TextOverlayConfig } from "@/lib/media/text-overlay";
 import { VideoCoverEditor, type CoverSelection } from "./video-cover-editor";
 import { MediaTextEditor } from "./media-text-editor";
+import { CollapsibleEditorShell, InlineEmojiPicker } from "./text-overlay-controls";
+import { PublicationMediaPreview } from "./publication-media-preview";
 
 type PublishMode = "now" | "schedule";
 type RetentionMode = "delete" | "library";
@@ -59,6 +61,13 @@ interface PublishAttemptResult {
   outcome: string;
   errorMessage?: string | null;
   publicUrl?: string | null;
+}
+
+interface CarouselItem {
+  id: string;
+  file: File;
+  previewUrl: string;
+  metadata: PreparedMediaMetadata;
 }
 
 const aiSuffixPlain: Partial<Record<SocialPlatform, string>> = {
@@ -241,6 +250,9 @@ export function PublicationEditor() {
   const [instagramPlacement, setInstagramPlacement] = useState<InstagramPlacement>("feed");
   const [feedTextConfig, setFeedTextConfig] = useState<TextOverlayConfig>({ ...defaultTextOverlay });
   const [storyTextConfig, setStoryTextConfig] = useState<TextOverlayConfig>({ ...defaultTextOverlay });
+  const [carouselItems, setCarouselItems] = useState<CarouselItem[]>([]);
+  const [stagedCarouselMedia, setStagedCarouselMedia] = useState<Record<string, { key: string; mediaId: string }>>({});
+  const carouselUrlsRef = useRef<Set<string>>(new Set());
   const [stagedStoryMedia, setStagedStoryMedia] = useState<{ key: string; mediaId: string } | null>(null);
   const [publishedUrl, setPublishedUrl] = useState<string | null>(null);
   const [publishComplete, setPublishComplete] = useState(false);
@@ -440,6 +452,11 @@ export function PublicationEditor() {
   }, [previewUrl]);
 
   useEffect(() => () => {
+    for (const url of carouselUrlsRef.current) URL.revokeObjectURL(url);
+    carouselUrlsRef.current.clear();
+  }, []);
+
+  useEffect(() => () => {
     if (coverSelection.previewUrl) URL.revokeObjectURL(coverSelection.previewUrl);
   }, [coverSelection.previewUrl]);
 
@@ -448,6 +465,8 @@ export function PublicationEditor() {
   const selectedOptions = destinationOptions.filter(option => selectedIds.includes(option.id));
   const activeOption = selectedOptions.find(option => option.id === activeId) ?? selectedOptions[0] ?? destinationOptions[0];
   const hasInstagram = selectedOptions.some(option => option.platform === "instagram");
+  const isCarousel = carouselItems.length > 1;
+  const carouselPreviewItems = carouselItems.map(item => ({ id: item.id, previewUrl: item.previewUrl }));
   const requiresDescription = selectedOptions.some(option => !(option.platform === "instagram" && instagramPlacement === "story"));
   const canSaveDraft = selectedOptions.length > 0 && (!requiresDescription || !!base.trim());
 
@@ -461,6 +480,10 @@ export function PublicationEditor() {
     setPublishedUrl(null);
     setStagedCover(null);
     setStagedStoryMedia(null);
+    setStagedCarouselMedia({});
+    for (const url of carouselUrlsRef.current) URL.revokeObjectURL(url);
+    carouselUrlsRef.current.clear();
+    setCarouselItems([]);
     setFeedTextConfig({ ...defaultTextOverlay });
     setStoryTextConfig({ ...defaultTextOverlay });
     if (coverSelection.previewUrl) URL.revokeObjectURL(coverSelection.previewUrl);
@@ -502,6 +525,100 @@ export function PublicationEditor() {
     }
   }
 
+
+  async function handleCarouselFiles(files?: FileList | null) {
+    if (!files?.length) return;
+    const incoming = Array.from(files).slice(0, 10);
+    if (incoming.length < 2) {
+      await handleFile(incoming[0]);
+      return;
+    }
+
+    setSaveError("");
+    setSaveMessage("Preparando imagens do carrossel...");
+    setPublishComplete(false);
+    setPublishResults([]);
+    setPublishedUrl(null);
+    setStagedMedia(null);
+    setStagedCarouselMedia({});
+    setStagedCover(null);
+    setStagedStoryMedia(null);
+    setFeedTextConfig({ ...defaultTextOverlay });
+    setStoryTextConfig({ ...defaultTextOverlay });
+    setInstagramPlacement("feed");
+
+    try {
+      const prepared = await Promise.all(incoming.map(file => prepareMediaFile(file)));
+      if (prepared.some(item => item.kind !== "image")) {
+        throw new Error("carousel_images_only");
+      }
+
+      for (const url of carouselUrlsRef.current) URL.revokeObjectURL(url);
+      carouselUrlsRef.current.clear();
+      const nextItems = prepared.map((item, index) => {
+        const itemUrl = URL.createObjectURL(item.file);
+        carouselUrlsRef.current.add(itemUrl);
+        return { id: `${item.file.name}-${item.file.lastModified}-${index}`, file: item.file, previewUrl: itemUrl, metadata: item.metadata } satisfies CarouselItem;
+      });
+
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      const primaryPreview = URL.createObjectURL(nextItems[0].file);
+      setPreviewUrl(primaryPreview);
+      setSelectedFile(nextItems[0].file);
+      setFileName(`${nextItems.length} imagens no carrossel`);
+      setFileType("image");
+      setFileSize(nextItems.reduce((sum, item) => sum + item.file.size, 0));
+      setMediaMetadata(nextItems[0].metadata);
+      setCarouselItems(nextItems);
+      setMediaNotice(prepared.some(item => item.notice) ? "Algumas imagens foram adaptadas automaticamente para JPEG." : "");
+      setUploadProgress(null);
+      setSaveMessage(`Carrossel com ${nextItems.length} imagens pronto.`);
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "carousel_failed";
+      setSaveError(code === "carousel_images_only"
+        ? "O carrossel aceita imagens. Selecione de 2 a 10 fotos."
+        : "Não foi possível preparar uma das imagens do carrossel.");
+      setSaveMessage("");
+    }
+  }
+
+  function syncCarouselPrimary(items: CarouselItem[]) {
+    if (!items.length) {
+      removeFile();
+      return;
+    }
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setPreviewUrl(URL.createObjectURL(items[0].file));
+    setSelectedFile(items[0].file);
+    setFileType("image");
+    setMediaMetadata(items[0].metadata);
+    setFileSize(items.reduce((sum, item) => sum + item.file.size, 0));
+    setFileName(items.length > 1 ? `${items.length} imagens no carrossel` : items[0].file.name);
+    if (items.length === 1) setCarouselItems([]);
+  }
+
+  function moveCarouselItem(index: number, direction: -1 | 1) {
+    const target = index + direction;
+    if (target < 0 || target >= carouselItems.length) return;
+    const next = [...carouselItems];
+    [next[index], next[target]] = [next[target], next[index]];
+    setCarouselItems(next);
+    setStagedCarouselMedia({});
+    syncCarouselPrimary(next);
+  }
+
+  function removeCarouselItem(index: number) {
+    const removed = carouselItems[index];
+    if (removed) {
+      URL.revokeObjectURL(removed.previewUrl);
+      carouselUrlsRef.current.delete(removed.previewUrl);
+    }
+    const next = carouselItems.filter((_, itemIndex) => itemIndex !== index);
+    setCarouselItems(next);
+    setStagedCarouselMedia({});
+    syncCarouselPrimary(next);
+  }
+
   function removeFile() {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setPreviewUrl(null);
@@ -512,6 +629,10 @@ export function PublicationEditor() {
     setStagedMedia(null);
     setStagedCover(null);
     setStagedStoryMedia(null);
+    setStagedCarouselMedia({});
+    for (const url of carouselUrlsRef.current) URL.revokeObjectURL(url);
+    carouselUrlsRef.current.clear();
+    setCarouselItems([]);
     setFeedTextConfig({ ...defaultTextOverlay });
     setStoryTextConfig({ ...defaultTextOverlay });
     setPublishComplete(false);
@@ -576,6 +697,13 @@ export function PublicationEditor() {
       }
     }
 
+    if (isCarousel && !["instagram", "facebook"].includes(option.platform)) {
+      return { option, level: "error" as const, text: "Carrossel disponível no Instagram e Facebook nesta etapa" };
+    }
+    if (isCarousel && option.platform === "instagram" && instagramPlacement !== "feed") {
+      return { option, level: "error" as const, text: "Carrossel do Instagram usa Feed / Reels" };
+    }
+
     if (option.platform === "instagram") {
       if (!fileType && !existingMedia) return { option, level: "error" as const, text: "Adicione uma imagem ou vídeo" };
       if (!storyOnly && fileType === "video" && mediaMetadata.durationMs !== null && mediaMetadata.durationMs < 3_000) return { option, level: "error" as const, text: "Reel precisa ter ao menos 3 segundos" };
@@ -632,9 +760,14 @@ export function PublicationEditor() {
     const selectedKind: "image" | "video" = fileType ?? (selectedFile?.type.startsWith("video/") ? "video" : "image");
     let baseMediaFile = selectedFile;
     let storyMediaFile: File | null = null;
+    let carouselMediaFiles: File[] = [];
 
     try {
-      if (selectedFile && instagramPlacement === "story" && storyTextConfig.text.trim()) {
+      if (isCarousel) {
+        setSaveMessage("Preparando imagens do carrossel...");
+        carouselMediaFiles = await Promise.all(carouselItems.map(item => composeTextOnMedia(item.file, "image", feedTextConfig)));
+        baseMediaFile = null;
+      } else if (selectedFile && instagramPlacement === "story" && storyTextConfig.text.trim()) {
         setSaveMessage(selectedKind === "video" ? "Preparando texto no Story..." : "Preparando imagem do Story...");
         baseMediaFile = await composeTextOnMedia(selectedFile, selectedKind, storyTextConfig, (progress, message) => {
           setUploadProgress(progress);
@@ -671,6 +804,41 @@ export function PublicationEditor() {
     }
 
     let mediaId: string | null = null;
+    const carouselMediaIds: string[] = [];
+    if (isCarousel && carouselMediaFiles.length) {
+      const nextStaged = { ...stagedCarouselMedia };
+      for (let index = 0; index < carouselMediaFiles.length; index += 1) {
+        const carouselFile = carouselMediaFiles[index];
+        const sourceItem = carouselItems[index];
+        const mediaKey = [carouselFile.name, carouselFile.size, carouselFile.lastModified, retention].join(":");
+        const cached = nextStaged[sourceItem.id];
+        if (cached?.key === mediaKey) {
+          carouselMediaIds.push(cached.mediaId);
+          continue;
+        }
+        setUploadProgress(Math.round((index / carouselMediaFiles.length) * 100));
+        setSaveMessage(`Enviando imagem ${index + 1} de ${carouselMediaFiles.length}...`);
+        try {
+          const uploaded = await uploadMediaFile({
+            file: carouselFile,
+            brandId: tenant.activeBrand.id,
+            retention,
+            metadata: sourceItem.metadata,
+          });
+          nextStaged[sourceItem.id] = { key: mediaKey, mediaId: uploaded.mediaId };
+          carouselMediaIds.push(uploaded.mediaId);
+        } catch {
+          setSaveError(`Não foi possível enviar a imagem ${index + 1} do carrossel.`);
+          setSaveMessage("");
+          setUploadProgress(null);
+          setSaving(false);
+          return;
+        }
+      }
+      setStagedCarouselMedia(nextStaged);
+      setUploadProgress(100);
+    }
+
     if (baseMediaFile) {
       const mediaKey = [baseMediaFile.name, baseMediaFile.size, baseMediaFile.lastModified, retention].join(":");
 
@@ -726,7 +894,7 @@ export function PublicationEditor() {
         requested_action: intent,
         retention: retention,
         surface: storyOnly ? "story" : option.surface ?? null,
-        content_intent: option.contentIntent ?? "AUTO",
+        content_intent: isCarousel ? "CAROUSEL" : option.contentIntent ?? "AUTO",
         file_size_bytes: fileSize || null,
       };
     });
@@ -755,7 +923,7 @@ export function PublicationEditor() {
 
     const postId = typeof result.data === "string" ? result.data : editingPostId;
 
-    if (instagramPlacement === "both" && hasInstagram && postId) {
+    if (!isCarousel && instagramPlacement === "both" && hasInstagram && postId) {
       const storyResult = await client.rpc("add_instagram_story_targets", { p_post_id: postId });
       if (storyResult.error) {
         setSaveError("A publicação foi salva, mas não conseguimos preparar a cópia para os Stories. Tente novamente antes de publicar.");
@@ -764,7 +932,17 @@ export function PublicationEditor() {
       }
     }
 
-    if (mediaId && postId) {
+    if (carouselMediaIds.length > 1 && postId) {
+      const mediaResult = await client.rpc("attach_media_items_to_post", {
+        p_post_id: postId,
+        p_media_asset_ids: carouselMediaIds,
+      });
+      if (mediaResult.error) {
+        setSaveError("A publicação foi salva, mas não conseguimos vincular as imagens do carrossel.");
+        setSaving(false);
+        return;
+      }
+    } else if (mediaId && postId) {
       const mediaResult = await client.rpc("attach_media_to_post", {
         p_post_id: postId,
         p_media_asset_id: mediaId,
@@ -933,9 +1111,9 @@ export function PublicationEditor() {
           {previewUrl || existingMedia ? <div className="mt-4 grid min-w-0 gap-3 sm:grid-cols-[180px_minmax(0,1fr)]">
             <div className="relative aspect-[4/5] overflow-hidden rounded-xl bg-slate-100">
               {previewUrl
-                ? (fileType === "video" ? <video src={previewUrl} className="h-full w-full object-cover" controls playsInline preload="metadata"/> : <img src={previewUrl} alt="Prévia da mídia" className="h-full w-full object-cover"/> )
+                ? <PublicationMediaPreview previewUrl={previewUrl} fileType={fileType} textConfig={feedTextConfig} durationMs={mediaMetadata.durationMs} posterUrl={coverSelection.previewUrl} carouselItems={carouselPreviewItems}/>
                 : <div className="grid h-full place-items-center text-center text-slate-400"><div><Play className="mx-auto" size={28}/><p className="mt-2 px-3 text-xs font-bold">Mídia já vinculada</p></div></div>}
-              <span className="absolute bottom-2 left-2 rounded-md bg-slate-950/75 px-2 py-1 text-xs font-bold text-white">{fileType === "video" ? "VÍDEO" : "IMAGEM"}</span>
+              <span className="absolute bottom-2 left-2 z-20 rounded-md bg-slate-950/75 px-2 py-1 text-xs font-bold text-white">{isCarousel ? `CARROSSEL · ${carouselItems.length}` : fileType === "video" ? "VÍDEO" : "IMAGEM"}</span>
             </div>
             <div className="min-w-0 rounded-xl border border-slate-200 bg-slate-50 p-4">
               <p className="truncate text-sm font-bold text-slate-900">{fileName}</p>
@@ -949,8 +1127,23 @@ export function PublicationEditor() {
               </div>}
               <div className="mt-4 flex flex-wrap gap-2">
                 <label className="btn-secondary cursor-pointer"><UploadCloud size={15}/> Substituir<input type="file" accept=".jpg,.jpeg,.png,.webp,.avif,.heic,.heif,.bmp,.gif,.mp4,.mov,.webm,.avi,.mkv,.mpeg,.mpg,.m4v,.3gp,.ogv,.mp3,.wav,.m4a,.aac,.ogg,.flac,image/jpeg,image/png,image/webp,image/avif,image/heic,image/heif,image/bmp,image/gif,video/mp4,video/quicktime,video/webm,video/x-msvideo,video/x-matroska,video/mpeg,video/x-m4v,video/3gpp,video/ogg,audio/mpeg,audio/wav,audio/mp4,audio/aac,audio/ogg,audio/flac" className="sr-only" onChange={event => handleFile(event.target.files?.[0])}/></label>
+                <label className="btn-secondary cursor-pointer"><ImagePlus size={15}/> Carrossel<input type="file" multiple accept=".jpg,.jpeg,.png,.webp,.avif,.heic,.heif,.bmp,image/jpeg,image/png,image/webp,image/avif,image/heic,image/heif,image/bmp" className="sr-only" onChange={event => void handleCarouselFiles(event.target.files)}/></label>
                 {selectedFile && <button onClick={removeFile} className="btn-secondary !text-red-600"><Trash2 size={15}/> Cancelar substituição</button>}
               </div>
+              {isCarousel && <div className="mt-4 border-t border-slate-200 pt-4">
+                <p className="text-xs font-black text-slate-700">Ordem do carrossel</p>
+                <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
+                  {carouselItems.map((item, index) => <div key={item.id} className="w-24 shrink-0 rounded-lg border border-slate-200 bg-white p-1.5">
+                    <div className="relative aspect-square overflow-hidden rounded-md bg-slate-100"><img src={item.previewUrl} alt={`Imagem ${index + 1}`} className="h-full w-full object-cover"/><span className="absolute left-1 top-1 rounded bg-slate-950/70 px-1.5 py-0.5 text-[9px] font-black text-white">{index + 1}</span></div>
+                    <div className="mt-1 grid grid-cols-3 gap-1 text-[11px] font-black">
+                      <button type="button" onClick={() => moveCarouselItem(index, -1)} disabled={index === 0} className="rounded bg-slate-100 py-1 disabled:opacity-30">←</button>
+                      <button type="button" onClick={() => removeCarouselItem(index)} className="rounded bg-red-50 py-1 text-red-600">×</button>
+                      <button type="button" onClick={() => moveCarouselItem(index, 1)} disabled={index === carouselItems.length - 1} className="rounded bg-slate-100 py-1 disabled:opacity-30">→</button>
+                    </div>
+                  </div>)}
+                </div>
+                <p className="mt-1 text-[11px] leading-4 text-slate-500">De 2 a 10 imagens. A primeira imagem será a capa visual do carrossel.</p>
+              </div>}
               <div className="mt-4 border-t border-slate-200 pt-4">
                 <p className="text-sm font-bold text-slate-700 sm:text-xs">Depois de concluir todos os destinos</p>
                 <div className="mt-2 flex flex-col gap-2 text-sm text-slate-600 sm:flex-row sm:gap-4 sm:text-xs">
@@ -959,12 +1152,18 @@ export function PublicationEditor() {
                 </div>
               </div>
             </div>
-          </div> : <div className="mt-4 grid min-w-0 gap-3 sm:grid-cols-2">
+          </div> : <div className="mt-4 grid min-w-0 gap-3 sm:grid-cols-3">
             <label className="flex min-h-36 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-indigo-200 bg-indigo-50/40 p-5 text-center transition-colors hover:bg-indigo-50">
               <ImagePlus className="text-indigo-600" size={26}/>
               <span className="mt-2 text-base font-bold text-slate-900 sm:text-sm">Adicionar mídia</span>
               <span className="mt-1 text-sm text-slate-500 sm:text-xs">Imagem, vídeo, GIF ou áudio · o Tela adapta quando necessário</span>
               <input type="file" accept=".jpg,.jpeg,.png,.webp,.avif,.heic,.heif,.bmp,.gif,.mp4,.mov,.webm,.avi,.mkv,.mpeg,.mpg,.m4v,.3gp,.ogv,.mp3,.wav,.m4a,.aac,.ogg,.flac,image/jpeg,image/png,image/webp,image/avif,image/heic,image/heif,image/bmp,image/gif,video/mp4,video/quicktime,video/webm,video/x-msvideo,video/x-matroska,video/mpeg,video/x-m4v,video/3gpp,video/ogg,audio/mpeg,audio/wav,audio/mp4,audio/aac,audio/ogg,audio/flac" className="sr-only" onChange={event => handleFile(event.target.files?.[0])}/>
+            </label>
+            <label className="flex min-h-36 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-blue-200 bg-blue-50/40 p-5 text-center transition-colors hover:bg-blue-50">
+              <ImagePlus className="text-blue-600" size={26}/>
+              <span className="mt-2 text-base font-bold text-slate-900 sm:text-sm">Criar carrossel</span>
+              <span className="mt-1 text-sm text-slate-500 sm:text-xs">Selecione de 2 a 10 imagens de uma vez</span>
+              <input type="file" multiple accept=".jpg,.jpeg,.png,.webp,.avif,.heic,.heif,.bmp,image/jpeg,image/png,image/webp,image/avif,image/heic,image/heif,image/bmp" className="sr-only" onChange={event => void handleCarouselFiles(event.target.files)}/>
             </label>
             <button className="flex min-h-36 flex-col items-center justify-center rounded-xl border border-slate-200 bg-slate-50 p-5 text-center hover:bg-slate-100">
               <Library className="text-slate-600" size={26}/>
@@ -974,16 +1173,18 @@ export function PublicationEditor() {
           </div>}
 
           {fileType === "video" && previewUrl && hasInstagram && instagramPlacement !== "story" && <div className="mt-4">
-            <VideoCoverEditor
-              videoUrl={previewUrl}
-              durationMs={mediaMetadata.durationMs}
-              onChange={selection => {
-                if (coverSelection.previewUrl && coverSelection.previewUrl !== selection.previewUrl) URL.revokeObjectURL(coverSelection.previewUrl);
-                setCoverSelection(selection);
-                setStagedCover(null);
-                setSaveMessage(selection.mode === "auto" ? "Capa automática selecionada." : "Capa personalizada pronta.");
-              }}
-            />
+            <CollapsibleEditorShell title="Capa do vídeo" subtitle="Opcional · abra para escolher frame, recorte e texto" defaultOpen={false} configured={coverSelection.mode !== "auto"}>
+              <VideoCoverEditor
+                videoUrl={previewUrl}
+                durationMs={mediaMetadata.durationMs}
+                onChange={selection => {
+                  if (coverSelection.previewUrl && coverSelection.previewUrl !== selection.previewUrl) URL.revokeObjectURL(coverSelection.previewUrl);
+                  setCoverSelection(selection);
+                  setStagedCover(null);
+                  setSaveMessage(selection.mode === "auto" ? "Capa automática selecionada." : "Capa personalizada pronta.");
+                }}
+              />
+            </CollapsibleEditorShell>
           </div>}
 
           {previewUrl && selectedFile && instagramPlacement !== "story" && <div className="mt-4">
@@ -994,9 +1195,9 @@ export function PublicationEditor() {
               width={mediaMetadata.width}
               height={mediaMetadata.height}
               durationMs={mediaMetadata.durationMs}
-              title={fileType === "video" ? "Texto no vídeo" : "Texto na imagem do Feed"}
-              collapsible={fileType === "video"}
-              defaultOpen={fileType !== "video"}
+              title={isCarousel ? "Texto nas imagens do carrossel" : fileType === "video" ? "Texto no vídeo" : "Texto na imagem do Feed"}
+              collapsible
+              defaultOpen={false}
               onChange={(_file, _nextPreviewUrl, config) => {
                 setFeedTextConfig(config);
                 setStagedMedia(null);
@@ -1004,7 +1205,7 @@ export function PublicationEditor() {
             />
           </div>}
 
-          {previewUrl && selectedFile && hasInstagram && instagramPlacement !== "feed" && <div className="mt-4">
+          {!isCarousel && previewUrl && selectedFile && hasInstagram && instagramPlacement !== "feed" && <div className="mt-4">
             <MediaTextEditor
               sourceFile={selectedFile}
               sourceUrl={previewUrl}
@@ -1037,6 +1238,7 @@ export function PublicationEditor() {
 
           {!customize ? <div className="mt-4">
             <textarea value={base} onChange={event => { setBase(event.target.value); setSaveMessage(""); }} placeholder={requiresDescription ? "Escreva a descrição principal aqui..." : "Descrição opcional para organizar esta publicação..."} className="field min-h-36 resize-y p-4 text-base sm:text-sm"/>
+            <div className="mt-2"><InlineEmojiPicker value={base} onChange={value => { setBase(value); setSaveMessage(""); }}/></div>
             <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <span className="text-sm text-slate-500 sm:text-xs">{base.length} caracteres</span>
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -1056,6 +1258,7 @@ export function PublicationEditor() {
                 {activeOption.platform === "youtube" && activeOption.contentIntent === "LONG_FORM" && <label className="mb-3 block text-sm font-bold text-slate-700 sm:text-xs">Título do YouTube<input value={titles[activeOption.id] ?? ""} onChange={event => setTitles(current => ({ ...current, [activeOption.id]: event.target.value }))} className="field mt-1 px-3 text-base sm:text-sm" placeholder="Título do vídeo"/></label>}
                 {activeOption.platform === "instagram" && instagramPlacement === "story" ? <div className="rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm leading-6 text-blue-800">Este Instagram está configurado para publicar somente em Stories. A descrição não é enviada para o Story.</div> : <>
                   <textarea value={effectiveText(activeOption)} onChange={event => setTexts(current => ({ ...current, [activeOption.id]: event.target.value }))} className="field min-h-36 resize-y p-4 text-base sm:text-sm"/>
+                  <div className="mt-2"><InlineEmojiPicker value={effectiveText(activeOption)} onChange={value => setTexts(current => ({ ...current, [activeOption.id]: value }))}/></div>
                   <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
                     <p className="text-sm text-slate-500 sm:text-xs">Personalização de {activeOption.label}.</p>
                     <button onClick={() => setTexts(current => ({ ...current, [activeOption.id]: base }))} className="text-sm font-bold text-indigo-600 sm:text-xs">Usar descrição base</button>
@@ -1215,7 +1418,7 @@ export function PublicationEditor() {
                   <MoreHorizontal size={17} className={activeOption.platform === "tiktok" || activeOption.platform === "kwai" ? "text-white/70" : "text-slate-400"}/>
                 </div>
                 <div className={`relative bg-gradient-to-br from-indigo-50 via-slate-100 to-violet-100 ${activeOption.platform === "youtube" && activeOption.contentIntent === "LONG_FORM" ? "aspect-video" : activeOption.platform === "instagram" && instagramPlacement === "story" ? "aspect-[9/16]" : "aspect-[4/5]"}`}>
-                  {previewUrl && (fileType === "video" ? <video src={previewUrl} className="h-full w-full object-cover" controls playsInline preload="metadata"/> : <img src={previewUrl} alt="" className="h-full w-full object-cover"/>)}
+                  {previewUrl && <PublicationMediaPreview previewUrl={previewUrl} fileType={fileType} textConfig={activeOption.platform === "instagram" && instagramPlacement === "story" ? storyTextConfig : feedTextConfig} durationMs={mediaMetadata.durationMs} posterUrl={coverSelection.previewUrl} carouselItems={carouselPreviewItems}/>}
                   {!previewUrl && <div className="grid h-full place-items-center text-slate-400"><Play size={30}/></div>}
                   {(activeOption.platform === "tiktok" || activeOption.platform === "kwai") && <PreviewChrome platform={activeOption.platform}/>} 
                 </div>
@@ -1283,9 +1486,7 @@ export function PublicationEditor() {
         <div className="max-h-[80vh] overflow-y-auto bg-slate-50 p-4">
           {activeOption ? <div className={`relative overflow-hidden rounded-xl border border-slate-200 ${activeOption.platform === "tiktok" || activeOption.platform === "kwai" ? "bg-slate-950" : "bg-white"}`}>
             <div className={activeOption.platform === "tiktok" || activeOption.platform === "kwai" || (activeOption.platform === "instagram" && instagramPlacement === "story") ? "relative aspect-[9/16]" : "relative aspect-square bg-slate-100"}>
-              {previewUrl && (fileType === "video"
-                ? <video src={previewUrl} className="h-full w-full object-cover" controls playsInline preload="metadata"/>
-                : <img src={previewUrl} alt="Prévia ampliada" className="h-full w-full object-cover"/>)}
+              {previewUrl && <PublicationMediaPreview previewUrl={previewUrl} fileType={fileType} textConfig={activeOption.platform === "instagram" && instagramPlacement === "story" ? storyTextConfig : feedTextConfig} durationMs={mediaMetadata.durationMs} posterUrl={coverSelection.previewUrl} carouselItems={carouselPreviewItems}/>}
               {!previewUrl && <div className="grid h-full place-items-center text-slate-400"><Play size={34}/></div>}
               {(activeOption.platform === "tiktok" || activeOption.platform === "kwai") && <PreviewChrome platform={activeOption.platform}/>} 
             </div>
