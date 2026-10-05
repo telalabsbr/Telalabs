@@ -127,12 +127,17 @@ export function VideoCoverEditor({
   const pinchRef = useRef<{ distance: number; zoom: number } | null>(null);
   const exportTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const captureToken = useRef(0);
+  const onChangeRef = useRef(onChange);
 
   const duration = Math.max(0, durationMs ?? detectedDurationMs);
   const ratio = useMemo(() => {
     const size = aspectSizes[aspect];
     return size.width / size.height;
   }, [aspect]);
+
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
 
   useEffect(() => () => {
     if (ownedUrl.current) URL.revokeObjectURL(ownedUrl.current);
@@ -142,9 +147,9 @@ export function VideoCoverEditor({
   useEffect(() => {
     if (mode === "auto") {
       setSourceUrl(null);
-      onChange({ mode: "auto", file: null, previewUrl: null, aspect });
+      onChangeRef.current({ mode: "auto", file: null, previewUrl: null, aspect });
     }
-  }, [mode, aspect, onChange]);
+  }, [mode, aspect]);
 
   useEffect(() => {
     if (mode !== "frame") return;
@@ -230,7 +235,7 @@ export function VideoCoverEditor({
               lastModified: Date.now(),
             });
             const previewUrl = URL.createObjectURL(blob);
-            onChange({ mode, file, previewUrl, aspect });
+            onChangeRef.current({ mode, file, previewUrl, aspect });
           })
           .catch(() => setError("Não foi possível gerar a capa ajustada."))
           .finally(() => setSavingAuto(false));
@@ -242,7 +247,7 @@ export function VideoCoverEditor({
     return () => {
       if (exportTimer.current) clearTimeout(exportTimer.current);
     };
-  }, [mode, sourceUrl, sourceSize, aspect, zoom, panX, panY, textOverlay, sourceName, onChange]);
+  }, [mode, sourceUrl, sourceSize, aspect, zoom, panX, panY, textOverlay, sourceName]);
 
   function chooseUpload(file?: File) {
     if (!file) return;
