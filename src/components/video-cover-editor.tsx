@@ -1,12 +1,13 @@
 "use client";
 
-import { Minus, Move, Plus, RotateCcw, Upload } from "lucide-react";
+import { Minus, Plus, RotateCcw, Upload } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { defaultTextOverlay, drawTextOverlay, type TextOverlayConfig } from "@/lib/media/text-overlay";
 import { TextOverlayControls, TextOverlayLayer } from "./text-overlay-controls";
 
 type CoverMode = "auto" | "frame" | "upload";
-type Aspect = "9:16" | "4:5" | "1:1" | "16:9";
+export type CoverAspect = "9:16" | "4:5" | "1:1" | "16:9";
+type Aspect = CoverAspect;
 
 export type CoverSelection = {
   mode: CoverMode;
@@ -100,14 +101,15 @@ async function captureVideoFrame(videoUrl: string, timeSeconds: number) {
 export function VideoCoverEditor({
   videoUrl,
   durationMs,
+  aspect,
   onChange,
 }: {
   videoUrl: string;
   durationMs: number | null;
+  aspect: CoverAspect;
   onChange: (selection: CoverSelection) => void;
 }) {
   const [mode, setMode] = useState<CoverMode>("auto");
-  const [aspect, setAspect] = useState<Aspect>("9:16");
   const [frameMs, setFrameMs] = useState(0);
   const [detectedDurationMs, setDetectedDurationMs] = useState(0);
   const [sourceUrl, setSourceUrl] = useState<string | null>(null);
@@ -120,7 +122,7 @@ export function VideoCoverEditor({
   const [savingAuto, setSavingAuto] = useState(false);
   const [error, setError] = useState("");
   const [textOverlay, setTextOverlay] = useState<TextOverlayConfig>({ ...defaultTextOverlay });
-  const [coverEditing, setCoverEditing] = useState(false);
+  const [coverEditMode, setCoverEditMode] = useState<"none" | "frame" | "text">("none");
   const ownedUrl = useRef<string | null>(null);
   const sourceImageRef = useRef<HTMLImageElement | null>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -296,7 +298,7 @@ export function VideoCoverEditor({
   }
 
   function onPointerDown(event: React.PointerEvent<HTMLDivElement>) {
-    if (!sourceUrl || event.pointerType === "touch") return;
+    if (coverEditMode !== "frame" || !sourceUrl || event.pointerType === "touch") return;
     event.currentTarget.setPointerCapture(event.pointerId);
     dragRef.current = { x: event.clientX, y: event.clientY, panX, panY };
   }
@@ -307,7 +309,7 @@ export function VideoCoverEditor({
   }
 
   function onTouchStart(event: React.TouchEvent<HTMLDivElement>) {
-    if (!coverEditing) return;
+    if (coverEditMode !== "frame") return;
     if (event.touches.length === 2) {
       const [a, b] = [event.touches[0], event.touches[1]];
       pinchRef.current = { distance: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY), zoom };
@@ -318,7 +320,7 @@ export function VideoCoverEditor({
   }
 
   function onTouchMove(event: React.TouchEvent<HTMLDivElement>) {
-    if (!coverEditing) return;
+    if (coverEditMode !== "frame") return;
     if (event.touches.length === 2 && pinchRef.current) {
       const [a, b] = [event.touches[0], event.touches[1]];
       const distance = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
@@ -355,7 +357,6 @@ export function VideoCoverEditor({
       <div className="flex items-center justify-between gap-3 text-xs font-bold text-slate-700"><span>Escolher frame</span><span className="text-blue-600">{(frameMs / 1000).toFixed(1)}s</span></div>
       <input type="range" min={0} max={Math.max(0, duration)} step={100} value={Math.min(frameMs, duration)} onChange={event => setFrameMs(Number(event.target.value))} className="mt-3 w-full"/>
       <div className="mt-1 flex items-center justify-between text-[11px] text-slate-500"><span>0s</span><span>{duration ? `${(duration / 1000).toFixed(1)}s` : "carregando duração..."}</span></div>
-      <p className="mt-2 text-[11px] leading-4 text-slate-500">A imagem abaixo acompanha a barra automaticamente. Não é necessário confirmar o frame.</p>
     </div>}
 
     {mode === "upload" && !sourceUrl && <label className="mt-4 flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-blue-200 bg-white px-4 py-4 text-sm font-bold text-blue-700">
@@ -366,14 +367,10 @@ export function VideoCoverEditor({
     {mode === "upload" && sourceUrl && <div className="mt-3 flex justify-end"><label className="btn-secondary cursor-pointer !px-3 !py-2 text-xs"><Upload size={14}/> Trocar imagem<input type="file" accept="image/jpeg,image/png,image/webp,image/avif" className="sr-only" onChange={event => chooseUpload(event.target.files?.[0])}/></label></div>}
 
     {mode !== "auto" && <div className="mt-4">
-      <div className="flex flex-wrap gap-2">
-        {(Object.keys(aspectSizes) as Aspect[]).map(value => <button type="button" key={value} onClick={() => setAspect(value)} className={`rounded-lg border px-3 py-2 text-xs font-black ${aspect === value ? "border-blue-500 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-600"}`}>{value}</button>)}
-      </div>
-
       <div className="mt-3 flex justify-center">
         <div
           data-overlay-stage
-          className={`relative w-full max-w-[360px] overflow-hidden rounded-xl bg-black shadow-inner ${coverEditing ? "touch-none" : "touch-pan-y"}`}
+          className={`sticky top-2 z-10 relative w-full max-w-[360px] overflow-hidden rounded-xl bg-black shadow-inner sm:static ${coverEditMode !== "none" ? "touch-none" : "touch-pan-y"}`}
           style={{ aspectRatio: ratio }}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
@@ -384,21 +381,20 @@ export function VideoCoverEditor({
           onTouchEnd={endGesture}
         >
           {sourceUrl ? <canvas ref={previewCanvasRef} className="pointer-events-none h-full w-full select-none"/> : <div className="grid h-full place-items-center px-6 text-center text-xs text-white/70">{busyFrame ? "Carregando frame..." : "Escolha um ponto do vídeo."}</div>}
-          <TextOverlayLayer config={textOverlay} onChange={setTextOverlay} visible={!!sourceUrl} interactive={coverEditing}/>
+          <TextOverlayLayer config={textOverlay} onChange={setTextOverlay} visible={!!sourceUrl} interactive={coverEditMode === "text"}/>
           <div className="pointer-events-none absolute inset-x-[7%] inset-y-[5%] rounded-lg border border-dashed border-white/40"/>
         </div>
       </div>
 
-      <div className="mt-3 flex justify-center">
-        <button
-          type="button"
-          onClick={() => { endGesture(); setCoverEditing(current => !current); }}
-          className={`rounded-lg border px-3 py-2 text-xs font-black ${coverEditing ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-blue-200 bg-blue-50 text-blue-700"}`}
-        >
-          {coverEditing ? "Concluir ajuste" : "Ajustar enquadramento e texto"}
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <button type="button" onClick={() => { endGesture(); setCoverEditMode(current => current === "frame" ? "none" : "frame"); }} className={`rounded-lg border px-2 py-2 text-xs font-black ${coverEditMode === "frame" ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-blue-200 bg-blue-50 text-blue-700"}`}>
+          {coverEditMode === "frame" ? "Concluir enquadramento" : "Ajustar enquadramento"}
+        </button>
+        <button type="button" onClick={() => { endGesture(); setCoverEditMode(current => current === "text" ? "none" : "text"); }} className={`rounded-lg border px-2 py-2 text-xs font-black ${coverEditMode === "text" ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-blue-200 bg-blue-50 text-blue-700"}`}>
+          {coverEditMode === "text" ? "Concluir texto" : "Ajustar texto"}
         </button>
       </div>
-      <p className="mt-2 text-center text-[11px] leading-4 text-slate-500">{coverEditing ? "Modo de ajuste ativo: arraste a capa ou o texto." : "A capa está bloqueada para toque; deslize sobre ela para rolar a página."}</p>
+      <p className="mt-2 text-center text-[11px] leading-4 text-slate-500">{coverEditMode === "frame" ? "Arraste somente a imagem para ajustar o enquadramento." : coverEditMode === "text" ? "Arraste somente o texto e use o canto para redimensionar." : "Edição bloqueada; deslize sobre a capa para rolar a página."}</p>
 
       <div className="mt-3 flex items-center justify-center gap-2">
         <button type="button" onClick={() => setZoom(current => clamp(current - 0.1, 1, 4))} className="btn-secondary !px-3"><Minus size={15}/></button>
@@ -406,14 +402,13 @@ export function VideoCoverEditor({
         <button type="button" onClick={() => setZoom(current => clamp(current + 0.1, 1, 4))} className="btn-secondary !px-3"><Plus size={15}/></button>
         <button type="button" onClick={resetPosition} className="btn-secondary !px-3" title="Centralizar imagem"><RotateCcw size={15}/></button>
       </div>
-      <p className="mt-2 flex items-center justify-center gap-1 text-center text-[11px] leading-4 text-slate-500"><Move size={12}/> Arraste o fundo para enquadrar. Arraste o texto para posicionar e use o quadradinho do texto para redimensionar.</p>
 
       <div className="mt-4 rounded-xl border border-blue-100 bg-white p-3 sm:p-4">
         <p className="mb-3 text-xs font-black text-slate-900">Texto e emojis na capa <span className="font-semibold text-slate-400">(opcional)</span></p>
         <TextOverlayControls config={textOverlay} onChange={setTextOverlay} compact/>
       </div>
 
-      <p className="mt-3 text-center text-[11px] font-semibold text-slate-500">{savingAuto || busyFrame ? "Atualizando capa..." : sourceUrl ? "Capa salva automaticamente conforme você edita." : "Aguardando frame ou imagem."}</p>
+      {(savingAuto || busyFrame) && <p className="mt-3 text-center text-[11px] font-semibold text-slate-500">Atualizando capa...</p>}
     </div>}
 
     {error && <p className="mt-3 rounded-lg bg-red-50 p-2 text-xs font-semibold text-red-700">{error}</p>}
