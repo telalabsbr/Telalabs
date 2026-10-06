@@ -78,7 +78,7 @@ export function InlineEmojiPicker({
   return <div>
     <div className="flex flex-wrap items-center gap-1.5">
       {quick.map(emoji => <button type="button" key={emoji} onClick={() => appendEmoji(emoji)} className="grid h-9 w-9 place-items-center rounded-lg border border-slate-200 bg-white text-lg active:scale-95">{emoji}</button>)}
-      <button type="button" onClick={() => setMoreEmojis(current => !current)} className={`flex h-9 items-center gap-1 rounded-lg border px-2.5 text-xs font-black ${moreEmojis ? "border-blue-300 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-600"}`}><SmilePlus size={16}/> +</button>
+      <button type="button" aria-label="Escolher mais emojis" title="Mais emojis" onClick={() => setMoreEmojis(current => !current)} className={`grid h-9 w-9 place-items-center rounded-lg border ${moreEmojis ? "border-blue-300 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-600"}`}><SmilePlus size={17}/></button>
     </div>
     {moreEmojis && <div className="mt-2 grid max-h-40 grid-cols-8 gap-1 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 sm:grid-cols-10">
       {EMOJI_LIBRARY.map(emoji => <button type="button" key={emoji} onClick={() => appendEmoji(emoji)} className="grid h-9 w-9 place-items-center rounded-lg text-lg hover:bg-slate-100">{emoji}</button>)}
