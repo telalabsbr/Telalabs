@@ -1387,25 +1387,36 @@ export function PublicationEditor() {
               {mediaTabs.map(item => <button
                 key={item.id}
                 type="button"
-                onClick={() => { setMediaTab(item.id); setMediaTextEditing(false); }}
+                onClick={() => { setMediaTab(item.id); setMediaTextEditing(false); setMediaTextTyping(false); setCarouselAdjusting(false); }}
                 className={`min-w-0 rounded-lg px-1.5 py-2 text-center text-[11px] font-black transition-colors sm:px-3 sm:text-xs ${mediaTab === item.id ? "bg-white text-blue-700 shadow-sm" : "text-slate-500"}`}
               >{item.label}</button>)}
             </div>
 
             {mediaTab === "media" && <div className="mt-3">
-              <div
-                className="mx-auto w-full max-w-[360px] overflow-hidden rounded-xl bg-black shadow-sm"
-                style={{ aspectRatio: mediaMetadata.width && mediaMetadata.height ? mediaMetadata.width / mediaMetadata.height : mediaAspectRatio(outputAspect) }}
-              >
-                {previewUrl ? <PublicationMediaPreview
-                  previewUrl={previewUrl}
-                  fileType={fileType}
-                  textConfig={{ ...defaultTextOverlay }}
-                  durationMs={mediaMetadata.durationMs}
-                  carouselItems={carouselPreviewItems}
-                  fit="contain"
-                /> : <div className="grid h-full place-items-center text-center text-slate-400"><div><Play className="mx-auto" size={28}/><p className="mt-2 px-3 text-xs font-bold">Mídia já vinculada</p></div></div>}
-              </div>
+              {isCarousel && carouselAdjusting
+                ? <CarouselImageAdjuster
+                    items={carouselItems.map(item => ({ id: item.id, previewUrl: item.previewUrl, transform: item.transform }))}
+                    aspect={outputAspect}
+                    onChange={updateCarouselTransform}
+                    onDone={() => setCarouselAdjusting(false)}
+                  />
+                : <div
+                    className="mx-auto w-full max-w-[360px] overflow-hidden rounded-xl bg-black shadow-sm"
+                    style={{ aspectRatio: isCarousel ? mediaAspectRatio(outputAspect) : mediaMetadata.width && mediaMetadata.height ? mediaMetadata.width / mediaMetadata.height : mediaAspectRatio(outputAspect) }}
+                  >
+                    {previewUrl ? <PublicationMediaPreview
+                      previewUrl={previewUrl}
+                      fileType={fileType}
+                      textConfig={{ ...defaultTextOverlay }}
+                      durationMs={mediaMetadata.durationMs}
+                      carouselItems={carouselPreviewItems}
+                      fit={isCarousel ? "cover" : "contain"}
+                      aspect={outputAspect}
+                    /> : <div className="grid h-full place-items-center text-center text-slate-400"><div><Play className="mx-auto" size={28}/><p className="mt-2 px-3 text-xs font-bold">Mídia já vinculada</p></div></div>}
+                  </div>}
+              {isCarousel && !carouselAdjusting && <div className="mt-2 flex justify-center">
+                <button type="button" onClick={() => setCarouselAdjusting(true)} className="btn-secondary !px-3 !py-2 text-xs">Ajustar imagens</button>
+              </div>}
 
               <div className="mt-3 min-w-0 rounded-xl border border-slate-200 bg-slate-50 p-4">
                 <p className="truncate text-sm font-bold text-slate-900">{fileName}</p>
@@ -1417,8 +1428,10 @@ export function PublicationEditor() {
                 </div>}
 
                 <div className="mt-4 flex flex-wrap gap-2">
-                  {isCarousel ? <label className="btn-secondary cursor-pointer"><UploadCloud size={15}/> Substituir<input type="file" multiple accept=".jpg,.jpeg,.png,.webp,.avif,.heic,.heif,.bmp,image/jpeg,image/png,image/webp,image/avif,image/heic,image/heif,image/bmp" className="sr-only" onChange={event => void handleCarouselFiles(event.target.files)}/></label>
-                  : <label className="btn-secondary cursor-pointer"><UploadCloud size={15}/> Substituir<input type="file" accept=".jpg,.jpeg,.png,.webp,.avif,.heic,.heif,.bmp,.gif,.mp4,.mov,.webm,.avi,.mkv,.mpeg,.mpg,.m4v,.3gp,.ogv,.mp3,.wav,.m4a,.aac,.ogg,.flac,image/jpeg,image/png,image/webp,image/avif,image/heic,image/heif,image/bmp,image/gif,video/mp4,video/quicktime,video/webm,video/x-msvideo,video/x-matroska,video/mpeg,video/x-m4v,video/3gpp,video/ogg,audio/mpeg,audio/wav,audio/mp4,audio/aac,audio/ogg,audio/flac" className="sr-only" onChange={event => handleFile(event.target.files?.[0])}/></label>}
+                  {isCarousel ? <>
+                    <label className="btn-secondary cursor-pointer"><UploadCloud size={15}/> Substituir<input type="file" multiple accept=".jpg,.jpeg,.png,.webp,.avif,.heic,.heif,.bmp,image/jpeg,image/png,image/webp,image/avif,image/heic,image/heif,image/bmp" className="sr-only" onChange={event => void handleCarouselFiles(event.target.files)}/></label>
+                    <label className="btn-secondary cursor-pointer"><Plus size={15}/> Adicionar<input type="file" multiple accept=".jpg,.jpeg,.png,.webp,.avif,.heic,.heif,.bmp,image/jpeg,image/png,image/webp,image/avif,image/heic,image/heif,image/bmp" className="sr-only" onChange={event => void handleAddCarouselFiles(event.target.files)}/></label>
+                  </> : <label className="btn-secondary cursor-pointer"><UploadCloud size={15}/> Substituir<input type="file" accept=".jpg,.jpeg,.png,.webp,.avif,.heic,.heif,.bmp,.gif,.mp4,.mov,.webm,.avi,.mkv,.mpeg,.mpg,.m4v,.3gp,.ogv,.mp3,.wav,.m4a,.aac,.ogg,.flac,image/jpeg,image/png,image/webp,image/avif,image/heic,image/heif,image/bmp,image/gif,video/mp4,video/quicktime,video/webm,video/x-msvideo,video/x-matroska,video/mpeg,video/x-m4v,video/3gpp,video/ogg,audio/mpeg,audio/wav,audio/mp4,audio/aac,audio/ogg,audio/flac" className="sr-only" onChange={event => handleFile(event.target.files?.[0])}/></label>}
                   {selectedFile && <button type="button" onClick={removeFile} className="btn-secondary !text-red-600"><Trash2 size={15}/> Cancelar</button>}
                 </div>
 
@@ -1437,7 +1450,7 @@ export function PublicationEditor() {
                       <div className="relative aspect-square overflow-hidden rounded-md bg-slate-100"><img src={item.previewUrl} alt={`Imagem ${index + 1}`} className="h-full w-full object-cover"/><span className="absolute left-1 top-1 rounded bg-slate-950/70 px-1.5 py-0.5 text-[9px] font-black text-white">{index + 1}</span></div>
                       <div className="mt-1 grid grid-cols-3 gap-1 text-[11px] font-black">
                         <button type="button" onClick={() => { moveCarouselItem(index, -1); setIsDirty(true); }} disabled={index === 0} className="rounded bg-slate-100 py-1 disabled:opacity-30">←</button>
-                        <button type="button" onClick={() => { removeCarouselItem(index); setIsDirty(true); }} className="rounded bg-red-50 py-1 text-red-600">×</button>
+                        <button type="button" aria-label={`Excluir imagem ${index + 1}`} title="Excluir imagem" onClick={() => { removeCarouselItem(index); setIsDirty(true); }} className="grid place-items-center rounded bg-red-50 py-1 text-red-600"><Trash2 size={13}/></button>
                         <button type="button" onClick={() => { moveCarouselItem(index, 1); setIsDirty(true); }} disabled={index === carouselItems.length - 1} className="rounded bg-slate-100 py-1 disabled:opacity-30">→</button>
                       </div>
                     </div>)}
@@ -1467,7 +1480,7 @@ export function PublicationEditor() {
             </div>}
 
             {mediaTab === "text" && canTextTab && previewUrl && selectedFile && <div className="mt-3 space-y-3">
-              <div className={`sticky top-2 z-20 mx-auto w-full max-w-[360px] overflow-hidden rounded-xl bg-black shadow-sm sm:static ${mediaTextEditing ? "ring-2 ring-blue-400" : ""}`} style={{ aspectRatio: mediaAspectRatio(outputAspect) }}>
+              <div className={`sticky top-2 z-20 mx-auto overflow-hidden rounded-xl bg-black shadow-sm transition-all sm:static ${mediaTextTyping ? "w-[140px] sm:w-full sm:max-w-[360px]" : "w-full max-w-[360px]"} ${mediaTextEditing ? "ring-2 ring-blue-400" : ""}`} style={{ aspectRatio: mediaAspectRatio(outputAspect) }}>
                 <PublicationMediaPreview
                   previewUrl={previewUrl}
                   fileType={fileType}
@@ -1475,7 +1488,8 @@ export function PublicationEditor() {
                   durationMs={mediaMetadata.durationMs}
                   posterUrl={coverSelection.previewUrl}
                   carouselItems={carouselPreviewItems}
-                  fit="contain"
+                  fit={isCarousel ? "cover" : "contain"}
+                  aspect={outputAspect}
                   interactive={mediaTextEditing}
                   onTextChange={config => { setFeedTextConfig(config); setStagedMedia(null); setIsDirty(true); }}
                 />
@@ -1491,12 +1505,13 @@ export function PublicationEditor() {
                 value={feedTextConfig}
                 showPreview={false}
                 onEditingChange={setMediaTextEditing}
+                onTypingChange={setMediaTextTyping}
                 onChange={(_file, _nextPreviewUrl, config) => { setFeedTextConfig(config); setStagedMedia(null); setIsDirty(true); }}
               />
             </div>}
 
             {mediaTab === "stories" && canStoriesTab && previewUrl && selectedFile && <div className="mt-3 space-y-3">
-              <div className={`sticky top-2 z-20 mx-auto aspect-[9/16] w-full max-w-[360px] overflow-hidden rounded-xl bg-black shadow-sm sm:static ${mediaTextEditing ? "ring-2 ring-blue-400" : ""}`}>
+              <div className={`sticky top-2 z-20 mx-auto aspect-[9/16] overflow-hidden rounded-xl bg-black shadow-sm transition-all sm:static ${mediaTextTyping ? "w-[140px] sm:w-full sm:max-w-[360px]" : "w-full max-w-[360px]"} ${mediaTextEditing ? "ring-2 ring-blue-400" : ""}`}>
                 <PublicationMediaPreview
                   previewUrl={previewUrl}
                   fileType={fileType}
@@ -1518,6 +1533,7 @@ export function PublicationEditor() {
                 value={storyTextConfig}
                 showPreview={false}
                 onEditingChange={setMediaTextEditing}
+                onTypingChange={setMediaTextTyping}
                 onChange={(_file, _nextPreviewUrl, config) => { setStoryTextConfig(config); setStagedStoryMedia(null); setIsDirty(true); }}
               />
             </div>}
