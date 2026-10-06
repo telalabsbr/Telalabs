@@ -1392,13 +1392,13 @@ export function PublicationEditor() {
           </div>
 
           {!customize ? <div className="mt-4">
-            <textarea value={base} onChange={event => { setBase(event.target.value); setSaveMessage(""); }} placeholder={requiresDescription ? "Escreva a descrição principal aqui..." : "Descrição opcional para organizar esta publicação..."} className="field min-h-36 touch-pan-y resize-y p-4 text-base sm:text-sm"/>
-            <div className="mt-2"><InlineEmojiPicker value={base} onChange={value => { setBase(value); setSaveMessage(""); }}/></div>
+            <textarea value={base} onChange={event => { setBase(event.target.value); setSaveMessage(""); setIsDirty(true); }} onInput={event => { event.currentTarget.style.height = "0px"; event.currentTarget.style.height = `${event.currentTarget.scrollHeight}px`; }} placeholder={requiresDescription ? "Escreva a descrição principal aqui..." : "Descrição opcional para organizar esta publicação..."} className="field min-h-36 touch-pan-y resize-none overflow-hidden p-4 text-base sm:text-sm"/>
+            <div className="mt-2"><InlineEmojiPicker value={base} onChange={value => { setBase(value); setSaveMessage(""); setIsDirty(true); }}/></div>
             <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <span className="text-sm text-slate-500 sm:text-xs">{base.length} caracteres</span>
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                 <label className="flex items-center gap-2 text-sm font-semibold text-slate-600 sm:text-xs">
-                  <input type="checkbox" checked={includeEmojis} onChange={event => setIncludeEmojis(event.target.checked)}/>
+                  <input type="checkbox" checked={includeEmojis} onChange={event => { setIncludeEmojis(event.target.checked); setIsDirty(true); }}/>
                   Usar emojis
                 </label>
                 <button onClick={adaptAll} disabled={!base.trim() || !selectedOptions.some(option => !(option.platform === "instagram" && instagramPlacement === "story"))} className="btn-primary disabled:cursor-not-allowed disabled:opacity-40"><Sparkles size={16}/> Adaptar para todas</button>
@@ -1410,13 +1410,13 @@ export function PublicationEditor() {
                 {selectedOptions.map(option => <button key={option.id} onClick={() => setActiveId(option.id)} className={`flex max-w-44 shrink-0 items-center gap-2 border-b-2 px-3 py-2.5 text-sm font-bold sm:text-xs ${activeId === option.id ? "border-indigo-600 text-indigo-700" : "border-transparent text-slate-500"}`}><PlatformIcon platform={option.platform} small/><span className="truncate">{option.label}</span></button>)}
               </div>
               {activeOption && <div className="mt-4">
-                {activeOption.platform === "youtube" && activeOption.contentIntent === "LONG_FORM" && <label className="mb-3 block text-sm font-bold text-slate-700 sm:text-xs">Título do YouTube<input value={titles[activeOption.id] ?? ""} onChange={event => setTitles(current => ({ ...current, [activeOption.id]: event.target.value }))} className="field mt-1 px-3 text-base sm:text-sm" placeholder="Título do vídeo"/></label>}
+                {activeOption.platform === "youtube" && activeOption.contentIntent === "LONG_FORM" && <label className="mb-3 block text-sm font-bold text-slate-700 sm:text-xs">Título do YouTube<input value={titles[activeOption.id] ?? ""} onChange={event => { setTitles(current => ({ ...current, [activeOption.id]: event.target.value })); setIsDirty(true); }} className="field mt-1 px-3 text-base sm:text-sm" placeholder="Título do vídeo"/></label>}
                 {activeOption.platform === "instagram" && instagramPlacement === "story" ? <div className="rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm leading-6 text-blue-800">Este Instagram está configurado para publicar somente em Stories. A descrição não é enviada para o Story.</div> : <>
-                  <textarea value={effectiveText(activeOption)} onChange={event => setTexts(current => ({ ...current, [activeOption.id]: event.target.value }))} className="field min-h-36 touch-pan-y resize-y p-4 text-base sm:text-sm"/>
-                  <div className="mt-2"><InlineEmojiPicker value={effectiveText(activeOption)} onChange={value => setTexts(current => ({ ...current, [activeOption.id]: value }))}/></div>
+                  <textarea value={effectiveText(activeOption)} onChange={event => { setTexts(current => ({ ...current, [activeOption.id]: event.target.value })); setIsDirty(true); }} onInput={event => { event.currentTarget.style.height = "0px"; event.currentTarget.style.height = `${event.currentTarget.scrollHeight}px`; }} className="field min-h-36 touch-pan-y resize-none overflow-hidden p-4 text-base sm:text-sm"/>
+                  <div className="mt-2"><InlineEmojiPicker value={effectiveText(activeOption)} onChange={value => { setTexts(current => ({ ...current, [activeOption.id]: value })); setIsDirty(true); }}/></div>
                   <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
                     <p className="text-sm text-slate-500 sm:text-xs">Personalização de {activeOption.label}.</p>
-                    <button onClick={() => setTexts(current => ({ ...current, [activeOption.id]: base }))} className="text-sm font-bold text-indigo-600 sm:text-xs">Usar descrição base</button>
+                    <button onClick={() => { setTexts(current => ({ ...current, [activeOption.id]: base })); setIsDirty(true); }} className="text-sm font-bold text-indigo-600 sm:text-xs">Usar descrição base</button>
                   </div>
                 </>}
               </div>}
@@ -1429,21 +1429,21 @@ export function PublicationEditor() {
           <h2 className="text-base font-bold text-slate-950 sm:text-sm">4. Quando publicar?</h2>
           <p className="mt-1 text-xs text-slate-500">Horários salvos no fuso da marca: <strong>{tenant.activeBrand.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"}</strong>.</p>
           <div className="mt-4 grid gap-2 sm:grid-cols-2">
-            <button onClick={() => setMode("now")} className={`flex items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-bold ${mode === "now" ? "border-blue-400 bg-blue-50 text-blue-800" : "border-slate-200 text-slate-700"}`}><Send size={16}/> Imediatamente</button>
-            <button onClick={() => setMode("schedule")} className={`flex items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-bold ${mode === "schedule" ? "border-indigo-300 bg-indigo-50 text-indigo-800" : "border-slate-200 text-slate-700"}`}><CalendarClock size={16}/> Agendar</button>
+            <button onClick={() => { setMode("now"); setIsDirty(true); }} className={`flex items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-bold ${mode === "now" ? "border-blue-400 bg-blue-50 text-blue-800" : "border-slate-200 text-slate-700"}`}><Send size={16}/> Imediatamente</button>
+            <button onClick={() => { setMode("schedule"); setIsDirty(true); }} className={`flex items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-bold ${mode === "schedule" ? "border-indigo-300 bg-indigo-50 text-indigo-800" : "border-slate-200 text-slate-700"}`}><CalendarClock size={16}/> Agendar</button>
           </div>
 
           {mode === "schedule" && <div className="mt-4 rounded-xl bg-slate-50 p-4">
             <div className="grid gap-3 sm:grid-cols-2">
-              <label className="text-sm font-bold text-slate-700 sm:text-xs">Data<input type="date" value={date} onChange={event => setDate(event.target.value)} className="field mt-1 px-3 text-base sm:text-sm"/></label>
-              <label className="text-sm font-bold text-slate-700 sm:text-xs">Horário<input type="time" value={time} onChange={event => setTime(event.target.value)} className="field mt-1 px-3 text-base sm:text-sm"/></label>
+              <label className="text-sm font-bold text-slate-700 sm:text-xs">Data<input type="date" value={date} onChange={event => { setDate(event.target.value); setIsDirty(true); }} className="field mt-1 px-3 text-base sm:text-sm"/></label>
+              <label className="text-sm font-bold text-slate-700 sm:text-xs">Horário<input type="time" value={time} onChange={event => { setTime(event.target.value); setIsDirty(true); }} className="field mt-1 px-3 text-base sm:text-sm"/></label>
             </div>
             <label className="mt-4 flex items-center gap-2 text-sm font-semibold text-slate-700 sm:text-xs">
-              <input type="checkbox" checked={differentTimes} onChange={event => setDifferentTimes(event.target.checked)}/>
+              <input type="checkbox" checked={differentTimes} onChange={event => { setDifferentTimes(event.target.checked); setIsDirty(true); }}/>
               Usar horários diferentes por destino
             </label>
             {differentTimes && <div className="mt-3 grid gap-2 sm:grid-cols-2">
-              {selectedOptions.map(option => <label key={option.id} className="flex min-w-0 items-center gap-2 rounded-lg border border-slate-200 bg-white p-2 text-sm font-bold text-slate-700 sm:text-xs"><PlatformIcon platform={option.platform} small/><span className="min-w-0 flex-1 truncate">{option.label}</span><input type="time" value={destinationTimes[option.id] ?? time} onChange={event => setDestinationTimes(current => ({ ...current, [option.id]: event.target.value }))} className="w-28 shrink-0 rounded-lg border border-slate-200 px-2 py-1.5 text-base sm:text-xs"/></label>)}
+              {selectedOptions.map(option => <label key={option.id} className="flex min-w-0 items-center gap-2 rounded-lg border border-slate-200 bg-white p-2 text-sm font-bold text-slate-700 sm:text-xs"><PlatformIcon platform={option.platform} small/><span className="min-w-0 flex-1 truncate">{option.label}</span><input type="time" value={destinationTimes[option.id] ?? time} onChange={event => { setDestinationTimes(current => ({ ...current, [option.id]: event.target.value })); setIsDirty(true); }} className="w-28 shrink-0 rounded-lg border border-slate-200 px-2 py-1.5 text-base sm:text-xs"/></label>)}
             </div>}
           </div>}
           <ContextualChecks checks={scheduleChecks} onSelect={check => setActiveId(check.option.id)}/>
@@ -1476,7 +1476,7 @@ export function PublicationEditor() {
                   </div>
                   <MoreHorizontal size={17} className={activeOption.platform === "tiktok" || activeOption.platform === "kwai" ? "text-white/70" : "text-slate-400"}/>
                 </div>
-                <div className={`relative bg-gradient-to-br from-indigo-50 via-slate-100 to-violet-100 ${activeOption.platform === "youtube" && activeOption.contentIntent === "LONG_FORM" ? "aspect-video" : activeOption.platform === "instagram" && instagramPlacement === "story" ? "aspect-[9/16]" : "aspect-[4/5]"}`}>
+                <div className="relative bg-gradient-to-br from-indigo-50 via-slate-100 to-violet-100" style={{ aspectRatio: activeOption.platform === "youtube" && activeOption.contentIntent === "LONG_FORM" ? 16 / 9 : activeOption.platform === "instagram" && instagramPlacement === "story" ? 9 / 16 : mediaAspectRatio(outputAspect) }}>
                   {previewUrl && <PublicationMediaPreview previewUrl={previewUrl} fileType={fileType} textConfig={activeOption.platform === "instagram" && instagramPlacement === "story" ? storyTextConfig : feedTextConfig} durationMs={mediaMetadata.durationMs} posterUrl={coverSelection.previewUrl} carouselItems={carouselPreviewItems}/>}
                   {!previewUrl && <div className="grid h-full place-items-center text-slate-400"><Play size={30}/></div>}
                   {(activeOption.platform === "tiktok" || activeOption.platform === "kwai") && <PreviewChrome platform={activeOption.platform}/>} 
@@ -1496,13 +1496,13 @@ export function PublicationEditor() {
             <span className="text-slate-500">Destinos</span><strong className="text-slate-900">{selectedOptions.length}</strong>
           </div>
           {hasInstagram && <div className="mt-2 flex items-center justify-between gap-3 text-sm sm:text-xs">
-            <span className="text-slate-500">Instagram</span><strong className="text-right text-slate-900">{instagramPlacement === "feed" ? "Feed / Reels" : instagramPlacement === "story" ? "Stories" : "Feed/Reels + Stories"}</strong>
+            <span className="text-slate-500">Instagram</span><strong className="text-right text-slate-900">{instagramPlacement === "feed" ? "Feed" : instagramPlacement === "story" ? "Stories" : "Feed + Stories"}</strong>
           </div>}
           <div className="mt-2 flex items-center justify-between text-sm sm:text-xs">
             <span className="text-slate-500">Envio</span><strong className="text-slate-900">{mode === "now" ? "Agora" : "Agendado"}</strong>
           </div>
           <div className="mt-2 flex items-center justify-between gap-3 text-sm sm:text-xs">
-            <span className="text-slate-500">Arquivo após publicar</span><strong className="text-right text-slate-900">{retention === "delete" ? "Excluir" : "Biblioteca"}</strong>
+            <span className="text-slate-500">Biblioteca</span><strong className="text-right text-slate-900">{retention === "library" ? "Manter" : "Não manter"}</strong>
           </div>
           <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
             <button disabled={saving || !canSaveDraft} onClick={() => void persist("draft")} className="btn-secondary w-full disabled:opacity-50">Salvar rascunho</button>
@@ -1528,7 +1528,6 @@ export function PublicationEditor() {
             {publishedUrl && <a href={publishedUrl} target="_blank" rel="noreferrer" className="btn-secondary w-full"><ExternalLink size={15}/> Ver publicação</a>}
           </div>}
           {saveError && <p role="alert" className="mt-3 rounded-lg bg-red-50 p-3 text-sm font-semibold leading-5 text-red-700 sm:text-xs">{saveError}</p>}
-          {tenant.source === "supabase" && <p className="mt-3 text-xs leading-5 text-slate-500">Instagram e Facebook já publicam pelo worker real. Cada destino mantém status e retentativa independentes.</p>}
         </section>
       </aside>
     </div>
@@ -1544,7 +1543,7 @@ export function PublicationEditor() {
         </div>
         <div className="max-h-[80vh] overflow-y-auto bg-slate-50 p-4">
           {activeOption ? <div className={`relative overflow-hidden rounded-xl border border-slate-200 ${activeOption.platform === "tiktok" || activeOption.platform === "kwai" ? "bg-slate-950" : "bg-white"}`}>
-            <div className={activeOption.platform === "tiktok" || activeOption.platform === "kwai" || (activeOption.platform === "instagram" && instagramPlacement === "story") ? "relative aspect-[9/16]" : "relative aspect-square bg-slate-100"}>
+            <div className="relative bg-slate-100" style={{ aspectRatio: activeOption.platform === "tiktok" || activeOption.platform === "kwai" || (activeOption.platform === "instagram" && instagramPlacement === "story") ? 9 / 16 : activeOption.platform === "youtube" && activeOption.contentIntent === "LONG_FORM" ? 16 / 9 : mediaAspectRatio(outputAspect) }}>
               {previewUrl && <PublicationMediaPreview previewUrl={previewUrl} fileType={fileType} textConfig={activeOption.platform === "instagram" && instagramPlacement === "story" ? storyTextConfig : feedTextConfig} durationMs={mediaMetadata.durationMs} posterUrl={coverSelection.previewUrl} carouselItems={carouselPreviewItems}/>}
               {!previewUrl && <div className="grid h-full place-items-center text-slate-400"><Play size={34}/></div>}
               {(activeOption.platform === "tiktok" || activeOption.platform === "kwai") && <PreviewChrome platform={activeOption.platform}/>} 
