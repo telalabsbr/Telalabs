@@ -26,7 +26,17 @@ function aspectRatio(aspect: MediaAspect) {
   return 16 / 9;
 }
 
-type TouchCollection = {\n  length: number;\n  [index: number]: { clientX: number; clientY: number };\n};\n\nfunction distance(touches: TouchCollection) {\n  if (touches.length < 2) return 0;\n  const dx = touches[0].clientX - touches[1].clientX;\n  const dy = touches[0].clientY - touches[1].clientY;\n  return Math.hypot(dx, dy);\n}
+type TouchCollection = {
+  length: number;
+  [index: number]: { clientX: number; clientY: number };
+};
+
+function distance(touches: TouchCollection) {
+  if (touches.length < 2) return 0;
+  const dx = touches[0].clientX - touches[1].clientX;
+  const dy = touches[0].clientY - touches[1].clientY;
+  return Math.hypot(dx, dy);
+}
 
 export function CarouselImageAdjuster({
   items,
