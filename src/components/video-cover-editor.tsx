@@ -387,16 +387,17 @@ export function VideoCoverEditor({
       </div>
 
       <div className="mt-3 grid grid-cols-2 gap-2">
-        <button type="button" onClick={() => { endGesture(); setCoverEditMode(current => current === "frame" ? "none" : "frame"); }} className={`rounded-lg border px-2 py-2 text-xs font-black ${coverEditMode === "frame" ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-blue-200 bg-blue-50 text-blue-700"}`}>
+        <button type="button" onClick={() => { endGesture(); setCoverEditMode(current => current === "frame" ? "none" : "frame"); }} className={`rounded-lg border px-1.5 py-2 text-[10px] font-black leading-tight sm:px-2 sm:text-xs ${coverEditMode === "frame" ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-blue-200 bg-blue-50 text-blue-700"}`}>
           {coverEditMode === "frame" ? "Concluir enquadramento" : "Ajustar enquadramento"}
         </button>
-        <button type="button" onClick={() => { endGesture(); setCoverEditMode(current => current === "text" ? "none" : "text"); }} className={`rounded-lg border px-2 py-2 text-xs font-black ${coverEditMode === "text" ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-blue-200 bg-blue-50 text-blue-700"}`}>
+        <button type="button" onClick={() => { endGesture(); setCoverEditMode(current => current === "text" ? "none" : "text"); }} className={`rounded-lg border px-1.5 py-2 text-[10px] font-black leading-tight sm:px-2 sm:text-xs ${coverEditMode === "text" ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-blue-200 bg-blue-50 text-blue-700"}`}>
           {coverEditMode === "text" ? "Concluir texto" : "Ajustar texto"}
         </button>
       </div>
       <p className="mt-2 text-center text-[11px] leading-4 text-slate-500">{coverEditMode === "frame" ? "Arraste somente a imagem para ajustar o enquadramento." : coverEditMode === "text" ? "Arraste somente o texto e use o canto para redimensionar." : "Edição bloqueada; deslize sobre a capa para rolar a página."}</p>
 
-      <div className="mt-3 flex items-center justify-center gap-2">
+      <p className="mt-2 text-center text-[10px] font-semibold text-slate-500 sm:hidden">Use dois dedos para ampliar ou reduzir e arraste para reenquadrar.</p>
+      <div className="mt-3 hidden items-center justify-center gap-2 sm:flex">
         <button type="button" onClick={() => setZoom(current => clamp(current - 0.1, 1, 4))} className="btn-secondary !px-3"><Minus size={15}/></button>
         <span className="min-w-16 text-center text-xs font-bold text-slate-600">{Math.round(zoom * 100)}%</span>
         <button type="button" onClick={() => setZoom(current => clamp(current + 0.1, 1, 4))} className="btn-secondary !px-3"><Plus size={15}/></button>
