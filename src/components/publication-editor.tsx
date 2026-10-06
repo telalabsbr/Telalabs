@@ -33,14 +33,14 @@ import { prepareMediaFile, type PreparedMediaMetadata } from "@/lib/media/compat
 import { composeTextOnMedia, defaultTextOverlay, type TextOverlayConfig } from "@/lib/media/text-overlay";
 import { VideoCoverEditor, type CoverAspect, type CoverSelection } from "./video-cover-editor";
 import { MediaTextEditor } from "./media-text-editor";
-import { CollapsibleEditorShell, InlineEmojiPicker } from "./text-overlay-controls";
+import { InlineEmojiPicker } from "./text-overlay-controls";
 import { PublicationMediaPreview } from "./publication-media-preview";
 
 type PublishMode = "now" | "schedule";
 type RetentionMode = "delete" | "library";
 type SaveIntent = "draft" | "publish_now" | "schedule";
 type InstagramPlacement = "feed" | "story" | "both";
-type MediaEditorView = "feed" | "story";
+type MediaEditorTab = "media" | "cover" | "text" | "stories";
 
 const mediaAspects: CoverAspect[] = ["9:16", "4:5", "1:1", "16:9"];
 
@@ -301,11 +301,8 @@ export function PublicationEditor() {
   const [coverSelection, setCoverSelection] = useState<CoverSelection>({ mode: "auto", file: null, previewUrl: null, aspect: "9:16" });
   const [instagramPlacement, setInstagramPlacement] = useState<InstagramPlacement>("both");
   const [outputAspect, setOutputAspect] = useState<CoverAspect>("9:16");
-  const [activeMediaView, setActiveMediaView] = useState<MediaEditorView>("feed");
+  const [mediaTab, setMediaTab] = useState<MediaEditorTab>("media");
   const [mediaTextEditing, setMediaTextEditing] = useState(false);
-  const [coverOpen, setCoverOpen] = useState(false);
-  const [feedEditorOpen, setFeedEditorOpen] = useState(false);
-  const [storyEditorOpen, setStoryEditorOpen] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
   const [feedTextConfig, setFeedTextConfig] = useState<TextOverlayConfig>({ ...defaultTextOverlay });
   const [storyTextConfig, setStoryTextConfig] = useState<TextOverlayConfig>({ ...defaultTextOverlay });
@@ -545,10 +542,6 @@ export function PublicationEditor() {
     };
   }, [isDirty, publishComplete]);
 
-  useEffect(() => {
-    if (instagramPlacement === "story") setActiveMediaView("story");
-    if (instagramPlacement === "feed") setActiveMediaView("feed");
-  }, [instagramPlacement]);
   const shortOptions = destinationOptions.filter(option => option.contentIntent !== "LONG_FORM");
   const longYouTubeOptions = destinationOptions.filter(option => option.contentIntent === "LONG_FORM");
   const selectedOptions = destinationOptions.filter(option => selectedIds.includes(option.id));
@@ -577,9 +570,7 @@ export function PublicationEditor() {
     setFeedTextConfig({ ...defaultTextOverlay });
     setStoryTextConfig({ ...defaultTextOverlay });
     setOutputAspect("9:16");
-    setCoverOpen(false);
-    setFeedEditorOpen(false);
-    setStoryEditorOpen(false);
+    setMediaTab("media");
     setMediaTextEditing(false);
     if (coverSelection.previewUrl) URL.revokeObjectURL(coverSelection.previewUrl);
     setCoverSelection({ mode: "auto", file: null, previewUrl: null, aspect: "9:16" });
