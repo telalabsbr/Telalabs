@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, ChevronDown, ChevronUp, Move, SmilePlus, Star } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, CircleHelp, SmilePlus, Star } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   defaultTextOverlay,
@@ -236,6 +236,7 @@ export function TextTimingControl({
 }) {
   const duration = Math.max(0, durationMs ?? 0);
   const [dragging, setDragging] = useState<"start" | "end" | null>(null);
+  const [rangeOpen, setRangeOpen] = useState(true);
   const trackRef = useRef<HTMLDivElement | null>(null);
   const start = clamp(config.startMs, 0, duration || 0);
   const end = clamp(config.endMs ?? duration, start, duration || 0);
@@ -246,6 +247,7 @@ export function TextTimingControl({
       return;
     }
     const edge = Math.min(3000, duration / 2);
+    setRangeOpen(true);
     onChange({ ...config, timingMode: "range", startMs: edge, endMs: Math.max(edge, duration - edge) });
   }
 
@@ -260,53 +262,67 @@ export function TextTimingControl({
     }
   }
 
-  if (!duration) return <p className="rounded-lg bg-slate-50 px-3 py-2 text-[11px] font-semibold text-slate-500">A duração do vídeo será carregada antes de liberar o intervalo do texto.</p>;
+  if (!duration) return null;
 
-  return <div className="rounded-xl border border-slate-200 bg-white p-3">
-    <div className="flex flex-wrap gap-2">
-      <button type="button" onClick={() => setMode("all")} className={`rounded-lg px-3 py-2 text-xs font-black ${config.timingMode === "all" ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"}`}>Vídeo todo</button>
-      <button type="button" onClick={() => setMode("range")} className={`rounded-lg px-3 py-2 text-xs font-black ${config.timingMode === "range" ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"}`}>Somente um trecho</button>
+  return <div className="rounded-xl border border-slate-200 bg-white p-2.5">
+    <div className="flex items-center gap-2">
+      <div className="grid min-w-0 flex-1 grid-cols-2 gap-1.5">
+        <button type="button" onClick={() => setMode("all")} className={`rounded-lg px-2 py-2 text-[11px] font-black sm:text-xs ${config.timingMode === "all" ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"}`}>Vídeo todo</button>
+        <button type="button" onClick={() => setMode("range")} className={`rounded-lg px-2 py-2 text-[11px] font-black sm:text-xs ${config.timingMode === "range" ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"}`}>Somente um trecho</button>
+      </div>
+      <details className="relative shrink-0">
+        <summary className="grid h-8 w-8 cursor-pointer list-none place-items-center rounded-full border border-slate-200 bg-white text-slate-500"><CircleHelp size={14}/></summary>
+        <div className="absolute right-0 top-10 z-30 w-56 rounded-lg border border-slate-200 bg-white p-2.5 text-[11px] leading-4 text-slate-600 shadow-lg">
+          Use “Vídeo todo” para manter o texto sempre visível. Em “Somente um trecho”, ajuste quanto tempo ele aparece no começo e no fim.
+        </div>
+      </details>
     </div>
 
-    {config.timingMode === "range" && <div className="mt-4">
-      <div
-        ref={trackRef}
-        className="relative h-10 touch-none select-none"
-        onPointerMove={event => {
-          if (!dragging) return;
-          updateFromPointer(event.clientX, dragging);
-        }}
-        onPointerUp={() => setDragging(null)}
-        onPointerCancel={() => setDragging(null)}
-      >
-        <div className="absolute left-0 right-0 top-1/2 h-2 -translate-y-1/2 rounded-full bg-slate-200"/>
-        <div className="absolute left-0 top-1/2 h-2 -translate-y-1/2 rounded-l-full bg-blue-500" style={{ width: `${(start / duration) * 100}%` }}/>
-        <div className="absolute right-0 top-1/2 h-2 -translate-y-1/2 rounded-r-full bg-blue-500" style={{ width: `${((duration - end) / duration) * 100}%` }}/>
-        {(["start", "end"] as const).map(handle => {
-          const value = handle === "start" ? start : end;
-          return <button
-            key={handle}
-            type="button"
-            aria-label={handle === "start" ? "Início do texto" : "Fim do texto"}
-            className="absolute top-1/2 h-7 w-7 -translate-x-1/2 -translate-y-1/2 touch-none rounded-full border-4 border-white bg-blue-600 shadow-md"
-            style={{ left: `${(value / duration) * 100}%` }}
-            onPointerDown={event => {
-              event.currentTarget.setPointerCapture(event.pointerId);
-              setDragging(handle);
-            }}
-            onPointerMove={event => {
-              if (dragging === handle) updateFromPointer(event.clientX, handle);
-            }}
-            onPointerUp={() => setDragging(null)}
-            onPointerCancel={() => setDragging(null)}
-          />;
-        })}
-      </div>
-      <div className="mt-1 flex items-center justify-between text-[11px] font-bold text-slate-600">
-        <span>No início: {formatTime(start)}</span>
-        <span>No fim: {formatTime(duration - end)}</span>
-      </div>
-      <p className="mt-2 text-[11px] leading-4 text-slate-500">A área azul mostra onde o texto aparece. Arraste a bolinha da esquerda para a direita para aumentar o tempo no início e a da direita para a esquerda para aumentar o tempo no fim. Se as duas se encontrarem, o texto cobre o vídeo inteiro.</p>
+    {config.timingMode === "range" && <div className="mt-2">
+      <button type="button" onClick={() => setRangeOpen(current => !current)} className="flex w-full items-center justify-between rounded-lg bg-slate-50 px-2.5 py-2 text-[11px] font-black text-slate-600">
+        <span>Intervalo do texto</span>
+        {rangeOpen ? <ChevronUp size={15}/> : <ChevronDown size={15}/>}
+      </button>
+
+      {rangeOpen && <div className="mt-2">
+        <div
+          ref={trackRef}
+          className="relative h-10 touch-none select-none"
+          onPointerMove={event => {
+            if (!dragging) return;
+            updateFromPointer(event.clientX, dragging);
+          }}
+          onPointerUp={() => setDragging(null)}
+          onPointerCancel={() => setDragging(null)}
+        >
+          <div className="absolute left-0 right-0 top-1/2 h-2 -translate-y-1/2 rounded-full bg-slate-200"/>
+          <div className="absolute left-0 top-1/2 h-2 -translate-y-1/2 rounded-l-full bg-blue-500" style={{ width: `${(start / duration) * 100}%` }}/>
+          <div className="absolute right-0 top-1/2 h-2 -translate-y-1/2 rounded-r-full bg-blue-500" style={{ width: `${((duration - end) / duration) * 100}%` }}/>
+          {(["start", "end"] as const).map(handle => {
+            const value = handle === "start" ? start : end;
+            return <button
+              key={handle}
+              type="button"
+              aria-label={handle === "start" ? "Início do texto" : "Fim do texto"}
+              className="absolute top-1/2 h-7 w-7 -translate-x-1/2 -translate-y-1/2 touch-none rounded-full border-4 border-white bg-blue-600 shadow-md"
+              style={{ left: `${(value / duration) * 100}%` }}
+              onPointerDown={event => {
+                event.currentTarget.setPointerCapture(event.pointerId);
+                setDragging(handle);
+              }}
+              onPointerMove={event => {
+                if (dragging === handle) updateFromPointer(event.clientX, handle);
+              }}
+              onPointerUp={() => setDragging(null)}
+              onPointerCancel={() => setDragging(null)}
+            />;
+          })}
+        </div>
+        <div className="mt-1 flex items-center justify-between text-[11px] font-bold text-slate-600">
+          <span>No início: {formatTime(start)}</span>
+          <span>No fim: {formatTime(duration - end)}</span>
+        </div>
+      </div>}
     </div>}
   </div>;
 }
