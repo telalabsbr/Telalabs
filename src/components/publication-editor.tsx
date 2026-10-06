@@ -561,6 +561,7 @@ export function PublicationEditor() {
 
   async function handleFile(file?: File) {
     if (!file) return;
+    setIsDirty(true);
     setSaveError("");
     setSaveMessage("Preparando mídia...");
     setMediaNotice("");
@@ -575,6 +576,11 @@ export function PublicationEditor() {
     setCarouselItems([]);
     setFeedTextConfig({ ...defaultTextOverlay });
     setStoryTextConfig({ ...defaultTextOverlay });
+    setOutputAspect("9:16");
+    setCoverOpen(false);
+    setFeedEditorOpen(false);
+    setStoryEditorOpen(false);
+    setMediaTextEditing(false);
     if (coverSelection.previewUrl) URL.revokeObjectURL(coverSelection.previewUrl);
     setCoverSelection({ mode: "auto", file: null, previewUrl: null, aspect: "9:16" });
 
@@ -617,6 +623,7 @@ export function PublicationEditor() {
 
   async function handleCarouselFiles(files?: FileList | null) {
     if (!files?.length) return;
+    setIsDirty(true);
     const incoming = Array.from(files).slice(0, 10);
     if (incoming.length < 2) {
       await handleFile(incoming[0]);
@@ -634,6 +641,7 @@ export function PublicationEditor() {
     setStagedStoryMedia(null);
     setFeedTextConfig({ ...defaultTextOverlay });
     setStoryTextConfig({ ...defaultTextOverlay });
+    setOutputAspect("9:16");
     setInstagramPlacement("feed");
 
     try {
@@ -709,6 +717,7 @@ export function PublicationEditor() {
   }
 
   function removeFile() {
+    setIsDirty(true);
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setPreviewUrl(null);
     setSelectedFile(null);
