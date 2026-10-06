@@ -1,6 +1,6 @@
 "use client";
 
-import { Type } from "lucide-react";
+import { CircleHelp, Type } from "lucide-react";
 import { useState } from "react";
 import {
   defaultTextOverlay,
@@ -28,6 +28,7 @@ export function MediaTextEditor({
   open,
   onOpenChange,
   onEditingChange,
+  onTypingChange,
   value,
 }: {
   sourceFile: File;
@@ -44,12 +45,14 @@ export function MediaTextEditor({
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   onEditingChange?: (editing: boolean) => void;
+  onTypingChange?: (typing: boolean) => void;
   value?: TextOverlayConfig;
 }) {
   const [internalConfig, setInternalConfig] = useState<TextOverlayConfig>({ ...defaultTextOverlay });
   const config = value ?? internalConfig;
   const [currentMs, setCurrentMs] = useState(0);
   const [positionEditing, setPositionEditing] = useState(false);
+  const [typing, setTyping] = useState(false);
 
   const aspectRatio = width && height && width > 0 && height > 0
     ? width / height
@@ -66,10 +69,10 @@ export function MediaTextEditor({
     onEditingChange?.(next);
   }
 
-  const editor = <div className="space-y-4">
+  const editor = <div className="space-y-3">
     {showPreview && <div
       data-overlay-stage
-      className={`sticky top-2 z-10 mx-auto w-full max-w-[360px] overflow-hidden rounded-xl bg-black shadow-sm sm:static ${positionEditing ? "touch-none" : "touch-pan-y"}`}
+      className={`sticky top-2 z-20 mx-auto overflow-hidden rounded-xl bg-black shadow-sm transition-all sm:static ${typing ? "w-[140px] sm:w-full sm:max-w-[360px]" : "w-full max-w-[360px]"}`}
       style={{ aspectRatio }}
     >
       {kind === "video"
@@ -93,24 +96,33 @@ export function MediaTextEditor({
       <div className="pointer-events-none absolute inset-x-[6%] inset-y-[4%] rounded-lg border border-dashed border-white/35"/>
     </div>}
 
-    <div className="flex justify-center">
+    {kind === "video" && <TextTimingControl config={config} durationMs={durationMs} onChange={update}/>}
+
+    <TextOverlayControls
+      config={config}
+      onChange={update}
+      compact
+      onTypingChange={next => {
+        setTyping(next);
+        onTypingChange?.(next);
+      }}
+    />
+
+    <div className="flex items-center justify-center gap-2">
       <button
         type="button"
         onClick={toggleEditing}
         className={`rounded-lg border px-3 py-2 text-xs font-black ${positionEditing ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-blue-200 bg-blue-50 text-blue-700"}`}
       >
-        {positionEditing ? "Concluir ajuste" : "Ajustar texto na mídia"}
+        {positionEditing ? "Concluir ajuste" : "Ajustar texto"}
       </button>
+      <details className="relative">
+        <summary className="grid h-8 w-8 cursor-pointer list-none place-items-center rounded-full border border-slate-200 bg-white text-slate-500"><CircleHelp size={14}/></summary>
+        <div className="absolute bottom-10 right-0 z-30 w-56 rounded-lg border border-slate-200 bg-white p-2.5 text-[11px] leading-4 text-slate-600 shadow-lg">
+          Ative para arrastar ou redimensionar o texto. Fora do texto, a página continua rolando normalmente.
+        </div>
+      </details>
     </div>
-    <p className="text-center text-[11px] leading-4 text-slate-500">{positionEditing ? "Enquanto ajusta, arraste o texto e use o canto para redimensionar." : "A mídia está bloqueada para edição por toque; você pode rolar a página normalmente sobre ela."}</p>
-
-    <TextOverlayControls config={config} onChange={update} compact/>
-
-    {kind === "video" && <TextTimingControl config={config} durationMs={durationMs} onChange={update}/>} 
-
-    <p className="rounded-lg bg-slate-50 px-3 py-2 text-[11px] leading-4 text-slate-500">
-      As mudanças acima ficam definidas automaticamente. A mídia final só é processada ao salvar ou publicar, para manter o editor leve no celular.
-    </p>
   </div>;
 
   if (collapsible) {
@@ -135,7 +147,6 @@ export function MediaTextEditor({
   return <div className="rounded-xl border border-blue-100 bg-blue-50/35 p-3 sm:p-4">
     <div className="mb-4">
       <p className="flex items-center gap-2 text-sm font-black text-slate-900"><Type size={16} className="text-blue-600"/>{title}</p>
-      <p className="mt-1 text-xs leading-5 text-slate-500">Edite diretamente sobre a mídia. Arraste e redimensione com o mouse ou com o dedo.</p>
     </div>
     {editor}
   </div>;
