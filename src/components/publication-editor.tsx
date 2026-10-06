@@ -587,8 +587,6 @@ export function PublicationEditor() {
     setFeedTextConfig({ ...defaultTextOverlay });
     setStoryTextConfig({ ...defaultTextOverlay });
     setOutputAspect("9:16");
-    setMediaTab("media");
-    setMediaTextEditing(false);
     if (coverSelection.previewUrl) URL.revokeObjectURL(coverSelection.previewUrl);
     setCoverSelection({ mode: "auto", file: null, previewUrl: null, aspect: "9:16" });
 
