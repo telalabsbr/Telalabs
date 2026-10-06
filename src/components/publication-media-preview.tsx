@@ -14,6 +14,9 @@ export function PublicationMediaPreview({
   durationMs,
   posterUrl,
   carouselItems = [],
+  interactive = false,
+  onTextChange,
+  fit = "cover",
 }: {
   previewUrl: string | null;
   fileType: "image" | "video" | null;
@@ -21,6 +24,9 @@ export function PublicationMediaPreview({
   durationMs?: number | null;
   posterUrl?: string | null;
   carouselItems?: CarouselPreviewItem[];
+  interactive?: boolean;
+  onTextChange?: (config: TextOverlayConfig) => void;
+  fit?: "cover" | "contain";
 }) {
   const [currentMs, setCurrentMs] = useState(0);
   const [index, setIndex] = useState(0);
@@ -35,21 +41,21 @@ export function PublicationMediaPreview({
 
   const dots = useMemo(() => carouselItems.map(item => item.id), [carouselItems]);
 
-  return <div data-overlay-stage className="relative h-full w-full touch-pan-y overflow-hidden">
+  return <div data-overlay-stage className={`relative h-full w-full overflow-hidden ${interactive ? "touch-none" : "touch-pan-y"}`}>
     {activeUrl && (fileType === "video" && !isCarousel
       ? <video
           src={activeUrl}
           poster={posterUrl || undefined}
-          className="h-full w-full touch-pan-y object-cover"
+          className={`h-full w-full ${interactive ? "pointer-events-none" : "touch-pan-y"} ${fit === "contain" ? "object-contain" : "object-cover"}`}
           controls
           playsInline
           preload="metadata"
           onTimeUpdate={event => setCurrentMs(event.currentTarget.currentTime * 1000)}
           onSeeked={event => setCurrentMs(event.currentTarget.currentTime * 1000)}
         />
-      : <img src={activeUrl} alt="Prévia final da mídia" className="h-full w-full touch-pan-y object-cover"/>)}
+      : <img src={activeUrl} alt="Prévia final da mídia" className={`h-full w-full ${interactive ? "pointer-events-none" : "touch-pan-y"} ${fit === "contain" ? "object-contain" : "object-cover"}`}/>)}
 
-    {activeUrl && <TextOverlayLayer config={textConfig} onChange={() => {}} visible={visible} interactive={false}/>} 
+    {activeUrl && <TextOverlayLayer config={textConfig} onChange={onTextChange ?? (() => {})} visible={visible} interactive={interactive}/>} 
 
     {isCarousel && <>
       <button type="button" aria-label="Imagem anterior" onClick={() => setIndex(current => (current - 1 + carouselItems.length) % carouselItems.length)} className="absolute left-2 top-1/2 z-10 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-full bg-slate-950/65 text-white shadow"><ChevronLeft size={17}/></button>
