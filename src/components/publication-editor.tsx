@@ -16,6 +16,7 @@ import {
   MessageCircle,
   MoreHorizontal,
   Play,
+  Plus,
   Repeat2,
   Send,
   Share2,
@@ -35,6 +36,8 @@ import { VideoCoverEditor, type CoverAspect, type CoverSelection } from "./video
 import { MediaTextEditor } from "./media-text-editor";
 import { InlineEmojiPicker } from "./text-overlay-controls";
 import { PublicationMediaPreview } from "./publication-media-preview";
+import { CarouselImageAdjuster } from "./carousel-image-adjuster";
+import { applyImageTransform, defaultImageTransform, type ImageTransform } from "@/lib/media/image-transform";
 
 type PublishMode = "now" | "schedule";
 type RetentionMode = "delete" | "library";
@@ -100,6 +103,8 @@ interface CarouselItem {
   file: File;
   previewUrl: string;
   metadata: PreparedMediaMetadata;
+  transform: ImageTransform;
+  adjusted: boolean;
 }
 
 const aiSuffixPlain: Partial<Record<SocialPlatform, string>> = {
@@ -303,6 +308,9 @@ export function PublicationEditor() {
   const [outputAspect, setOutputAspect] = useState<CoverAspect>("9:16");
   const [mediaTab, setMediaTab] = useState<MediaEditorTab>("media");
   const [mediaTextEditing, setMediaTextEditing] = useState(false);
+  const [mediaTextTyping, setMediaTextTyping] = useState(false);
+  const [carouselMode, setCarouselMode] = useState(false);
+  const [carouselAdjusting, setCarouselAdjusting] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
   const [feedTextConfig, setFeedTextConfig] = useState<TextOverlayConfig>({ ...defaultTextOverlay });
   const [storyTextConfig, setStoryTextConfig] = useState<TextOverlayConfig>({ ...defaultTextOverlay });
@@ -547,8 +555,8 @@ export function PublicationEditor() {
   const selectedOptions = destinationOptions.filter(option => selectedIds.includes(option.id));
   const activeOption = selectedOptions.find(option => option.id === activeId) ?? selectedOptions[0] ?? destinationOptions[0];
   const hasInstagram = selectedOptions.some(option => option.platform === "instagram");
-  const isCarousel = carouselItems.length > 1;
-  const carouselPreviewItems = carouselItems.map(item => ({ id: item.id, previewUrl: item.previewUrl }));
+  const isCarousel = carouselMode && carouselItems.length > 0;
+  const carouselPreviewItems = carouselItems.map(item => ({ id: item.id, previewUrl: item.previewUrl, transform: item.transform, adjusted: item.adjusted }));
   const requiresDescription = selectedOptions.some(option => !(option.platform === "instagram" && instagramPlacement === "story"));
   const canSaveDraft = selectedOptions.length > 0 && (!requiresDescription || !!base.trim());
   const canCoverTab = fileType === "video" && !!previewUrl && hasInstagram && instagramPlacement !== "story";
@@ -565,6 +573,7 @@ export function PublicationEditor() {
     if (mediaTabs.some(item => item.id === mediaTab)) return;
     setMediaTab("media");
     setMediaTextEditing(false);
+    setMediaTextTyping(false);
   }, [mediaTab, canCoverTab, canTextTab, canStoriesTab]);
 
   async function handleFile(file?: File) {
@@ -579,6 +588,8 @@ export function PublicationEditor() {
     setStagedCover(null);
     setStagedStoryMedia(null);
     setStagedCarouselMedia({});
+    setCarouselMode(false);
+    setCarouselAdjusting(false);
     for (const url of carouselUrlsRef.current) URL.revokeObjectURL(url);
     carouselUrlsRef.current.clear();
     setCarouselItems([]);
