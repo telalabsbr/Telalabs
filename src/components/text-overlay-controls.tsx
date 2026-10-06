@@ -394,7 +394,8 @@ export function TextOverlayControls({
   compact?: boolean;
 }) {
   const [hasSavedStyle, setHasSavedStyle] = useState(false);
-  const [openMenu, setOpenMenu] = useState<"font" | "text" | "background" | null>(null);
+  const [openMenu, setOpenMenu] = useState<"font" | "text" | null>(null);
+  const [customPicker, setCustomPicker] = useState<"text" | "background" | null>(null);
   const [recentColors, setRecentColors] = useState<string[]>([]);
 
   useEffect(() => {
@@ -485,10 +486,10 @@ export function TextOverlayControls({
 
     {openMenu === "text" && <div className="rounded-xl border border-slate-200 bg-white p-2.5">
       <div className="flex items-center gap-2">
-        {quickColors.map(color => <button type="button" key={color} onClick={() => { patch({ color }); rememberColor(color); }} aria-label={`Cor ${color}`} className={`h-9 w-9 rounded-full border-2 ${config.color.toLowerCase() === color.toLowerCase() ? "border-blue-600 ring-2 ring-blue-100" : "border-white ring-1 ring-slate-200"}`} style={{ backgroundColor: color }}/>) }
-        <button type="button" aria-label="Personalizar cor do texto" title="Personalizar cor" onClick={() => setOpenMenu("text")} className="grid h-9 w-9 place-items-center rounded-full border-2 border-white text-sm font-black text-white shadow-sm ring-1 ring-slate-200" style={{ background: "conic-gradient(red, yellow, lime, aqua, blue, magenta, red)" }}>+</button>
+        {quickColors.map(color => <button type="button" key={color} onClick={() => { patch({ color }); rememberColor(color); setOpenMenu(null); setCustomPicker(null); }} aria-label={`Cor ${color}`} className={`h-9 w-9 rounded-full border-2 ${config.color.toLowerCase() === color.toLowerCase() ? "border-blue-600 ring-2 ring-blue-100" : "border-white ring-1 ring-slate-200"}`} style={{ backgroundColor: color }}/>) }
+        <button type="button" aria-label="Personalizar cor do texto" title="Personalizar cor" onClick={() => setCustomPicker(current => current === "text" ? null : "text")} className="grid h-9 w-9 place-items-center rounded-full border-2 border-white text-sm font-black text-white shadow-sm ring-1 ring-slate-200" style={{ background: "conic-gradient(red, yellow, lime, aqua, blue, magenta, red)" }}>+</button>
       </div>
-      <InlineColorPicker value={config.color} onChange={color => patch({ color })} onCommit={color => { patch({ color }); rememberColor(color); }}/>
+      {customPicker === "text" && <InlineColorPicker value={config.color} onChange={color => patch({ color })} onCommit={color => { patch({ color }); rememberColor(color); setCustomPicker(null); setOpenMenu(null); }}/>}
     </div>}
 
     <div className="rounded-xl border border-slate-200 bg-white p-2.5">
@@ -498,9 +499,9 @@ export function TextOverlayControls({
       </div>
       <div className="mt-2 flex items-center gap-2">
         {quickColors.map(color => <button type="button" key={color} onClick={() => { patch({ background: "color", backgroundColor: color }); rememberColor(color); }} aria-label={`Fundo ${color}`} className={`h-9 w-9 rounded-full border-2 ${config.background === "color" && config.backgroundColor.toLowerCase() === color.toLowerCase() ? "border-blue-600 ring-2 ring-blue-100" : "border-white ring-1 ring-slate-200"}`} style={{ backgroundColor: color }}/>) }
-        <button type="button" aria-label="Personalizar cor de fundo" title="Personalizar cor" onClick={() => setOpenMenu(current => current === "background" ? null : "background")} className="grid h-9 w-9 place-items-center rounded-full border-2 border-white text-sm font-black text-white shadow-sm ring-1 ring-slate-200" style={{ background: "conic-gradient(red, yellow, lime, aqua, blue, magenta, red)" }}>+</button>
+        <button type="button" aria-label="Personalizar cor de fundo" title="Personalizar cor" onClick={() => setCustomPicker(current => current === "background" ? null : "background")} className="grid h-9 w-9 place-items-center rounded-full border-2 border-white text-sm font-black text-white shadow-sm ring-1 ring-slate-200" style={{ background: "conic-gradient(red, yellow, lime, aqua, blue, magenta, red)" }}>+</button>
       </div>
-      {openMenu === "background" && <InlineColorPicker value={config.backgroundColor} onChange={color => patch({ background: "color", backgroundColor: color })} onCommit={color => { patch({ background: "color", backgroundColor: color }); rememberColor(color); }}/>}
+      {customPicker === "background" && <InlineColorPicker value={config.backgroundColor} onChange={color => patch({ background: "color", backgroundColor: color })} onCommit={color => { patch({ background: "color", backgroundColor: color }); rememberColor(color); setCustomPicker(null); }}/>}
     </div>
 
     <div className="grid grid-cols-2 gap-2">
