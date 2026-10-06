@@ -1,6 +1,6 @@
 "use client";
 
-import { Minus, Plus, RotateCcw, Upload } from "lucide-react";
+import { CircleHelp, Minus, Plus, RotateCcw, Upload } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { defaultTextOverlay, drawTextOverlay, type TextOverlayConfig } from "@/lib/media/text-overlay";
 import { TextOverlayControls, TextOverlayLayer } from "./text-overlay-controls";
@@ -74,18 +74,27 @@ async function captureVideoFrame(videoUrl: string, timeSeconds: number) {
   video.src = videoUrl;
 
   await new Promise<void>((resolve, reject) => {
-    video.onloadedmetadata = () => resolve();
+    if (video.readyState >= 2) {
+      resolve();
+      return;
+    }
+    video.onloadeddata = () => resolve();
     video.onerror = () => reject(new Error("cover_video_decode_failed"));
   });
 
-  const safeTime = clamp(timeSeconds, 0, Math.max(0, (video.duration || 0) - 0.03));
-  if (safeTime > 0) {
-    await new Promise<void>((resolve, reject) => {
-      video.onseeked = () => resolve();
-      video.onerror = () => reject(new Error("cover_video_seek_failed"));
-      video.currentTime = safeTime;
-    });
-  }
+  const maxTime = Math.max(0, (video.duration || 0) - 0.03);
+  const firstRenderableTime = Math.min(maxTime, Math.max(0.06, (video.duration || 0) * 0.005));
+  const requestedTime = timeSeconds <= 0.001 ? firstRenderableTime : timeSeconds;
+  const safeTime = clamp(requestedTime, 0, maxTime);
+  await new Promise<void>((resolve, reject) => {
+    const finish = () => resolve();
+    video.onseeked = finish;
+    video.onerror = () => reject(new Error("cover_video_seek_failed"));
+    video.currentTime = safeTime;
+    if (Math.abs(video.currentTime - safeTime) < 0.001 && video.readyState >= 2) {
+      requestAnimationFrame(finish);
+    }
+  });
 
   const width = video.videoWidth || 1080;
   const height = video.videoHeight || 1920;
@@ -123,6 +132,7 @@ export function VideoCoverEditor({
   const [error, setError] = useState("");
   const [textOverlay, setTextOverlay] = useState<TextOverlayConfig>({ ...defaultTextOverlay });
   const [coverEditMode, setCoverEditMode] = useState<"none" | "frame" | "text">("none");
+  const [typingText, setTypingText] = useState(false);
   const ownedUrl = useRef<string | null>(null);
   const sourceImageRef = useRef<HTMLImageElement | null>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -339,10 +349,13 @@ export function VideoCoverEditor({
   }
 
   return <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 sm:p-4">
-    <div className="flex flex-wrap items-start justify-between gap-3">
-      <div>
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex items-center gap-2">
         <p className="text-sm font-black text-slate-900">Capa do vídeo</p>
-        <p className="mt-1 text-xs leading-5 text-slate-500">Escolha o frame e edite tudo na própria capa: formato, enquadramento, texto, cor e emojis.</p>
+        <details className="relative">
+          <summary className="grid h-7 w-7 cursor-pointer list-none place-items-center rounded-full border border-slate-200 bg-white text-slate-500"><CircleHelp size={13}/></summary>
+          <div className="absolute left-0 top-9 z-30 w-56 rounded-lg border border-slate-200 bg-white p-2.5 text-[11px] leading-4 text-slate-600 shadow-lg">Escolha uma capa automática, um frame do vídeo ou envie uma imagem. Depois ajuste enquadramento e texto.</div>
+        </details>
       </div>
       <div className="flex max-w-full rounded-lg bg-white p-1 text-xs font-bold shadow-sm">
         {(["auto", "frame", "upload"] as CoverMode[]).map(value => <button key={value} type="button" onClick={() => { setMode(value); setError(""); }} className={`rounded-md px-2.5 py-1.5 ${mode === value ? "bg-blue-600 text-white" : "text-slate-600"}`}>
@@ -351,7 +364,7 @@ export function VideoCoverEditor({
       </div>
     </div>
 
-    {mode === "auto" && <div className="mt-4 rounded-lg border border-dashed border-slate-300 bg-white px-4 py-5 text-center text-xs leading-5 text-slate-500">A plataforma escolherá a capa automaticamente. Se quiser controlar o resultado, escolha <strong>Frame</strong> ou <strong>Enviar</strong>.</div>}
+    {mode === "auto" && <div className="mt-3 rounded-lg border border-dashed border-slate-300 bg-white px-3 py-3 text-center text-xs font-semibold text-slate-500">Capa automática</div>}
 
     {mode === "frame" && <div className="mt-4 rounded-lg border border-slate-200 bg-white p-3">
       <div className="flex items-center justify-between gap-3 text-xs font-bold text-slate-700"><span>Escolher frame</span><span className="text-blue-600">{(frameMs / 1000).toFixed(1)}s</span></div>
@@ -370,7 +383,7 @@ export function VideoCoverEditor({
       <div className="mt-3 flex justify-center">
         <div
           data-overlay-stage
-          className={`sticky top-2 z-10 relative w-full max-w-[360px] overflow-hidden rounded-xl bg-black shadow-inner sm:static ${coverEditMode !== "none" ? "touch-none" : "touch-pan-y"}`}
+          className={`sticky top-2 z-10 relative overflow-hidden rounded-xl bg-black shadow-inner transition-all sm:static ${typingText ? "w-[140px] sm:w-full sm:max-w-[360px]" : "w-full max-w-[360px]"} ${coverEditMode === "frame" ? "touch-none" : "touch-pan-y"}`}
           style={{ aspectRatio: ratio }}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
@@ -394,8 +407,6 @@ export function VideoCoverEditor({
           {coverEditMode === "text" ? "Concluir texto" : "Ajustar texto"}
         </button>
       </div>
-      <p className="mt-2 text-center text-[11px] leading-4 text-slate-500">{coverEditMode === "frame" ? "Arraste somente a imagem para ajustar o enquadramento." : coverEditMode === "text" ? "Arraste somente o texto e use o canto para redimensionar." : "Edição bloqueada; deslize sobre a capa para rolar a página."}</p>
-
       <p className="mt-2 text-center text-[10px] font-semibold text-slate-500 sm:hidden">Use dois dedos para ampliar ou reduzir e arraste para reenquadrar.</p>
       <div className="mt-3 hidden items-center justify-center gap-2 sm:flex">
         <button type="button" onClick={() => setZoom(current => clamp(current - 0.1, 1, 4))} className="btn-secondary !px-3"><Minus size={15}/></button>
@@ -406,7 +417,7 @@ export function VideoCoverEditor({
 
       <div className="mt-4 rounded-xl border border-blue-100 bg-white p-3 sm:p-4">
         <p className="mb-3 text-xs font-black text-slate-900">Texto e emojis na capa <span className="font-semibold text-slate-400">(opcional)</span></p>
-        <TextOverlayControls config={textOverlay} onChange={setTextOverlay} compact/>
+        <TextOverlayControls config={textOverlay} onChange={setTextOverlay} compact onTypingChange={setTypingText}/>
       </div>
 
       {(savingAuto || busyFrame) && <p className="mt-3 text-center text-[11px] font-semibold text-slate-500">Atualizando capa...</p>}
