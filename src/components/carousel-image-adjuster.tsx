@@ -26,7 +26,7 @@ function aspectRatio(aspect: MediaAspect) {
   return 16 / 9;
 }
 
-function distance(touches: React.TouchList) {
+function distance(touches: TouchList) {
   if (touches.length < 2) return 0;
   const dx = touches[0].clientX - touches[1].clientX;
   const dy = touches[0].clientY - touches[1].clientY;
