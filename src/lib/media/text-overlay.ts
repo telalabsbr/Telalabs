@@ -4,7 +4,7 @@ const FFMPEG_CORE_BASE = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist
 const MAX_VIDEO_OVERLAY_BYTES = 350 * 1024 * 1024;
 
 export type OverlayFont = "clean" | "classic" | "modern" | "strong" | "mono" | "hand";
-export type OverlayBackground = "none" | "dark" | "light" | "blue" | "red" | "orange" | "yellow" | "green" | "indigo" | "violet";
+export type OverlayBackground = "none" | "dark" | "light" | "color";
 export type OverlayTimingMode = "all" | "range";
 
 export type TextOverlayConfig = {
@@ -13,6 +13,7 @@ export type TextOverlayConfig = {
   size: number;
   color: string;
   background: OverlayBackground;
+  backgroundColor: string;
   x: number;
   y: number;
   boxWidth: number;
@@ -27,6 +28,7 @@ export const defaultTextOverlay: TextOverlayConfig = {
   size: 0.075,
   color: "#ffffff",
   background: "none",
+  backgroundColor: "#2563eb",
   x: 0.5,
   y: 0.5,
   boxWidth: 0.72,
@@ -162,13 +164,7 @@ export function drawTextOverlay(
     const fills: Record<Exclude<OverlayBackground, "none">, string> = {
       dark: "rgba(0,0,0,0.68)",
       light: "rgba(255,255,255,0.88)",
-      blue: "rgba(37,99,235,0.90)",
-      red: "rgba(220,38,38,0.90)",
-      orange: "rgba(234,88,12,0.90)",
-      yellow: "rgba(234,179,8,0.90)",
-      green: "rgba(22,163,74,0.90)",
-      indigo: "rgba(79,70,229,0.90)",
-      violet: "rgba(124,58,237,0.90)",
+      color: normalized.backgroundColor || "#2563eb",
     };
     context.fillStyle = fills[normalized.background];
     roundRect(
