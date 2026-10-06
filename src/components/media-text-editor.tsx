@@ -28,6 +28,7 @@ export function MediaTextEditor({
   open,
   onOpenChange,
   onEditingChange,
+  value,
 }: {
   sourceFile: File;
   sourceUrl: string;
@@ -43,8 +44,10 @@ export function MediaTextEditor({
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   onEditingChange?: (editing: boolean) => void;
+  value?: TextOverlayConfig;
 }) {
-  const [config, setConfig] = useState<TextOverlayConfig>({ ...defaultTextOverlay });
+  const [internalConfig, setInternalConfig] = useState<TextOverlayConfig>({ ...defaultTextOverlay });
+  const config = value ?? internalConfig;
   const [currentMs, setCurrentMs] = useState(0);
   const [positionEditing, setPositionEditing] = useState(false);
 
@@ -53,7 +56,7 @@ export function MediaTextEditor({
     : kind === "video" ? 9 / 16 : 4 / 5;
 
   function update(next: TextOverlayConfig) {
-    setConfig(next);
+    if (value === undefined) setInternalConfig(next);
     onChange(null, null, next);
   }
 
