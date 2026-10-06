@@ -3,7 +3,6 @@
 import { Check, ChevronDown, ChevronUp, CircleHelp, SmilePlus, Star } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  defaultTextOverlay,
   overlayFontFamilies,
   overlayFontLabels,
   type OverlayBackground,
@@ -17,7 +16,6 @@ const EMOJI_LIBRARY = [
   "🥳", "😎", "🤩", "😊", "😉", "🤔", "😱", "🙌", "🙏", "💪", "👀", "👉", "👇", "👍", "💯", "⚡", "🎬",
   "📸", "🎥", "🎵", "🎶", "📌", "📍", "🛍️", "💰", "🎁", "📣", "🧠", "🏆", "🌈", "☀️", "🌙", "💎", "👑", "🫶",
 ];
-const DEFAULT_COLORS = ["#ffffff", "#111827", "#2563eb", "#dc2626"];
 const RECENT_KEY = "tela_social_recent_emojis";
 const RECENT_COLOR_KEY = "tela_social_recent_colors";
 const STYLE_KEY = "tela_social_text_style";
