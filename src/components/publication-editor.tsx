@@ -1294,12 +1294,11 @@ export function PublicationEditor() {
             </div>
             <div className="mt-3 grid grid-cols-3 gap-2">
               {([
-                { value: "feed" as const, label: "Feed", detail: "Só no perfil" },
-                { value: "story" as const, label: "Stories", detail: "Só nos Stories" },
-                { value: "both" as const, label: "Ambos", detail: "Feed + Stories" },
-              ]).map(item => <button key={item.value} type="button" onClick={() => { setInstagramPlacement(item.value); setSaveMessage(""); setIsDirty(true); }} aria-pressed={instagramPlacement === item.value} className={`min-w-0 rounded-xl border px-2 py-2.5 text-center transition-colors sm:px-3 sm:py-3 sm:text-left ${instagramPlacement === item.value ? "border-blue-500 bg-blue-600 shadow-sm" : "border-blue-100 bg-white hover:border-blue-200 hover:bg-blue-50"}`}>
+                { value: "feed" as const, label: "Feed" },
+                { value: "story" as const, label: "Stories" },
+                { value: "both" as const, label: "Ambos" },
+              ]).map(item => <button key={item.value} type="button" onClick={() => { setInstagramPlacement(item.value); setSaveMessage(""); setIsDirty(true); }} aria-pressed={instagramPlacement === item.value} className={`min-w-0 rounded-xl border px-2 py-2.5 text-center transition-colors sm:px-3 sm:py-3 ${instagramPlacement === item.value ? "border-blue-500 bg-blue-600 shadow-sm" : "border-blue-100 bg-white hover:border-blue-200 hover:bg-blue-50"}`}>
                 <span className={`block truncate text-xs font-black sm:text-sm ${instagramPlacement === item.value ? "text-white" : "text-slate-800"}`}>{item.label}</span>
-                <span className={`mt-0.5 hidden text-xs sm:block ${instagramPlacement === item.value ? "text-blue-100" : "text-slate-500"}`}>{item.detail}</span>
               </button>)}
             </div>
           </div>}
