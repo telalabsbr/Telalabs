@@ -601,7 +601,7 @@ export function PublicationEditor() {
       setUploadProgress(null);
       setStagedMedia(null);
       setPreviewUrl(URL.createObjectURL(prepared.file));
-      setSaveMessage(prepared.notice ? "Mídia adaptada automaticamente." : "Mídia pronta.");
+      setSaveMessage(prepared.notice ? "Mídia adaptada automaticamente." : "");
     } catch (error) {
       const code = error instanceof Error ? error.message : "unsupported_media_type";
       const messages: Record<string, string> = {
@@ -669,7 +669,7 @@ export function PublicationEditor() {
       setCarouselItems(nextItems);
       setMediaNotice(prepared.some(item => item.notice) ? "Algumas imagens foram adaptadas automaticamente para JPEG." : "");
       setUploadProgress(null);
-      setSaveMessage(`Carrossel com ${nextItems.length} imagens pronto.`);
+      setSaveMessage("");
     } catch (error) {
       const code = error instanceof Error ? error.message : "carousel_failed";
       setSaveError(code === "carousel_images_only"
@@ -1228,6 +1228,7 @@ export function PublicationEditor() {
             </button>
             {networksOpen && <div className="border-t border-slate-200 p-3 sm:p-4">
               {!!shortOptions.length && <button type="button" onClick={() => {
+                setIsDirty(true);
                 const shortIds = shortOptions.map(option => option.id);
                 const allShortSelected = shortIds.every(id => selectedIds.includes(id));
                 setSelectedIds(current => allShortSelected
