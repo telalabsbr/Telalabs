@@ -794,6 +794,7 @@ export function PublicationEditor() {
     setCarouselItems([]);
     setCarouselMode(false);
     setCarouselAdjusting(false);
+    setMediaTextTyping(false);
     setFeedTextConfig({ ...defaultTextOverlay });
     setStoryTextConfig({ ...defaultTextOverlay });
     setPublishComplete(false);
@@ -1438,7 +1439,7 @@ export function PublicationEditor() {
                 <div className="mt-4 border-t border-slate-200 pt-4">
                   <p className="text-xs font-black text-slate-700">Formato da mídia</p>
                   <div className="mt-2 grid grid-cols-4 gap-1.5">
-                    {mediaAspects.map(aspect => <button key={aspect} type="button" onClick={() => { setOutputAspect(aspect); setCoverSelection(current => ({ ...current, aspect })); setStagedCover(null); setIsDirty(true); }} className={`rounded-lg border px-1.5 py-2 text-xs font-black ${outputAspect === aspect ? "border-blue-500 bg-blue-600 text-white" : "border-slate-200 bg-white text-slate-600"}`}>{aspect}</button>)}
+                    {mediaAspects.map(aspect => <button key={aspect} type="button" onClick={() => { setOutputAspect(aspect); setCoverSelection(current => ({ ...current, aspect })); setStagedCover(null); setStagedCarouselMedia({}); setIsDirty(true); }} className={`rounded-lg border px-1.5 py-2 text-xs font-black ${outputAspect === aspect ? "border-blue-500 bg-blue-600 text-white" : "border-slate-200 bg-white text-slate-600"}`}>{aspect}</button>)}
                   </div>
                   {loadedAspectLabel(mediaMetadata.width, mediaMetadata.height) && loadedAspectLabel(mediaMetadata.width, mediaMetadata.height) !== outputAspect && <p className="mt-2 text-[11px] font-semibold text-slate-500">Formato carregado: {loadedAspectLabel(mediaMetadata.width, mediaMetadata.height)}</p>}
                 </div>
@@ -1491,7 +1492,7 @@ export function PublicationEditor() {
                   fit={isCarousel ? "cover" : "contain"}
                   aspect={outputAspect}
                   interactive={mediaTextEditing}
-                  onTextChange={config => { setFeedTextConfig(config); setStagedMedia(null); setIsDirty(true); }}
+                  onTextChange={config => { setFeedTextConfig(config); setStagedMedia(null); setStagedCarouselMedia({}); setIsDirty(true); }}
                 />
               </div>
               <MediaTextEditor
@@ -1506,7 +1507,7 @@ export function PublicationEditor() {
                 showPreview={false}
                 onEditingChange={setMediaTextEditing}
                 onTypingChange={setMediaTextTyping}
-                onChange={(_file, _nextPreviewUrl, config) => { setFeedTextConfig(config); setStagedMedia(null); setIsDirty(true); }}
+                onChange={(_file, _nextPreviewUrl, config) => { setFeedTextConfig(config); setStagedMedia(null); setStagedCarouselMedia({}); setIsDirty(true); }}
               />
             </div>}
 
@@ -1657,7 +1658,7 @@ export function PublicationEditor() {
                   <MoreHorizontal size={17} className={activeOption.platform === "tiktok" || activeOption.platform === "kwai" ? "text-white/70" : "text-slate-400"}/>
                 </div>
                 <div className="relative bg-gradient-to-br from-indigo-50 via-slate-100 to-violet-100" style={{ aspectRatio: activeOption.platform === "youtube" && activeOption.contentIntent === "LONG_FORM" ? 16 / 9 : activeOption.platform === "instagram" && instagramPlacement === "story" ? 9 / 16 : mediaAspectRatio(outputAspect) }}>
-                  {previewUrl && <PublicationMediaPreview previewUrl={previewUrl} fileType={fileType} textConfig={activeOption.platform === "instagram" && instagramPlacement === "story" ? storyTextConfig : feedTextConfig} durationMs={mediaMetadata.durationMs} posterUrl={coverSelection.previewUrl} carouselItems={carouselPreviewItems}/>}
+                  {previewUrl && <PublicationMediaPreview previewUrl={previewUrl} fileType={fileType} textConfig={activeOption.platform === "instagram" && instagramPlacement === "story" ? storyTextConfig : feedTextConfig} durationMs={mediaMetadata.durationMs} posterUrl={coverSelection.previewUrl} carouselItems={carouselPreviewItems} fit={isCarousel ? "cover" : "contain"} aspect={outputAspect}/>}
                   {!previewUrl && <div className="grid h-full place-items-center text-slate-400"><Play size={30}/></div>}
                   {(activeOption.platform === "tiktok" || activeOption.platform === "kwai") && <PreviewChrome platform={activeOption.platform}/>} 
                 </div>
@@ -1724,7 +1725,7 @@ export function PublicationEditor() {
         <div className="max-h-[80vh] overflow-y-auto bg-slate-50 p-4">
           {activeOption ? <div className={`relative overflow-hidden rounded-xl border border-slate-200 ${activeOption.platform === "tiktok" || activeOption.platform === "kwai" ? "bg-slate-950" : "bg-white"}`}>
             <div className="relative bg-slate-100" style={{ aspectRatio: activeOption.platform === "tiktok" || activeOption.platform === "kwai" || (activeOption.platform === "instagram" && instagramPlacement === "story") ? 9 / 16 : activeOption.platform === "youtube" && activeOption.contentIntent === "LONG_FORM" ? 16 / 9 : mediaAspectRatio(outputAspect) }}>
-              {previewUrl && <PublicationMediaPreview previewUrl={previewUrl} fileType={fileType} textConfig={activeOption.platform === "instagram" && instagramPlacement === "story" ? storyTextConfig : feedTextConfig} durationMs={mediaMetadata.durationMs} posterUrl={coverSelection.previewUrl} carouselItems={carouselPreviewItems}/>}
+              {previewUrl && <PublicationMediaPreview previewUrl={previewUrl} fileType={fileType} textConfig={activeOption.platform === "instagram" && instagramPlacement === "story" ? storyTextConfig : feedTextConfig} durationMs={mediaMetadata.durationMs} posterUrl={coverSelection.previewUrl} carouselItems={carouselPreviewItems} fit={isCarousel ? "cover" : "contain"} aspect={outputAspect}/>}
               {!previewUrl && <div className="grid h-full place-items-center text-slate-400"><Play size={34}/></div>}
               {(activeOption.platform === "tiktok" || activeOption.platform === "kwai") && <PreviewChrome platform={activeOption.platform}/>} 
             </div>
