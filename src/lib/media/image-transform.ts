@@ -46,6 +46,33 @@ function canvasBlob(canvas: HTMLCanvasElement, type: string, quality?: number) {
   });
 }
 
+export function drawImageTransform(
+  context: CanvasRenderingContext2D,
+  image: CanvasImageSource,
+  sourceWidth: number,
+  sourceHeight: number,
+  width: number,
+  height: number,
+  transform: ImageTransform,
+) {
+  context.clearRect(0, 0, width, height);
+  context.fillStyle = "#000000";
+  context.fillRect(0, 0, width, height);
+
+  const zoom = clamp(transform.zoom, 1, 4);
+  const panX = clamp(transform.panX, -1, 1);
+  const panY = clamp(transform.panY, -1, 1);
+  const baseScale = Math.max(width / sourceWidth, height / sourceHeight);
+  const scale = baseScale * zoom;
+  const drawWidth = sourceWidth * scale;
+  const drawHeight = sourceHeight * scale;
+  const overflowX = Math.max(0, (drawWidth - width) / 2);
+  const overflowY = Math.max(0, (drawHeight - height) / 2);
+  const dx = (width - drawWidth) / 2 + panX * overflowX;
+  const dy = (height - drawHeight) / 2 + panY * overflowY;
+  context.drawImage(image, dx, dy, drawWidth, drawHeight);
+}
+
 export async function applyImageTransform(
   file: File,
   aspect: MediaAspect,
@@ -61,22 +88,15 @@ export async function applyImageTransform(
   const context = canvas.getContext("2d");
   if (!context) throw new Error("image_transform_canvas_failed");
 
-  context.fillStyle = "#000000";
-  context.fillRect(0, 0, output.width, output.height);
-
-  const zoom = clamp(transform.zoom, 1, 4);
-  const panX = clamp(transform.panX, -1, 1);
-  const panY = clamp(transform.panY, -1, 1);
-  const baseScale = Math.max(output.width / sourceWidth, output.height / sourceHeight);
-  const scale = baseScale * zoom;
-  const drawWidth = sourceWidth * scale;
-  const drawHeight = sourceHeight * scale;
-  const overflowX = Math.max(0, (drawWidth - output.width) / 2);
-  const overflowY = Math.max(0, (drawHeight - output.height) / 2);
-  const dx = (output.width - drawWidth) / 2 + panX * overflowX;
-  const dy = (output.height - drawHeight) / 2 + panY * overflowY;
-
-  context.drawImage(image as CanvasImageSource, dx, dy, drawWidth, drawHeight);
+  drawImageTransform(
+    context,
+    image as CanvasImageSource,
+    sourceWidth,
+    sourceHeight,
+    output.width,
+    output.height,
+    transform,
+  );
   if ("close" in image && typeof image.close === "function") image.close();
 
   const outputType = file.type === "image/png" ? "image/png" : "image/jpeg";
