@@ -24,6 +24,10 @@ export function MediaTextEditor({
   onChange,
   collapsible = false,
   defaultOpen = true,
+  showPreview = true,
+  open,
+  onOpenChange,
+  onEditingChange,
 }: {
   sourceFile: File;
   sourceUrl: string;
@@ -35,6 +39,10 @@ export function MediaTextEditor({
   onChange: (file: File | null, previewUrl: string | null, config: TextOverlayConfig) => void;
   collapsible?: boolean;
   defaultOpen?: boolean;
+  showPreview?: boolean;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  onEditingChange?: (editing: boolean) => void;
 }) {
   const [config, setConfig] = useState<TextOverlayConfig>({ ...defaultTextOverlay });
   const [currentMs, setCurrentMs] = useState(0);
@@ -49,10 +57,16 @@ export function MediaTextEditor({
     onChange(null, null, next);
   }
 
+  function toggleEditing() {
+    const next = !positionEditing;
+    setPositionEditing(next);
+    onEditingChange?.(next);
+  }
+
   const editor = <div className="space-y-4">
-    <div
+    {showPreview && <div
       data-overlay-stage
-      className={`relative mx-auto w-full max-w-[360px] overflow-hidden rounded-xl bg-black shadow-sm ${positionEditing ? "touch-none" : "touch-pan-y"}`}
+      className={`sticky top-2 z-10 mx-auto w-full max-w-[360px] overflow-hidden rounded-xl bg-black shadow-sm sm:static ${positionEditing ? "touch-none" : "touch-pan-y"}`}
       style={{ aspectRatio }}
     >
       {kind === "video"
@@ -74,12 +88,12 @@ export function MediaTextEditor({
         interactive={positionEditing}
       />
       <div className="pointer-events-none absolute inset-x-[6%] inset-y-[4%] rounded-lg border border-dashed border-white/35"/>
-    </div>
+    </div>}
 
     <div className="flex justify-center">
       <button
         type="button"
-        onClick={() => setPositionEditing(current => !current)}
+        onClick={toggleEditing}
         className={`rounded-lg border px-3 py-2 text-xs font-black ${positionEditing ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-blue-200 bg-blue-50 text-blue-700"}`}
       >
         {positionEditing ? "Concluir ajuste" : "Ajustar texto na mídia"}
@@ -102,6 +116,14 @@ export function MediaTextEditor({
       subtitle="Toque para adicionar ou editar texto e emojis"
       defaultOpen={defaultOpen}
       configured={!!config.text.trim()}
+      open={open}
+      onOpenChange={next => {
+        if (!next && positionEditing) {
+          setPositionEditing(false);
+          onEditingChange?.(false);
+        }
+        onOpenChange?.(next);
+      }}
     >
       {editor}
     </CollapsibleEditorShell>;
