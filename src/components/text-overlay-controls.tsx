@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, ChevronDown, ChevronUp, Move, Palette, RotateCcw, SmilePlus, Star } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, Move, RotateCcw, SmilePlus, Star } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   defaultTextOverlay,
@@ -11,7 +11,7 @@ import {
   type TextOverlayConfig,
 } from "@/lib/media/text-overlay";
 
-const QUICK_EMOJIS = ["✨", "🔥", "❤️", "😍", "👏", "😂", "🚀", "💡"];
+const QUICK_EMOJIS = ["✨", "🔥", "❤️", "😍"];
 const EMOJI_LIBRARY = [
   "✨", "🔥", "❤️", "😍", "👏", "😂", "🚀", "💡", "✅", "🎯", "📢", "💥", "⭐", "🌟", "💫", "🎉",
   "🥳", "😎", "🤩", "😊", "😉", "🤔", "😱", "🙌", "🙏", "💪", "👀", "👉", "👇", "👍", "💯", "⚡", "🎬",
@@ -66,7 +66,7 @@ export function InlineEmojiPicker({
     }
   }, []);
 
-  const quick = useMemo(() => Array.from(new Set([...recent, ...QUICK_EMOJIS])).slice(0, 8), [recent]);
+  const quick = useMemo(() => Array.from(new Set([...recent, ...QUICK_EMOJIS])).slice(0, 4), [recent]);
 
   function appendEmoji(emoji: string) {
     onChange(`${value}${value && !/\s$/.test(value) ? " " : ""}${emoji}`);
@@ -316,6 +316,39 @@ export function TextTimingControl({
   </div>;
 }
 
+function hslToHex(h: number, s: number, l: number) {
+  const saturation = s / 100;
+  const lightness = l / 100;
+  const chroma = (1 - Math.abs(2 * lightness - 1)) * saturation;
+  const x = chroma * (1 - Math.abs((h / 60) % 2 - 1));
+  const m = lightness - chroma / 2;
+  let r = 0; let g = 0; let b = 0;
+  if (h < 60) [r, g, b] = [chroma, x, 0];
+  else if (h < 120) [r, g, b] = [x, chroma, 0];
+  else if (h < 180) [r, g, b] = [0, chroma, x];
+  else if (h < 240) [r, g, b] = [0, x, chroma];
+  else if (h < 300) [r, g, b] = [x, 0, chroma];
+  else [r, g, b] = [chroma, 0, x];
+  const toHex = (value: number) => Math.round((value + m) * 255).toString(16).padStart(2, "0");
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
+function InlineColorMixer({ onChange }: { onChange: (color: string) => void }) {
+  const [hue, setHue] = useState(220);
+  const [saturation, setSaturation] = useState(85);
+  const [lightness, setLightness] = useState(50);
+  function apply(nextHue: number, nextSaturation: number, nextLightness: number) {
+    onChange(hslToHex(nextHue, nextSaturation, nextLightness));
+  }
+  return <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-2.5">
+    <p className="mb-2 text-[11px] font-bold text-slate-600">Personalizar</p>
+    <input aria-label="Tom da cor" type="range" min={0} max={359} value={hue} onChange={event => { const value = Number(event.target.value); setHue(value); apply(value, saturation, lightness); }} className="w-full" style={{ accentColor: `hsl(${hue} 85% 50%)` }}/>
+    <div className="mt-2 grid grid-cols-2 gap-2">
+      <label className="text-[10px] font-bold text-slate-500">Intensidade<input type="range" min={0} max={100} value={saturation} onChange={event => { const value = Number(event.target.value); setSaturation(value); apply(hue, value, lightness); }} className="mt-1 w-full"/></label>
+      <label className="text-[10px] font-bold text-slate-500">Luminosidade<input type="range" min={10} max={90} value={lightness} onChange={event => { const value = Number(event.target.value); setLightness(value); apply(hue, saturation, value); }} className="mt-1 w-full"/></label>
+    </div>
+  </div>;
+}
 export function TextOverlayControls({
   config,
   onChange,
@@ -326,6 +359,7 @@ export function TextOverlayControls({
   compact?: boolean;
 }) {
   const [hasSavedStyle, setHasSavedStyle] = useState(false);
+  const [openMenu, setOpenMenu] = useState<"text" | "background" | null>(null);
 
   useEffect(() => {
     try { setHasSavedStyle(!!localStorage.getItem(STYLE_KEY)); } catch { setHasSavedStyle(false); }
@@ -372,46 +406,43 @@ export function TextOverlayControls({
     <textarea
       value={config.text}
       onChange={event => patch({ text: event.target.value })}
-      className="field min-h-20 touch-pan-y resize-y p-3 text-base sm:text-sm"
+      onInput={event => { event.currentTarget.style.height = "0px"; event.currentTarget.style.height = `${event.currentTarget.scrollHeight}px`; }}
+      className="field min-h-20 touch-pan-y resize-none overflow-hidden p-3 text-base sm:text-sm"
       placeholder="Digite o texto ou adicione um emoji..."
       maxLength={240}
     />
 
     <InlineEmojiPicker value={config.text} onChange={text => patch({ text })}/>
 
-    <div className="grid gap-3 sm:grid-cols-2">
-      <label className="text-xs font-bold text-slate-700">Fonte
-        <select value={config.font} onChange={event => patch({ font: event.target.value as OverlayFont })} className="field mt-1 px-3 text-sm">
+    <div className="grid grid-cols-2 gap-2">
+      <label className="min-w-0 text-xs font-bold text-slate-700">Fonte
+        <select value={config.font} onChange={event => patch({ font: event.target.value as OverlayFont })} className="field mt-1 min-w-0 px-2 text-sm">
           {(Object.keys(overlayFontLabels) as OverlayFont[]).map(font => <option key={font} value={font}>{overlayFontLabels[font]}</option>)}
         </select>
       </label>
-      <label className="text-xs font-bold text-slate-700">Fundo
-        <select value={config.background} onChange={event => patch({ background: event.target.value as OverlayBackground })} className="field mt-1 px-3 text-sm">
-          <option value="none">Sem fundo</option>
-          <option value="dark">Escuro</option>
-          <option value="light">Claro</option>
-          <option value="blue">Azul</option>
-          <option value="red">Vermelho</option>
-          <option value="orange">Laranja</option>
-          <option value="yellow">Amarelo</option>
-          <option value="green">Verde</option>
-          <option value="indigo">Anil</option>
-          <option value="violet">Violeta</option>
-        </select>
-      </label>
-    </div>
-
-    <div>
-      <p className="text-xs font-bold text-slate-700">Cor do texto</p>
-      <div className="mt-2 flex flex-wrap items-center gap-2">
-        {COLOR_SWATCHES.map(color => <button type="button" key={color} onClick={() => patch({ color })} aria-label={`Cor ${color}`} className={`h-8 w-8 rounded-full border-2 ${config.color.toLowerCase() === color ? "border-blue-600 ring-2 ring-blue-100" : "border-white ring-1 ring-slate-200"}`} style={{ backgroundColor: color }}/>) }
-        <label className="relative grid h-8 w-8 cursor-pointer place-items-center overflow-hidden rounded-full border-2 border-white shadow-sm ring-1 ring-slate-200" title="Personalizar cor" style={{ background: "conic-gradient(red, yellow, lime, aqua, blue, magenta, red)" }}>
-          <Palette size={14} className="relative z-10 text-white drop-shadow"/>
-          <input type="color" value={config.color} onChange={event => patch({ color: event.target.value })} className="absolute inset-0 h-full w-full cursor-pointer opacity-0" aria-label="Personalizar cor"/>
-        </label>
+      <div className="min-w-0 text-xs font-bold text-slate-700">Cor do texto
+        <button type="button" onClick={() => setOpenMenu(current => current === "text" ? null : "text")} className="field mt-1 flex min-w-0 items-center justify-between gap-2 px-2 text-left text-sm font-semibold">
+          <span className="flex min-w-0 items-center gap-2"><span className="h-4 w-4 shrink-0 rounded-full border border-slate-300" style={{ backgroundColor: config.color }}/><span className="truncate">Cor</span></span>
+          <ChevronDown size={14} className={`shrink-0 transition-transform ${openMenu === "text" ? "rotate-180" : ""}`}/>
+        </button>
       </div>
     </div>
 
+    {openMenu === "text" && <div className="rounded-xl border border-slate-200 bg-white p-2.5">
+      <div className="flex flex-wrap gap-2">{COLOR_SWATCHES.map(color => <button type="button" key={color} onClick={() => patch({ color })} aria-label={`Cor ${color}`} className={`h-8 w-8 rounded-full border-2 ${config.color.toLowerCase() === color ? "border-blue-600 ring-2 ring-blue-100" : "border-white ring-1 ring-slate-200"}`} style={{ backgroundColor: color }}/>)}</div>
+      <InlineColorMixer onChange={color => patch({ color })}/>
+    </div>}
+
+    <div className="text-xs font-bold text-slate-700">Fundo
+      <button type="button" onClick={() => setOpenMenu(current => current === "background" ? null : "background")} className="field mt-1 flex w-full items-center justify-between gap-2 px-3 text-left text-sm font-semibold">
+        <span>{config.background === "none" ? "Sem fundo" : config.background === "dark" ? "Escuro" : config.background === "light" ? "Claro" : config.background === "blue" ? "Azul" : config.background === "red" ? "Vermelho" : config.background === "orange" ? "Laranja" : config.background === "yellow" ? "Amarelo" : config.background === "green" ? "Verde" : config.background === "indigo" ? "Anil" : "Violeta"}</span>
+        <ChevronDown size={14} className={`shrink-0 transition-transform ${openMenu === "background" ? "rotate-180" : ""}`}/>
+      </button>
+    </div>
+
+    {openMenu === "background" && <div className="grid grid-cols-2 gap-1.5 rounded-xl border border-slate-200 bg-white p-2.5 sm:grid-cols-3">
+      {([["none", "Sem fundo"], ["dark", "Escuro"], ["light", "Claro"], ["blue", "Azul"], ["red", "Vermelho"], ["orange", "Laranja"], ["yellow", "Amarelo"], ["green", "Verde"], ["indigo", "Anil"], ["violet", "Violeta"]] as Array<[OverlayBackground, string]>).map(([value, label]) => <button key={value} type="button" onClick={() => { patch({ background: value }); setOpenMenu(null); }} className={`rounded-lg border px-2 py-2 text-xs font-bold ${config.background === value ? "border-blue-400 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-600"}`}>{label}</button>)}
+    </div>}
     <div className="flex flex-wrap gap-2">
       <button type="button" onClick={saveStyle} className="btn-secondary !px-3 !py-2 text-xs"><Star size={14}/> Salvar estilo</button>
       {hasSavedStyle && <button type="button" onClick={loadStyle} className="btn-secondary !px-3 !py-2 text-xs"><Check size={14}/> Usar meu estilo</button>}
@@ -428,22 +459,32 @@ export function CollapsibleEditorShell({
   children,
   defaultOpen = false,
   configured = false,
+  open,
+  onOpenChange,
 }: {
   title: string;
   subtitle?: string;
   children: React.ReactNode;
   defaultOpen?: boolean;
   configured?: boolean;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
+  const [internalOpen, setInternalOpen] = useState(defaultOpen);
+  const isOpen = open ?? internalOpen;
+  function toggleOpen() {
+    const next = !isOpen;
+    if (open === undefined) setInternalOpen(next);
+    onOpenChange?.(next);
+  }
   return <div className="rounded-xl border border-blue-100 bg-blue-50/35">
-    <button type="button" onClick={() => setOpen(current => !current)} className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left">
+    <button type="button" onClick={toggleOpen} className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left">
       <span className="min-w-0">
         <span className="block text-sm font-black text-slate-900">{title}</span>
         <span className="mt-0.5 block truncate text-[11px] text-slate-500">{configured ? "Texto configurado" : subtitle ?? "Opcional"}</span>
       </span>
-      {open ? <ChevronUp size={18} className="shrink-0 text-blue-600"/> : <ChevronDown size={18} className="shrink-0 text-blue-600"/>}
+      {isOpen ? <ChevronUp size={18} className="shrink-0 text-blue-600"/> : <ChevronDown size={18} className="shrink-0 text-blue-600"/>}
     </button>
-    {open && <div className="border-t border-blue-100 p-3 sm:p-4">{children}</div>}
+    {isOpen && <div className="border-t border-blue-100 p-3 sm:p-4">{children}</div>}
   </div>;
 }
