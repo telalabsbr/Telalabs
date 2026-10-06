@@ -31,7 +31,7 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { uploadMediaFile } from "@/lib/media/upload";
 import { prepareMediaFile, type PreparedMediaMetadata } from "@/lib/media/compatibility";
 import { composeTextOnMedia, defaultTextOverlay, type TextOverlayConfig } from "@/lib/media/text-overlay";
-import { VideoCoverEditor, type CoverSelection } from "./video-cover-editor";
+import { VideoCoverEditor, type CoverAspect, type CoverSelection } from "./video-cover-editor";
 import { MediaTextEditor } from "./media-text-editor";
 import { CollapsibleEditorShell, InlineEmojiPicker } from "./text-overlay-controls";
 import { PublicationMediaPreview } from "./publication-media-preview";
@@ -40,6 +40,32 @@ type PublishMode = "now" | "schedule";
 type RetentionMode = "delete" | "library";
 type SaveIntent = "draft" | "publish_now" | "schedule";
 type InstagramPlacement = "feed" | "story" | "both";
+type MediaEditorView = "feed" | "story";
+
+const mediaAspects: CoverAspect[] = ["9:16", "4:5", "1:1", "16:9"];
+
+function mediaAspectRatio(aspect: CoverAspect) {
+  if (aspect === "9:16") return 9 / 16;
+  if (aspect === "4:5") return 4 / 5;
+  if (aspect === "1:1") return 1;
+  return 16 / 9;
+}
+
+function loadedAspectLabel(width: number | null | undefined, height: number | null | undefined) {
+  if (!width || !height) return null;
+  const ratio = width / height;
+  const known: Array<[CoverAspect, number]> = [["9:16", 9 / 16], ["4:5", 4 / 5], ["1:1", 1], ["16:9", 16 / 9]];
+  const nearest = known.reduce((best, current) => Math.abs(current[1] - ratio) < Math.abs(best[1] - ratio) ? current : best);
+  return Math.abs(nearest[1] - ratio) < 0.045 ? nearest[0] : `${width}×${height}`;
+}
+
+function formatMediaSize(bytes: number) {
+  if (!bytes) return "Arquivo selecionado";
+  const gb = bytes / (1024 ** 3);
+  if (gb >= 1) return `${gb.toFixed(gb >= 10 ? 0 : 1)} GB`;
+  const mb = bytes / (1024 ** 2);
+  return `${mb.toFixed(mb >= 100 ? 0 : 1)} MB`;
+}
 
 interface DestinationOption {
   id: string;
@@ -273,7 +299,14 @@ export function PublicationEditor() {
   const [stagedMedia, setStagedMedia] = useState<{ key: string; mediaId: string } | null>(null);
   const [stagedCover, setStagedCover] = useState<{ key: string; mediaId: string } | null>(null);
   const [coverSelection, setCoverSelection] = useState<CoverSelection>({ mode: "auto", file: null, previewUrl: null, aspect: "9:16" });
-  const [instagramPlacement, setInstagramPlacement] = useState<InstagramPlacement>("feed");
+  const [instagramPlacement, setInstagramPlacement] = useState<InstagramPlacement>("both");
+  const [outputAspect, setOutputAspect] = useState<CoverAspect>("9:16");
+  const [activeMediaView, setActiveMediaView] = useState<MediaEditorView>("feed");
+  const [mediaTextEditing, setMediaTextEditing] = useState(false);
+  const [coverOpen, setCoverOpen] = useState(false);
+  const [feedEditorOpen, setFeedEditorOpen] = useState(false);
+  const [storyEditorOpen, setStoryEditorOpen] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
   const [feedTextConfig, setFeedTextConfig] = useState<TextOverlayConfig>({ ...defaultTextOverlay });
   const [storyTextConfig, setStoryTextConfig] = useState<TextOverlayConfig>({ ...defaultTextOverlay });
   const [carouselItems, setCarouselItems] = useState<CarouselItem[]>([]);
@@ -486,6 +519,36 @@ export function PublicationEditor() {
     if (coverSelection.previewUrl) URL.revokeObjectURL(coverSelection.previewUrl);
   }, [coverSelection.previewUrl]);
 
+  useEffect(() => {
+    if (!isDirty || publishComplete) return;
+    const beforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    const protectNavigation = (event: MouseEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const anchor = target.closest<HTMLAnchorElement>("a[href]");
+      if (!anchor || anchor.target === "_blank" || anchor.hasAttribute("download")) return;
+      const next = new URL(anchor.href, window.location.href);
+      if (next.origin !== window.location.origin || next.href === window.location.href) return;
+      if (!window.confirm("Há alterações nesta publicação que podem ser perdidas. Deseja sair mesmo assim?")) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
+    window.addEventListener("beforeunload", beforeUnload);
+    document.addEventListener("click", protectNavigation, true);
+    return () => {
+      window.removeEventListener("beforeunload", beforeUnload);
+      document.removeEventListener("click", protectNavigation, true);
+    };
+  }, [isDirty, publishComplete]);
+
+  useEffect(() => {
+    if (instagramPlacement === "story") setActiveMediaView("story");
+    if (instagramPlacement === "feed") setActiveMediaView("feed");
+  }, [instagramPlacement]);
   const shortOptions = destinationOptions.filter(option => option.contentIntent !== "LONG_FORM");
   const longYouTubeOptions = destinationOptions.filter(option => option.contentIntent === "LONG_FORM");
   const selectedOptions = destinationOptions.filter(option => selectedIds.includes(option.id));
@@ -679,6 +742,7 @@ export function PublicationEditor() {
   }
 
   function toggle(option: DestinationOption) {
+    setIsDirty(true);
     setSelectedIds(current => {
       if (current.includes(option.id)) {
         const next = current.filter(item => item !== option.id);
@@ -692,6 +756,7 @@ export function PublicationEditor() {
   }
 
   function adaptAll() {
+    setIsDirty(true);
     const suffixes = includeEmojis ? aiSuffixEmoji : aiSuffixPlain;
     const next = { ...texts };
     const nextTitles = { ...titles };
@@ -1123,17 +1188,17 @@ export function PublicationEditor() {
       setSaveMessage("Agendamento salvo. O worker enviará cada destino no horário configurado.");
     }
 
+    setIsDirty(false);
     setSaving(false);
     if (selectedFile) setUploadProgress(100);
   }
 
   return <div className="w-full max-w-full space-y-5 overflow-x-hidden">
     <section>
-      <p className="eyebrow">{editingPostId ? "Edição" : "Publicação"}</p>
+      <p className="eyebrow">Marca: {tenant.activeBrand.name}</p>
       <h1 className="mt-2 text-2xl font-black tracking-tight text-slate-950 sm:text-3xl">{editingPostId ? "Editar publicação" : "Criar publicação"}</h1>
       <p className="mt-1 text-sm leading-6 text-slate-500">{editingPostId ? "Altere conteúdo, destinos e horário antes da primeira tentativa de envio." : "Destinos, mídia, descrição e horário em um único fluxo."}</p>
       {loadingEdit && <p className="mt-2 text-xs font-bold text-indigo-600">Carregando publicação...</p>}
-      {tenant.source === "supabase" && <p className="mt-2 inline-flex rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700">Dados reais da marca: {tenant.activeBrand.name}</p>}
     </section>
 
     <div className="grid w-full max-w-full gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
@@ -1147,7 +1212,7 @@ export function PublicationEditor() {
           <div className="mt-4 overflow-hidden rounded-xl border border-slate-200 bg-white">
             <button type="button" onClick={() => setNetworksOpen(current => !current)} aria-expanded={networksOpen} className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left">
               <span className="min-w-0">
-                <span className="block text-sm font-black text-slate-900">Redes conectadas</span>
+                <span className="block text-sm font-black text-slate-900">Redes sociais conectadas</span>
                 <span className="mt-0.5 block truncate text-xs text-slate-500">{selectedOptions.length ? `${selectedOptions.length} destino${selectedOptions.length === 1 ? " selecionado" : "s selecionados"}` : "Toque para escolher onde publicar"}</span>
               </span>
               <ChevronDown size={18} className={`shrink-0 text-blue-600 transition-transform ${networksOpen ? "rotate-180" : ""}`}/>
@@ -1168,7 +1233,7 @@ export function PublicationEditor() {
             <Link href="/conexoes" className="btn-secondary mt-3">Ir para Contas</Link>
           </div> : <div className="mt-4 space-y-4">
             <div>
-              <p className="text-xs font-black uppercase tracking-wide text-slate-400">Redes conectadas</p>
+              <p className="text-xs font-black uppercase tracking-wide text-slate-400">Redes sociais conectadas</p>
               <div className="mt-2 grid w-full max-w-full grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
                 {shortOptions.map(option => {
                   const active = selectedIds.includes(option.id);
@@ -1219,10 +1284,10 @@ export function PublicationEditor() {
             </div>
             <div className="mt-3 grid grid-cols-3 gap-2">
               {([
-                { value: "feed" as const, label: "Feed / Reels", detail: "Só no perfil" },
+                { value: "feed" as const, label: "Feed", detail: "Só no perfil" },
                 { value: "story" as const, label: "Stories", detail: "Só nos Stories" },
-                { value: "both" as const, label: "Ambos", detail: "Feed/Reels + Stories" },
-              ]).map(item => <button key={item.value} type="button" onClick={() => { setInstagramPlacement(item.value); setSaveMessage(""); }} aria-pressed={instagramPlacement === item.value} className={`min-w-0 rounded-xl border px-2 py-2.5 text-center transition-colors sm:px-3 sm:py-3 sm:text-left ${instagramPlacement === item.value ? "border-blue-500 bg-blue-600 shadow-sm" : "border-blue-100 bg-white hover:border-blue-200 hover:bg-blue-50"}`}>
+                { value: "both" as const, label: "Ambos", detail: "Feed + Stories" },
+              ]).map(item => <button key={item.value} type="button" onClick={() => { setInstagramPlacement(item.value); setSaveMessage(""); setIsDirty(true); }} aria-pressed={instagramPlacement === item.value} className={`min-w-0 rounded-xl border px-2 py-2.5 text-center transition-colors sm:px-3 sm:py-3 sm:text-left ${instagramPlacement === item.value ? "border-blue-500 bg-blue-600 shadow-sm" : "border-blue-100 bg-white hover:border-blue-200 hover:bg-blue-50"}`}>
                 <span className={`block truncate text-xs font-black sm:text-sm ${instagramPlacement === item.value ? "text-white" : "text-slate-800"}`}>{item.label}</span>
                 <span className={`mt-0.5 hidden text-xs sm:block ${instagramPlacement === item.value ? "text-blue-100" : "text-slate-500"}`}>{item.detail}</span>
               </button>)}
