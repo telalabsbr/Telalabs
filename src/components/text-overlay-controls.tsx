@@ -356,20 +356,27 @@ function InlineColorPicker({
 }) {
   const [hue, setHue] = useState(220);
   const [current, setCurrent] = useState(value);
+  const [point, setPoint] = useState({ x: 0.85, y: 0.18 });
   const fieldRef = useRef<HTMLDivElement | null>(null);
   const dragging = useRef(false);
 
   useEffect(() => setCurrent(value), [value]);
 
-  function pick(clientX: number, clientY: number, commit = false) {
+  function colorAt(nextHue: number, nextPoint = point) {
+    return hsvToHex(nextHue, nextPoint.x, 1 - nextPoint.y);
+  }
+
+  function pick(clientX: number, clientY: number) {
     const rect = fieldRef.current?.getBoundingClientRect();
     if (!rect) return;
-    const saturation = clamp((clientX - rect.left) / Math.max(1, rect.width), 0, 1);
-    const brightness = clamp(1 - (clientY - rect.top) / Math.max(1, rect.height), 0, 1);
-    const color = hsvToHex(hue, saturation, brightness);
+    const nextPoint = {
+      x: clamp((clientX - rect.left) / Math.max(1, rect.width), 0, 1),
+      y: clamp((clientY - rect.top) / Math.max(1, rect.height), 0, 1),
+    };
+    const color = hsvToHex(hue, nextPoint.x, 1 - nextPoint.y);
+    setPoint(nextPoint);
     setCurrent(color);
     onChange(color);
-    if (commit) onCommit(color);
   }
 
   return <div className="mt-2 rounded-xl border border-slate-200 bg-white p-2.5">
@@ -377,19 +384,35 @@ function InlineColorPicker({
       ref={fieldRef}
       className="relative h-32 w-full touch-none cursor-crosshair overflow-hidden rounded-lg"
       style={{ background: `linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, hsl(${hue} 100% 50%))` }}
-      onPointerDown={event => { dragging.current = true; event.currentTarget.setPointerCapture(event.pointerId); pick(event.clientX, event.clientY); }}
-      onPointerMove={event => { if (dragging.current) pick(event.clientX, event.clientY); }}
-      onPointerUp={event => { if (!dragging.current) return; dragging.current = false; pick(event.clientX, event.clientY, true); }}
+      onPointerDown={event => {
+        dragging.current = true;
+        event.currentTarget.setPointerCapture(event.pointerId);
+        pick(event.clientX, event.clientY);
+      }}
+      onPointerMove={event => {
+        if (dragging.current) pick(event.clientX, event.clientY);
+      }}
+      onPointerUp={() => { dragging.current = false; }}
       onPointerCancel={() => { dragging.current = false; }}
-    />
+    >
+      <span
+        className="pointer-events-none absolute h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow-[0_0_0_1px_rgba(15,23,42,.55)]"
+        style={{ left: `${point.x * 100}%`, top: `${point.y * 100}%` }}
+      />
+    </div>
     <input
       aria-label="Tom da cor"
       type="range"
       min={0}
       max={359}
       value={hue}
-      onChange={event => setHue(Number(event.target.value))}
-      onPointerUp={() => onCommit(current)}
+      onChange={event => {
+        const nextHue = Number(event.target.value);
+        setHue(nextHue);
+        const color = colorAt(nextHue);
+        setCurrent(color);
+        onChange(color);
+      }}
       className="mt-2 h-3 w-full cursor-pointer appearance-none rounded-full"
       style={{ background: "linear-gradient(to right, #f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00)", accentColor: `hsl(${hue} 100% 50%)` }}
     />
@@ -400,28 +423,54 @@ function InlineColorPicker({
   </div>;
 }
 
+type SavedTextStyle = Pick<TextOverlayConfig, "font" | "color" | "background" | "backgroundColor" | "size" | "boxWidth">;
+
+function styleSnapshot(config: TextOverlayConfig): SavedTextStyle {
+  return {
+    font: config.font,
+    color: config.color,
+    background: config.background,
+    backgroundColor: config.backgroundColor,
+    size: config.size,
+    boxWidth: config.boxWidth,
+  };
+}
+
 export function TextOverlayControls({
   config,
   onChange,
   compact = false,
+  onTypingChange,
 }: {
   config: TextOverlayConfig;
   onChange: (config: TextOverlayConfig) => void;
   compact?: boolean;
+  onTypingChange?: (typing: boolean) => void;
 }) {
-  const [hasSavedStyle, setHasSavedStyle] = useState(false);
-  const [openMenu, setOpenMenu] = useState<"font" | "text" | null>(null);
+  const [savedStyle, setSavedStyle] = useState<SavedTextStyle | null>(null);
+  const [openMenu, setOpenMenu] = useState<"font" | "text" | "background" | null>(null);
   const [customPicker, setCustomPicker] = useState<"text" | "background" | null>(null);
-  const [recentColors, setRecentColors] = useState<string[]>([]);
+  const [customColors, setCustomColors] = useState<string[]>([]);
 
   useEffect(() => {
     try {
-      setHasSavedStyle(!!localStorage.getItem(STYLE_KEY));
+      const rawStyle = localStorage.getItem(STYLE_KEY);
+      if (rawStyle) {
+        const parsed = JSON.parse(rawStyle) as SavedTextStyle & { background?: string };
+        const legacyBackgrounds: Record<string, string> = {
+          blue: "#2563eb", red: "#dc2626", orange: "#ea580c", yellow: "#eab308",
+          green: "#16a34a", indigo: "#4f46e5", violet: "#7c3aed",
+        };
+        const normalized = parsed.background && legacyBackgrounds[parsed.background]
+          ? { ...parsed, background: "color" as const, backgroundColor: legacyBackgrounds[parsed.background] }
+          : parsed;
+        setSavedStyle(normalized as SavedTextStyle);
+      }
       const stored = JSON.parse(localStorage.getItem(RECENT_COLOR_KEY) ?? "[]") as string[];
-      setRecentColors(Array.isArray(stored) ? stored.slice(0, 8) : []);
+      setCustomColors(Array.isArray(stored) ? stored.slice(0, 2) : []);
     } catch {
-      setHasSavedStyle(false);
-      setRecentColors([]);
+      setSavedStyle(null);
+      setCustomColors([]);
     }
   }, []);
 
@@ -430,49 +479,40 @@ export function TextOverlayControls({
   }
 
   function saveStyle() {
-    const style = {
-      font: config.font,
-      color: config.color,
-      background: config.background,
-      backgroundColor: config.backgroundColor,
-      size: config.size,
-      boxWidth: config.boxWidth,
-    };
+    const style = styleSnapshot(config);
     try {
       localStorage.setItem(STYLE_KEY, JSON.stringify(style));
-      setHasSavedStyle(true);
+      setSavedStyle(style);
     } catch { /* ignore */ }
   }
 
   function loadStyle() {
-    try {
-      const style = JSON.parse(localStorage.getItem(STYLE_KEY) ?? "null") as (Partial<TextOverlayConfig> & { background?: string }) | null;
-      if (!style) return;
-      const legacyBackgrounds: Record<string, string> = {
-        blue: "#2563eb", red: "#dc2626", orange: "#ea580c", yellow: "#eab308",
-        green: "#16a34a", indigo: "#4f46e5", violet: "#7c3aed",
-      };
-      if (style.background && legacyBackgrounds[style.background]) {
-        patch({ ...style, background: "color", backgroundColor: legacyBackgrounds[style.background] });
-        return;
-      }
-      patch(style);
-    } catch { /* ignore */ }
+    if (!savedStyle) return;
+    patch(savedStyle);
   }
 
-  function rememberColor(color: string) {
+  function rememberCustomColor(color: string) {
     const normalized = color.toLowerCase();
-    const next = [normalized, ...recentColors.filter(item => item.toLowerCase() !== normalized)].slice(0, 8);
-    setRecentColors(next);
+    const next = [normalized, ...customColors.filter(item => item.toLowerCase() !== normalized)].slice(0, 2);
+    setCustomColors(next);
     try { localStorage.setItem(RECENT_COLOR_KEY, JSON.stringify(next)); } catch { /* ignore */ }
   }
 
-  const quickColors = Array.from(new Set([...recentColors, ...DEFAULT_COLORS])).slice(0, 4);
+  const quickColors = [
+    "#ffffff",
+    "#111827",
+    customColors[0] ?? "#2563eb",
+    customColors[1] ?? "#dc2626",
+  ];
+  const currentStyle = styleSnapshot(config);
+  const isCurrentStyleSaved = !!savedStyle && JSON.stringify(savedStyle) === JSON.stringify(currentStyle);
 
   return <div className={compact ? "space-y-3" : "space-y-4"}>
     <textarea
       value={config.text}
       onChange={event => patch({ text: event.target.value })}
+      onFocus={() => onTypingChange?.(true)}
+      onBlur={() => onTypingChange?.(false)}
       onInput={event => { event.currentTarget.style.height = "0px"; event.currentTarget.style.height = `${event.currentTarget.scrollHeight}px`; }}
       className="field min-h-20 touch-pan-y resize-none overflow-hidden p-3 text-base sm:text-sm"
       placeholder="Digite o texto ou adicione um emoji..."
@@ -483,13 +523,13 @@ export function TextOverlayControls({
 
     <div className="grid grid-cols-2 gap-2">
       <div className="min-w-0 text-xs font-bold text-slate-700">Fonte
-        <button type="button" onClick={() => setOpenMenu(current => current === "font" ? null : "font")} className="field mt-1 flex min-w-0 items-center justify-between gap-2 px-2 text-left text-sm font-semibold">
+        <button type="button" onClick={() => { setOpenMenu(current => current === "font" ? null : "font"); setCustomPicker(null); }} className="field mt-1 flex min-w-0 items-center justify-between gap-2 px-2 text-left text-sm font-semibold">
           <span className="truncate" style={{ fontFamily: overlayFontFamilies[config.font] }}>{overlayFontLabels[config.font]}</span>
           <ChevronDown size={14} className={`shrink-0 transition-transform ${openMenu === "font" ? "rotate-180" : ""}`}/>
         </button>
       </div>
       <div className="min-w-0 text-xs font-bold text-slate-700">Cor do texto
-        <button type="button" onClick={() => setOpenMenu(current => current === "text" ? null : "text")} className="field mt-1 flex min-w-0 items-center justify-between gap-2 px-2 text-left text-sm font-semibold">
+        <button type="button" onClick={() => { setOpenMenu(current => current === "text" ? null : "text"); setCustomPicker(null); }} className="field mt-1 flex min-w-0 items-center justify-between gap-2 px-2 text-left text-sm font-semibold">
           <span className="flex min-w-0 items-center gap-2"><span className="h-4 w-4 shrink-0 rounded-full border border-slate-300" style={{ backgroundColor: config.color }}/><span className="truncate">Cor</span></span>
           <ChevronDown size={14} className={`shrink-0 transition-transform ${openMenu === "text" ? "rotate-180" : ""}`}/>
         </button>
@@ -502,29 +542,62 @@ export function TextOverlayControls({
 
     {openMenu === "text" && <div className="rounded-xl border border-slate-200 bg-white p-2.5">
       <div className="flex items-center gap-2">
-        {quickColors.map(color => <button type="button" key={color} onClick={() => { patch({ color }); rememberColor(color); setOpenMenu(null); setCustomPicker(null); }} aria-label={`Cor ${color}`} className={`h-9 w-9 rounded-full border-2 ${config.color.toLowerCase() === color.toLowerCase() ? "border-blue-600 ring-2 ring-blue-100" : "border-white ring-1 ring-slate-200"}`} style={{ backgroundColor: color }}/>) }
+        {quickColors.map((color, index) => <button type="button" key={`text-${index}-${color}`} onClick={() => { patch({ color }); setCustomPicker(null); }} aria-label={`Cor ${color}`} className={`h-9 w-9 rounded-full border-2 ${config.color.toLowerCase() === color.toLowerCase() ? "border-blue-600 ring-2 ring-blue-100" : "border-white ring-1 ring-slate-200"}`} style={{ backgroundColor: color }}/>)}
         <button type="button" aria-label="Personalizar cor do texto" title="Personalizar cor" onClick={() => setCustomPicker(current => current === "text" ? null : "text")} className="grid h-9 w-9 place-items-center rounded-full border-2 border-white text-sm font-black text-white shadow-sm ring-1 ring-slate-200" style={{ background: "conic-gradient(red, yellow, lime, aqua, blue, magenta, red)" }}>+</button>
       </div>
-      {customPicker === "text" && <InlineColorPicker value={config.color} onChange={color => patch({ color })} onCommit={color => { patch({ color }); rememberColor(color); setCustomPicker(null); setOpenMenu(null); }}/>}
+      {customPicker === "text" && <InlineColorPicker
+        value={config.color}
+        onChange={color => patch({ color })}
+        onCommit={color => {
+          patch({ color });
+          rememberCustomColor(color);
+          setCustomPicker(null);
+          setOpenMenu(null);
+        }}
+      />}
     </div>}
 
-    <div className="rounded-xl border border-slate-200 bg-white p-2.5">
-      <p className="text-xs font-bold text-slate-700">Fundo</p>
-      <div className="mt-2 grid grid-cols-3 gap-1.5">
-        {([["none", "Sem fundo"], ["dark", "Escuro"], ["light", "Claro"]] as Array<[OverlayBackground, string]>).map(([value, label]) => <button key={value} type="button" onClick={() => patch({ background: value })} className={`rounded-lg border px-2 py-2 text-xs font-bold ${config.background === value ? "border-blue-400 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-600"}`}>{label}</button>)}
-      </div>
-      <div className="mt-2 flex items-center gap-2">
-        {quickColors.map(color => <button type="button" key={color} onClick={() => { patch({ background: "color", backgroundColor: color }); rememberColor(color); }} aria-label={`Fundo ${color}`} className={`h-9 w-9 rounded-full border-2 ${config.background === "color" && config.backgroundColor.toLowerCase() === color.toLowerCase() ? "border-blue-600 ring-2 ring-blue-100" : "border-white ring-1 ring-slate-200"}`} style={{ backgroundColor: color }}/>) }
-        <button type="button" aria-label="Personalizar cor de fundo" title="Personalizar cor" onClick={() => setCustomPicker(current => current === "background" ? null : "background")} className="grid h-9 w-9 place-items-center rounded-full border-2 border-white text-sm font-black text-white shadow-sm ring-1 ring-slate-200" style={{ background: "conic-gradient(red, yellow, lime, aqua, blue, magenta, red)" }}>+</button>
-      </div>
-      {customPicker === "background" && <InlineColorPicker value={config.backgroundColor} onChange={color => patch({ background: "color", backgroundColor: color })} onCommit={color => { patch({ background: "color", backgroundColor: color }); rememberColor(color); setCustomPicker(null); }}/>}
+    <div className="text-xs font-bold text-slate-700">Fundo
+      <button type="button" onClick={() => { setOpenMenu(current => current === "background" ? null : "background"); setCustomPicker(null); }} className="field mt-1 flex w-full items-center justify-between gap-2 px-3 text-left text-sm font-semibold">
+        <span className="flex min-w-0 items-center gap-2">
+          {config.background === "color" && <span className="h-4 w-4 shrink-0 rounded-full border border-slate-300" style={{ backgroundColor: config.backgroundColor }}/>}
+          <span>{config.background === "none" ? "Sem fundo" : config.background === "dark" ? "Escuro" : config.background === "light" ? "Claro" : "Cor personalizada"}</span>
+        </span>
+        <ChevronDown size={14} className={`shrink-0 transition-transform ${openMenu === "background" ? "rotate-180" : ""}`}/>
+      </button>
     </div>
 
+    {openMenu === "background" && <div className="rounded-xl border border-slate-200 bg-white p-2.5">
+      <div className="grid grid-cols-3 gap-1.5">
+        {([["none", "Sem fundo"], ["dark", "Escuro"], ["light", "Claro"]] as Array<[OverlayBackground, string]>).map(([value, label]) => <button key={value} type="button" onClick={() => { patch({ background: value }); setCustomPicker(null); }} className={`rounded-lg border px-2 py-2 text-xs font-bold ${config.background === value ? "border-blue-400 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-600"}`}>{label}</button>)}
+      </div>
+      <div className="mt-2 flex items-center gap-2">
+        {quickColors.map((color, index) => <button type="button" key={`background-${index}-${color}`} onClick={() => { patch({ background: "color", backgroundColor: color }); setCustomPicker(null); }} aria-label={`Fundo ${color}`} className={`h-9 w-9 rounded-full border-2 ${config.background === "color" && config.backgroundColor.toLowerCase() === color.toLowerCase() ? "border-blue-600 ring-2 ring-blue-100" : "border-white ring-1 ring-slate-200"}`} style={{ backgroundColor: color }}/>)}
+        <button type="button" aria-label="Personalizar cor de fundo" title="Personalizar cor" onClick={() => setCustomPicker(current => current === "background" ? null : "background")} className="grid h-9 w-9 place-items-center rounded-full border-2 border-white text-sm font-black text-white shadow-sm ring-1 ring-slate-200" style={{ background: "conic-gradient(red, yellow, lime, aqua, blue, magenta, red)" }}>+</button>
+      </div>
+      {customPicker === "background" && <InlineColorPicker
+        value={config.backgroundColor}
+        onChange={color => patch({ background: "color", backgroundColor: color })}
+        onCommit={color => {
+          patch({ background: "color", backgroundColor: color });
+          rememberCustomColor(color);
+          setCustomPicker(null);
+          setOpenMenu(null);
+        }}
+      />}
+    </div>}
+
     <div className="grid grid-cols-2 gap-2">
-      <button type="button" onClick={saveStyle} className="btn-secondary w-full !px-2 !py-2 text-xs"><Star size={14} className={hasSavedStyle ? "fill-yellow-400 text-yellow-500" : ""}/> Salvar estilo</button>
-      <button type="button" disabled={!hasSavedStyle} onClick={loadStyle} className="btn-secondary w-full !px-2 !py-2 text-xs disabled:cursor-not-allowed disabled:opacity-40"><Check size={14}/> Usar meu estilo</button>
+      <button type="button" onClick={saveStyle} className="btn-secondary w-full !px-2 !py-2 text-xs"><Star size={14} className={isCurrentStyleSaved ? "fill-yellow-400 text-yellow-500" : "text-slate-400"}/> Salvar estilo</button>
+      <button type="button" disabled={!savedStyle} onClick={loadStyle} className="btn-secondary w-full !px-2 !py-2 text-xs disabled:cursor-not-allowed disabled:opacity-40"><Check size={14}/> Usar meu estilo</button>
     </div>
-    <p className="flex items-center gap-1 text-[11px] leading-4 text-slate-500"><Move size={12}/> Arraste o texto na própria mídia. Puxe o quadradinho no canto para mudar largura e tamanho; o texto quebra linha automaticamente.</p>
+
+    <details className="relative w-fit">
+      <summary className="grid h-7 w-7 cursor-pointer list-none place-items-center rounded-full border border-slate-200 bg-white text-slate-500"><CircleHelp size={13}/></summary>
+      <div className="absolute bottom-9 left-0 z-30 w-60 rounded-lg border border-slate-200 bg-white p-2.5 text-[11px] leading-4 text-slate-600 shadow-lg">
+        Para reposicionar ou redimensionar, ative “Ajustar texto” e mexa diretamente no texto sobre a mídia.
+      </div>
+    </details>
   </div>;
 }
 
