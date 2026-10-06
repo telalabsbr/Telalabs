@@ -551,6 +551,21 @@ export function PublicationEditor() {
   const carouselPreviewItems = carouselItems.map(item => ({ id: item.id, previewUrl: item.previewUrl }));
   const requiresDescription = selectedOptions.some(option => !(option.platform === "instagram" && instagramPlacement === "story"));
   const canSaveDraft = selectedOptions.length > 0 && (!requiresDescription || !!base.trim());
+  const canCoverTab = fileType === "video" && !!previewUrl && hasInstagram && instagramPlacement !== "story";
+  const canTextTab = !!previewUrl && !!selectedFile && instagramPlacement !== "story";
+  const canStoriesTab = !isCarousel && !!previewUrl && !!selectedFile && hasInstagram && instagramPlacement !== "feed";
+  const mediaTabs: Array<{ id: MediaEditorTab; label: string }> = [
+    { id: "media", label: "Mídia" },
+    ...(canCoverTab ? [{ id: "cover" as const, label: "Capa" }] : []),
+    ...(canTextTab ? [{ id: "text" as const, label: "Texto" }] : []),
+    ...(canStoriesTab ? [{ id: "stories" as const, label: "Stories" }] : []),
+  ];
+
+  useEffect(() => {
+    if (mediaTabs.some(item => item.id === mediaTab)) return;
+    setMediaTab("media");
+    setMediaTextEditing(false);
+  }, [mediaTab, canCoverTab, canTextTab, canStoriesTab]);
 
   async function handleFile(file?: File) {
     if (!file) return;
@@ -567,6 +582,8 @@ export function PublicationEditor() {
     for (const url of carouselUrlsRef.current) URL.revokeObjectURL(url);
     carouselUrlsRef.current.clear();
     setCarouselItems([]);
+    setMediaTab("media");
+    setMediaTextEditing(false);
     setFeedTextConfig({ ...defaultTextOverlay });
     setStoryTextConfig({ ...defaultTextOverlay });
     setOutputAspect("9:16");
@@ -633,6 +650,8 @@ export function PublicationEditor() {
     setFeedTextConfig({ ...defaultTextOverlay });
     setStoryTextConfig({ ...defaultTextOverlay });
     setOutputAspect("9:16");
+    setMediaTab("media");
+    setMediaTextEditing(false);
     setInstagramPlacement("feed");
 
     try {
@@ -1303,73 +1322,166 @@ export function PublicationEditor() {
           </div>
 
           {previewUrl || existingMedia ? <div className="mt-4 min-w-0">
-            {!coverOpen && <div className="mb-3">
-              {hasInstagram && instagramPlacement === "both" && <div className="mb-2 flex justify-center gap-1 rounded-lg bg-slate-100 p-1 text-xs font-black">
-                <button type="button" onClick={() => { setActiveMediaView("feed"); setMediaTextEditing(false); }} className={`rounded-md px-3 py-1.5 ${activeMediaView === "feed" ? "bg-white text-blue-700 shadow-sm" : "text-slate-500"}`}>Feed</button>
-                <button type="button" onClick={() => { setActiveMediaView("story"); setMediaTextEditing(false); }} className={`rounded-md px-3 py-1.5 ${activeMediaView === "story" ? "bg-white text-blue-700 shadow-sm" : "text-slate-500"}`}>Story</button>
-              </div>}
-              <div className={`sticky top-2 z-20 mx-auto w-full max-w-[360px] overflow-hidden rounded-xl bg-black shadow-sm sm:static ${mediaTextEditing ? "ring-2 ring-blue-400" : ""}`} style={{ aspectRatio: activeMediaView === "story" ? 9 / 16 : mediaAspectRatio(outputAspect) }}>
-                {previewUrl ? <PublicationMediaPreview previewUrl={previewUrl} fileType={fileType} textConfig={activeMediaView === "story" ? storyTextConfig : feedTextConfig} durationMs={mediaMetadata.durationMs} posterUrl={coverSelection.previewUrl} carouselItems={carouselPreviewItems} fit="contain" interactive={mediaTextEditing} onTextChange={config => {
-                  if (activeMediaView === "story") { setStoryTextConfig(config); setStagedStoryMedia(null); }
-                  else { setFeedTextConfig(config); setStagedMedia(null); }
-                  setIsDirty(true);
-                }}/>
-                : <div className="grid h-full place-items-center text-center text-slate-400"><div><Play className="mx-auto" size={28}/><p className="mt-2 px-3 text-xs font-bold">Mídia já vinculada</p></div></div>}
-                <span className="pointer-events-none absolute bottom-2 left-2 z-20 rounded-md bg-slate-950/75 px-2 py-1 text-xs font-bold text-white">{isCarousel ? `CARROSSEL · ${carouselItems.length}` : fileType === "video" ? "VÍDEO" : "IMAGEM"}</span>
-              </div>
-              {mediaTextEditing && <p className="mt-2 text-center text-[11px] font-semibold text-blue-700">Modo de ajuste do texto ativo.</p>}
-            </div>}
-
-            <div className="min-w-0 rounded-xl border border-slate-200 bg-slate-50 p-4">
-              <p className="truncate text-sm font-bold text-slate-900">{fileName}</p>
-              <p className="mt-1 text-sm text-slate-500 sm:text-xs">{formatMediaSize(fileSize)}</p>
-              {mediaNotice && <p className="mt-2 rounded-lg bg-emerald-50 px-3 py-2 text-xs font-semibold leading-5 text-emerald-800">{mediaNotice}</p>}
-              {uploadProgress !== null && <div className="mt-3"><div className="h-2 overflow-hidden rounded-full bg-slate-200"><div className="h-full rounded-full bg-indigo-600 transition-all" style={{ width: uploadProgress + "%" }}/></div><p className="mt-1 text-xs font-bold text-slate-500">{uploadProgress < 100 ? `Upload ${uploadProgress}%` : "Mídia pronta"}</p></div>}
-              <div className="mt-4 flex flex-wrap gap-2">
-                <label className="btn-secondary cursor-pointer"><UploadCloud size={15}/> Substituir<input type="file" accept=".jpg,.jpeg,.png,.webp,.avif,.heic,.heif,.bmp,.gif,.mp4,.mov,.webm,.avi,.mkv,.mpeg,.mpg,.m4v,.3gp,.ogv,.mp3,.wav,.m4a,.aac,.ogg,.flac,image/jpeg,image/png,image/webp,image/avif,image/heic,image/heif,image/bmp,image/gif,video/mp4,video/quicktime,video/webm,video/x-msvideo,video/x-matroska,video/mpeg,video/x-m4v,video/3gpp,video/ogg,audio/mpeg,audio/wav,audio/mp4,audio/aac,audio/ogg,audio/flac" className="sr-only" onChange={event => handleFile(event.target.files?.[0])}/></label>
-                {selectedFile && <button type="button" onClick={removeFile} className="btn-secondary !text-red-600"><Trash2 size={15}/> Cancelar</button>}
-              </div>
-
-              <div className="mt-4 border-t border-slate-200 pt-4">
-                <p className="text-xs font-black text-slate-700">Formato da mídia</p>
-                <div className="mt-2 grid grid-cols-4 gap-1.5">
-                  {mediaAspects.map(aspect => <button key={aspect} type="button" onClick={() => { setOutputAspect(aspect); setCoverSelection(current => ({ ...current, aspect })); setStagedCover(null); setIsDirty(true); }} className={`rounded-lg border px-1.5 py-2 text-xs font-black ${outputAspect === aspect ? "border-blue-500 bg-blue-600 text-white" : "border-slate-200 bg-white text-slate-600"}`}>{aspect}</button>)}
-                </div>
-                {loadedAspectLabel(mediaMetadata.width, mediaMetadata.height) && loadedAspectLabel(mediaMetadata.width, mediaMetadata.height) !== outputAspect && <p className="mt-2 text-[11px] font-semibold text-slate-500">Formato carregado: {loadedAspectLabel(mediaMetadata.width, mediaMetadata.height)}</p>}
-              </div>
-
-              {isCarousel && <div className="mt-4 border-t border-slate-200 pt-4">
-                <p className="text-xs font-black text-slate-700">Ordem do carrossel</p>
-                <div className="mt-2 flex gap-2 overflow-x-auto pb-1">{carouselItems.map((item, index) => <div key={item.id} className="w-24 shrink-0 rounded-lg border border-slate-200 bg-white p-1.5"><div className="relative aspect-square overflow-hidden rounded-md bg-slate-100"><img src={item.previewUrl} alt={`Imagem ${index + 1}`} className="h-full w-full object-cover"/><span className="absolute left-1 top-1 rounded bg-slate-950/70 px-1.5 py-0.5 text-[9px] font-black text-white">{index + 1}</span></div><div className="mt-1 grid grid-cols-3 gap-1 text-[11px] font-black"><button type="button" onClick={() => { moveCarouselItem(index, -1); setIsDirty(true); }} disabled={index === 0} className="rounded bg-slate-100 py-1 disabled:opacity-30">←</button><button type="button" onClick={() => { removeCarouselItem(index); setIsDirty(true); }} className="rounded bg-red-50 py-1 text-red-600">×</button><button type="button" onClick={() => { moveCarouselItem(index, 1); setIsDirty(true); }} disabled={index === carouselItems.length - 1} className="rounded bg-slate-100 py-1 disabled:opacity-30">→</button></div></div>)}</div>
-                <p className="mt-1 text-[11px] leading-4 text-slate-500">De 2 a 10 imagens. A primeira imagem será a capa visual do carrossel.</p>
-              </div>}
-
-              <div className="mt-4 border-t border-slate-200 pt-4">
-                <p className="text-sm font-bold text-slate-700 sm:text-xs">Depois de concluir todas as publicações</p>
-                <label className="mt-2 flex items-center gap-2 text-sm font-semibold text-slate-600 sm:text-xs"><input type="checkbox" checked={retention === "library"} onChange={event => { setRetention(event.target.checked ? "library" : "delete"); setIsDirty(true); }}/> Manter na biblioteca do Tela Social</label>
-              </div>
+            <div className="grid gap-1 rounded-xl bg-slate-100 p-1" style={{ gridTemplateColumns: `repeat(${mediaTabs.length}, minmax(0, 1fr))` }}>
+              {mediaTabs.map(item => <button
+                key={item.id}
+                type="button"
+                onClick={() => { setMediaTab(item.id); setMediaTextEditing(false); }}
+                className={`min-w-0 rounded-lg px-1.5 py-2 text-center text-[11px] font-black transition-colors sm:px-3 sm:text-xs ${mediaTab === item.id ? "bg-white text-blue-700 shadow-sm" : "text-slate-500"}`}
+              >{item.label}</button>)}
             </div>
 
-            {fileType === "video" && previewUrl && hasInstagram && instagramPlacement !== "story" && <div className="mt-4">
-              <CollapsibleEditorShell title="Capa do vídeo" subtitle="Opcional · escolha frame, enquadramento e texto" open={coverOpen} configured={coverSelection.mode !== "auto"} onOpenChange={open => { setCoverOpen(open); if (open) { setFeedEditorOpen(false); setStoryEditorOpen(false); setMediaTextEditing(false); } }}>
-                <VideoCoverEditor videoUrl={previewUrl} durationMs={mediaMetadata.durationMs} aspect={outputAspect} onChange={selection => { if (coverSelection.previewUrl && coverSelection.previewUrl !== selection.previewUrl) URL.revokeObjectURL(coverSelection.previewUrl); setCoverSelection(selection); setStagedCover(null); if (selection.mode !== "auto" || coverSelection.mode !== "auto") setIsDirty(true); }}/>
-              </CollapsibleEditorShell>
+            {mediaTab === "media" && <div className="mt-3">
+              <div
+                className="mx-auto w-full max-w-[360px] overflow-hidden rounded-xl bg-black shadow-sm"
+                style={{ aspectRatio: mediaMetadata.width && mediaMetadata.height ? mediaMetadata.width / mediaMetadata.height : mediaAspectRatio(outputAspect) }}
+              >
+                {previewUrl ? <PublicationMediaPreview
+                  previewUrl={previewUrl}
+                  fileType={fileType}
+                  textConfig={{ ...defaultTextOverlay }}
+                  durationMs={mediaMetadata.durationMs}
+                  carouselItems={carouselPreviewItems}
+                  fit="contain"
+                /> : <div className="grid h-full place-items-center text-center text-slate-400"><div><Play className="mx-auto" size={28}/><p className="mt-2 px-3 text-xs font-bold">Mídia já vinculada</p></div></div>}
+              </div>
+
+              <div className="mt-3 min-w-0 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <p className="truncate text-sm font-bold text-slate-900">{fileName}</p>
+                <p className="mt-1 text-sm text-slate-500 sm:text-xs">{formatMediaSize(fileSize)}</p>
+                {mediaNotice && <p className="mt-2 rounded-lg bg-emerald-50 px-3 py-2 text-xs font-semibold leading-5 text-emerald-800">{mediaNotice}</p>}
+                {uploadProgress !== null && uploadProgress < 100 && <div className="mt-3">
+                  <div className="h-2 overflow-hidden rounded-full bg-slate-200"><div className="h-full rounded-full bg-indigo-600 transition-all" style={{ width: uploadProgress + "%" }}/></div>
+                  <p className="mt-1 text-xs font-bold text-slate-500">Upload {uploadProgress}%</p>
+                </div>}
+
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {isCarousel ? <label className="btn-secondary cursor-pointer"><UploadCloud size={15}/> Substituir<input type="file" multiple accept=".jpg,.jpeg,.png,.webp,.avif,.heic,.heif,.bmp,image/jpeg,image/png,image/webp,image/avif,image/heic,image/heif,image/bmp" className="sr-only" onChange={event => void handleCarouselFiles(event.target.files)}/></label>
+                  : <label className="btn-secondary cursor-pointer"><UploadCloud size={15}/> Substituir<input type="file" accept=".jpg,.jpeg,.png,.webp,.avif,.heic,.heif,.bmp,.gif,.mp4,.mov,.webm,.avi,.mkv,.mpeg,.mpg,.m4v,.3gp,.ogv,.mp3,.wav,.m4a,.aac,.ogg,.flac,image/jpeg,image/png,image/webp,image/avif,image/heic,image/heif,image/bmp,image/gif,video/mp4,video/quicktime,video/webm,video/x-msvideo,video/x-matroska,video/mpeg,video/x-m4v,video/3gpp,video/ogg,audio/mpeg,audio/wav,audio/mp4,audio/aac,audio/ogg,audio/flac" className="sr-only" onChange={event => handleFile(event.target.files?.[0])}/></label>}
+                  {selectedFile && <button type="button" onClick={removeFile} className="btn-secondary !text-red-600"><Trash2 size={15}/> Cancelar</button>}
+                </div>
+
+                <div className="mt-4 border-t border-slate-200 pt-4">
+                  <p className="text-xs font-black text-slate-700">Formato da mídia</p>
+                  <div className="mt-2 grid grid-cols-4 gap-1.5">
+                    {mediaAspects.map(aspect => <button key={aspect} type="button" onClick={() => { setOutputAspect(aspect); setCoverSelection(current => ({ ...current, aspect })); setStagedCover(null); setIsDirty(true); }} className={`rounded-lg border px-1.5 py-2 text-xs font-black ${outputAspect === aspect ? "border-blue-500 bg-blue-600 text-white" : "border-slate-200 bg-white text-slate-600"}`}>{aspect}</button>)}
+                  </div>
+                  {loadedAspectLabel(mediaMetadata.width, mediaMetadata.height) && loadedAspectLabel(mediaMetadata.width, mediaMetadata.height) !== outputAspect && <p className="mt-2 text-[11px] font-semibold text-slate-500">Formato carregado: {loadedAspectLabel(mediaMetadata.width, mediaMetadata.height)}</p>}
+                </div>
+
+                {isCarousel && <div className="mt-4 border-t border-slate-200 pt-4">
+                  <p className="text-xs font-black text-slate-700">Ordem do carrossel</p>
+                  <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
+                    {carouselItems.map((item, index) => <div key={item.id} className="w-24 shrink-0 rounded-lg border border-slate-200 bg-white p-1.5">
+                      <div className="relative aspect-square overflow-hidden rounded-md bg-slate-100"><img src={item.previewUrl} alt={`Imagem ${index + 1}`} className="h-full w-full object-cover"/><span className="absolute left-1 top-1 rounded bg-slate-950/70 px-1.5 py-0.5 text-[9px] font-black text-white">{index + 1}</span></div>
+                      <div className="mt-1 grid grid-cols-3 gap-1 text-[11px] font-black">
+                        <button type="button" onClick={() => { moveCarouselItem(index, -1); setIsDirty(true); }} disabled={index === 0} className="rounded bg-slate-100 py-1 disabled:opacity-30">←</button>
+                        <button type="button" onClick={() => { removeCarouselItem(index); setIsDirty(true); }} className="rounded bg-red-50 py-1 text-red-600">×</button>
+                        <button type="button" onClick={() => { moveCarouselItem(index, 1); setIsDirty(true); }} disabled={index === carouselItems.length - 1} className="rounded bg-slate-100 py-1 disabled:opacity-30">→</button>
+                      </div>
+                    </div>)}
+                  </div>
+                  <p className="mt-1 text-[11px] leading-4 text-slate-500">De 2 a 10 imagens. A primeira imagem será a capa visual do carrossel.</p>
+                </div>}
+
+                <div className="mt-4 border-t border-slate-200 pt-4">
+                  <p className="text-sm font-bold text-slate-700 sm:text-xs">Depois de concluir todas as publicações</p>
+                  <label className="mt-2 flex items-center gap-2 text-sm font-semibold text-slate-600 sm:text-xs"><input type="checkbox" checked={retention === "library"} onChange={event => { setRetention(event.target.checked ? "library" : "delete"); setIsDirty(true); }}/> Manter na biblioteca do Tela Social</label>
+                </div>
+              </div>
             </div>}
 
-            {previewUrl && selectedFile && instagramPlacement !== "story" && <div className="mt-4">
-              <MediaTextEditor sourceFile={selectedFile} sourceUrl={previewUrl} kind={fileType === "video" ? "video" : "image"} width={mediaMetadata.width} height={mediaMetadata.height} durationMs={mediaMetadata.durationMs} title={isCarousel ? "Texto nas imagens do carrossel" : fileType === "video" ? "Texto no vídeo" : "Texto na imagem do Feed"} value={feedTextConfig} collapsible showPreview={false} open={feedEditorOpen} onOpenChange={open => { setFeedEditorOpen(open); if (open) { setCoverOpen(false); setStoryEditorOpen(false); setActiveMediaView("feed"); } else setMediaTextEditing(false); }} onEditingChange={editing => { setActiveMediaView("feed"); setMediaTextEditing(editing); }} onChange={(_file, _nextPreviewUrl, config) => { setFeedTextConfig(config); setStagedMedia(null); setActiveMediaView("feed"); setIsDirty(true); }}/>
+            {mediaTab === "cover" && canCoverTab && previewUrl && <div className="mt-3">
+              <VideoCoverEditor
+                videoUrl={previewUrl}
+                durationMs={mediaMetadata.durationMs}
+                aspect={outputAspect}
+                onChange={selection => {
+                  if (coverSelection.previewUrl && coverSelection.previewUrl !== selection.previewUrl) URL.revokeObjectURL(coverSelection.previewUrl);
+                  setCoverSelection(selection);
+                  setStagedCover(null);
+                  if (selection.mode !== "auto" || coverSelection.mode !== "auto") setIsDirty(true);
+                }}
+              />
             </div>}
 
-            {!isCarousel && previewUrl && selectedFile && hasInstagram && instagramPlacement !== "feed" && <div className="mt-4">
-              <MediaTextEditor sourceFile={selectedFile} sourceUrl={previewUrl} kind={fileType === "video" ? "video" : "image"} width={mediaMetadata.width} height={mediaMetadata.height} durationMs={mediaMetadata.durationMs} title="Texto nos Stories" value={storyTextConfig} collapsible showPreview={false} open={storyEditorOpen} onOpenChange={open => { setStoryEditorOpen(open); if (open) { setCoverOpen(false); setFeedEditorOpen(false); setActiveMediaView("story"); } else setMediaTextEditing(false); }} onEditingChange={editing => { setActiveMediaView("story"); setMediaTextEditing(editing); }} onChange={(_file, _nextPreviewUrl, config) => { setStoryTextConfig(config); setStagedStoryMedia(null); setActiveMediaView("story"); setIsDirty(true); }}/>
+            {mediaTab === "text" && canTextTab && previewUrl && selectedFile && <div className="mt-3 space-y-3">
+              <div className={`sticky top-2 z-20 mx-auto w-full max-w-[360px] overflow-hidden rounded-xl bg-black shadow-sm sm:static ${mediaTextEditing ? "ring-2 ring-blue-400" : ""}`} style={{ aspectRatio: mediaAspectRatio(outputAspect) }}>
+                <PublicationMediaPreview
+                  previewUrl={previewUrl}
+                  fileType={fileType}
+                  textConfig={feedTextConfig}
+                  durationMs={mediaMetadata.durationMs}
+                  posterUrl={coverSelection.previewUrl}
+                  carouselItems={carouselPreviewItems}
+                  fit="contain"
+                  interactive={mediaTextEditing}
+                  onTextChange={config => { setFeedTextConfig(config); setStagedMedia(null); setIsDirty(true); }}
+                />
+              </div>
+              <MediaTextEditor
+                sourceFile={selectedFile}
+                sourceUrl={previewUrl}
+                kind={fileType === "video" ? "video" : "image"}
+                width={mediaMetadata.width}
+                height={mediaMetadata.height}
+                durationMs={mediaMetadata.durationMs}
+                title={isCarousel ? "Texto no carrossel" : fileType === "video" ? "Texto no vídeo" : "Texto na imagem"}
+                value={feedTextConfig}
+                showPreview={false}
+                onEditingChange={setMediaTextEditing}
+                onChange={(_file, _nextPreviewUrl, config) => { setFeedTextConfig(config); setStagedMedia(null); setIsDirty(true); }}
+              />
+            </div>}
+
+            {mediaTab === "stories" && canStoriesTab && previewUrl && selectedFile && <div className="mt-3 space-y-3">
+              <div className={`sticky top-2 z-20 mx-auto aspect-[9/16] w-full max-w-[360px] overflow-hidden rounded-xl bg-black shadow-sm sm:static ${mediaTextEditing ? "ring-2 ring-blue-400" : ""}`}>
+                <PublicationMediaPreview
+                  previewUrl={previewUrl}
+                  fileType={fileType}
+                  textConfig={storyTextConfig}
+                  durationMs={mediaMetadata.durationMs}
+                  fit="contain"
+                  interactive={mediaTextEditing}
+                  onTextChange={config => { setStoryTextConfig(config); setStagedStoryMedia(null); setIsDirty(true); }}
+                />
+              </div>
+              <MediaTextEditor
+                sourceFile={selectedFile}
+                sourceUrl={previewUrl}
+                kind={fileType === "video" ? "video" : "image"}
+                width={mediaMetadata.width}
+                height={mediaMetadata.height}
+                durationMs={mediaMetadata.durationMs}
+                title="Texto nos Stories"
+                value={storyTextConfig}
+                showPreview={false}
+                onEditingChange={setMediaTextEditing}
+                onChange={(_file, _nextPreviewUrl, config) => { setStoryTextConfig(config); setStagedStoryMedia(null); setIsDirty(true); }}
+              />
             </div>}
           </div> : <div className="mt-4 grid min-w-0 gap-3 sm:grid-cols-3">
-            <label className="flex min-h-36 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-indigo-200 bg-indigo-50/40 p-5 text-center transition-colors hover:bg-indigo-50"><ImagePlus className="text-indigo-600" size={26}/><span className="mt-2 text-base font-bold text-slate-900 sm:text-sm">Adicionar mídia</span><span className="mt-1 text-sm text-slate-500 sm:text-xs">Imagem, vídeo, GIF ou áudio · o Tela adapta quando necessário</span><input type="file" accept=".jpg,.jpeg,.png,.webp,.avif,.heic,.heif,.bmp,.gif,.mp4,.mov,.webm,.avi,.mkv,.mpeg,.mpg,.m4v,.3gp,.ogv,.mp3,.wav,.m4a,.aac,.ogg,.flac,image/jpeg,image/png,image/webp,image/avif,image/heic,image/heif,image/bmp,image/gif,video/mp4,video/quicktime,video/webm,video/x-msvideo,video/x-matroska,video/mpeg,video/x-m4v,video/3gpp,video/ogg,audio/mpeg,audio/wav,audio/mp4,audio/aac,audio/ogg,audio/flac" className="sr-only" onChange={event => handleFile(event.target.files?.[0])}/></label>
-            <label className="flex min-h-36 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-blue-200 bg-blue-50/40 p-5 text-center transition-colors hover:bg-blue-50"><ImagePlus className="text-blue-600" size={26}/><span className="mt-2 text-base font-bold text-slate-900 sm:text-sm">Criar carrossel</span><span className="mt-1 text-sm text-slate-500 sm:text-xs">Selecione de 2 a 10 imagens de uma vez</span><input type="file" multiple accept=".jpg,.jpeg,.png,.webp,.avif,.heic,.heif,.bmp,image/jpeg,image/png,image/webp,image/avif,image/heic,image/heif,image/bmp" className="sr-only" onChange={event => void handleCarouselFiles(event.target.files)}/></label>
-            <button className="flex min-h-36 flex-col items-center justify-center rounded-xl border border-slate-200 bg-slate-50 p-5 text-center hover:bg-slate-100"><Library className="text-slate-600" size={26}/><span className="mt-2 text-base font-bold text-slate-900 sm:text-sm">Escolher da biblioteca</span><span className="mt-1 text-sm text-slate-500 sm:text-xs">Mídias que você decidiu guardar</span></button>
+            <label className="flex min-h-36 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-indigo-200 bg-indigo-50/40 p-5 text-center transition-colors hover:bg-indigo-50">
+              <ImagePlus className="text-indigo-600" size={26}/>
+              <span className="mt-2 text-base font-bold text-slate-900 sm:text-sm">Adicionar mídia</span>
+              <span className="mt-1 text-sm text-slate-500 sm:text-xs">Imagem, vídeo, GIF ou áudio · o Tela adapta quando necessário</span>
+              <input type="file" accept=".jpg,.jpeg,.png,.webp,.avif,.heic,.heif,.bmp,.gif,.mp4,.mov,.webm,.avi,.mkv,.mpeg,.mpg,.m4v,.3gp,.ogv,.mp3,.wav,.m4a,.aac,.ogg,.flac,image/jpeg,image/png,image/webp,image/avif,image/heic,image/heif,image/bmp,image/gif,video/mp4,video/quicktime,video/webm,video/x-msvideo,video/x-matroska,video/mpeg,video/x-m4v,video/3gpp,video/ogg,audio/mpeg,audio/wav,audio/mp4,audio/aac,audio/ogg,audio/flac" className="sr-only" onChange={event => handleFile(event.target.files?.[0])}/>
+            </label>
+            <label className="flex min-h-36 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-blue-200 bg-blue-50/40 p-5 text-center transition-colors hover:bg-blue-50">
+              <ImagePlus className="text-blue-600" size={26}/>
+              <span className="mt-2 text-base font-bold text-slate-900 sm:text-sm">Criar carrossel</span>
+              <span className="mt-1 text-sm text-slate-500 sm:text-xs">Selecione de 2 a 10 imagens de uma vez</span>
+              <input type="file" multiple accept=".jpg,.jpeg,.png,.webp,.avif,.heic,.heif,.bmp,image/jpeg,image/png,image/webp,image/avif,image/heic,image/heif,image/bmp" className="sr-only" onChange={event => void handleCarouselFiles(event.target.files)}/>
+            </label>
+            <button type="button" className="flex min-h-36 flex-col items-center justify-center rounded-xl border border-slate-200 bg-slate-50 p-5 text-center hover:bg-slate-100">
+              <Library className="text-slate-600" size={26}/>
+              <span className="mt-2 text-base font-bold text-slate-900 sm:text-sm">Escolher da biblioteca</span>
+              <span className="mt-1 text-sm text-slate-500 sm:text-xs">Mídias que você decidiu guardar</span>
+            </button>
           </div>}
           <ContextualChecks checks={mediaChecks} onSelect={check => setActiveId(check.option.id)}/>
         </section>
+
         <section className="card min-w-0 p-4 sm:p-5">
           <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
             <div>
