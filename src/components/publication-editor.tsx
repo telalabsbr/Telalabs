@@ -642,10 +642,6 @@ export function PublicationEditor() {
     if (!files?.length) return;
     setIsDirty(true);
     const incoming = Array.from(files).slice(0, 10);
-    if (incoming.length < 2) {
-      await handleFile(incoming[0]);
-      return;
-    }
 
     setSaveError("");
     setSaveMessage("Preparando imagens do carrossel...");
@@ -662,6 +658,8 @@ export function PublicationEditor() {
     setMediaTab("media");
     setMediaTextEditing(false);
     setInstagramPlacement("feed");
+    setCarouselMode(true);
+    setCarouselAdjusting(false);
 
     try {
       const prepared = await Promise.all(incoming.map(file => prepareMediaFile(file)));
@@ -674,14 +672,14 @@ export function PublicationEditor() {
       const nextItems = prepared.map((item, index) => {
         const itemUrl = URL.createObjectURL(item.file);
         carouselUrlsRef.current.add(itemUrl);
-        return { id: `${item.file.name}-${item.file.lastModified}-${index}`, file: item.file, previewUrl: itemUrl, metadata: item.metadata } satisfies CarouselItem;
+        return { id: `${item.file.name}-${item.file.lastModified}-${index}`, file: item.file, previewUrl: itemUrl, metadata: item.metadata, transform: { ...defaultImageTransform }, adjusted: false } satisfies CarouselItem;
       });
 
       if (previewUrl) URL.revokeObjectURL(previewUrl);
       const primaryPreview = URL.createObjectURL(nextItems[0].file);
       setPreviewUrl(primaryPreview);
       setSelectedFile(nextItems[0].file);
-      setFileName(`${nextItems.length} imagens no carrossel`);
+      setFileName(nextItems.length === 1 ? "1 imagem no carrossel" : `${nextItems.length} imagens no carrossel`);
       setFileType("image");
       setFileSize(nextItems.reduce((sum, item) => sum + item.file.size, 0));
       setMediaMetadata(nextItems[0].metadata);
@@ -698,6 +696,50 @@ export function PublicationEditor() {
     }
   }
 
+  async function handleAddCarouselFiles(files?: FileList | null) {
+    if (!files?.length || !carouselMode) return;
+    const capacity = Math.max(0, 10 - carouselItems.length);
+    if (!capacity) {
+      setSaveError("O carrossel aceita no máximo 10 imagens.");
+      return;
+    }
+    const incoming = Array.from(files).slice(0, capacity);
+    setIsDirty(true);
+    setSaveError("");
+    setSaveMessage("Adicionando imagens...");
+
+    try {
+      const prepared = await Promise.all(incoming.map(file => prepareMediaFile(file)));
+      if (prepared.some(item => item.kind !== "image")) throw new Error("carousel_images_only");
+      const added = prepared.map((item, index) => {
+        const itemUrl = URL.createObjectURL(item.file);
+        carouselUrlsRef.current.add(itemUrl);
+        return {
+          id: `${item.file.name}-${item.file.lastModified}-add-${Date.now()}-${index}`,
+          file: item.file,
+          previewUrl: itemUrl,
+          metadata: item.metadata,
+          transform: { ...defaultImageTransform },
+          adjusted: false,
+        } satisfies CarouselItem;
+      });
+      const next = [...carouselItems, ...added];
+      setCarouselItems(next);
+      setStagedCarouselMedia({});
+      syncCarouselPrimary(next);
+      setSaveMessage("");
+    } catch {
+      setSaveError("Não foi possível adicionar uma das imagens ao carrossel.");
+      setSaveMessage("");
+    }
+  }
+
+  function updateCarouselTransform(id: string, transform: ImageTransform) {
+    setCarouselItems(current => current.map(item => item.id === id ? { ...item, transform, adjusted: true } : item));
+    setStagedCarouselMedia({});
+    setIsDirty(true);
+  }
+
   function syncCarouselPrimary(items: CarouselItem[]) {
     if (!items.length) {
       removeFile();
@@ -709,8 +751,7 @@ export function PublicationEditor() {
     setFileType("image");
     setMediaMetadata(items[0].metadata);
     setFileSize(items.reduce((sum, item) => sum + item.file.size, 0));
-    setFileName(items.length > 1 ? `${items.length} imagens no carrossel` : items[0].file.name);
-    if (items.length === 1) setCarouselItems([]);
+    setFileName(items.length === 1 ? "1 imagem no carrossel" : `${items.length} imagens no carrossel`);
   }
 
   function moveCarouselItem(index: number, direction: -1 | 1) {
@@ -731,6 +772,7 @@ export function PublicationEditor() {
     }
     const next = carouselItems.filter((_, itemIndex) => itemIndex !== index);
     setCarouselItems(next);
+    if (!next.length) setCarouselMode(false);
     setStagedCarouselMedia({});
     syncCarouselPrimary(next);
   }
@@ -750,6 +792,8 @@ export function PublicationEditor() {
     for (const url of carouselUrlsRef.current) URL.revokeObjectURL(url);
     carouselUrlsRef.current.clear();
     setCarouselItems([]);
+    setCarouselMode(false);
+    setCarouselAdjusting(false);
     setFeedTextConfig({ ...defaultTextOverlay });
     setStoryTextConfig({ ...defaultTextOverlay });
     setPublishComplete(false);
@@ -816,6 +860,9 @@ export function PublicationEditor() {
       }
     }
 
+    if (isCarousel && carouselItems.length < 2) {
+      return { option, level: "error" as const, text: "Adicione pelo menos 2 imagens ao carrossel" };
+    }
     if (isCarousel && !["instagram", "facebook"].includes(option.platform)) {
       return { option, level: "error" as const, text: "Carrossel disponível no Instagram e Facebook nesta etapa" };
     }
@@ -894,7 +941,12 @@ export function PublicationEditor() {
     try {
       if (isCarousel) {
         setSaveMessage("Preparando imagens do carrossel...");
-        carouselMediaFiles = await Promise.all(carouselItems.map(item => composeTextOnMedia(item.file, "image", feedTextConfig)));
+        carouselMediaFiles = await Promise.all(carouselItems.map(async item => {
+          const adjustedFile = item.adjusted
+            ? await applyImageTransform(item.file, outputAspect, item.transform)
+            : item.file;
+          return composeTextOnMedia(adjustedFile, "image", feedTextConfig);
+        }));
         baseMediaFile = null;
       } else if (selectedFile && instagramPlacement === "story" && storyTextConfig.text.trim()) {
         setSaveMessage(selectedKind === "video" ? "Preparando texto no Story..." : "Preparando imagem do Story...");
