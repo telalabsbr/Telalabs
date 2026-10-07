@@ -82,6 +82,7 @@ export function PublicationMediaPreview({
 }) {
   const [currentMs, setCurrentMs] = useState(0);
   const [index, setIndex] = useState(0);
+  const swipeStart = useRef<{ x: number; y: number } | null>(null);
   const isCarousel = carouselItems.length > 1;
   const safeIndex = Math.min(index, Math.max(0, carouselItems.length - 1));
   const activeCarouselItem = isCarousel ? carouselItems[safeIndex] : undefined;
@@ -94,7 +95,30 @@ export function PublicationMediaPreview({
 
   const dots = useMemo(() => carouselItems.map(item => item.id), [carouselItems]);
 
-  return <div data-overlay-stage className="relative h-full w-full touch-pan-y overflow-hidden">
+  function moveCarousel(delta: -1 | 1) {
+    if (!carouselItems.length) return;
+    setIndex(current => (current + delta + carouselItems.length) % carouselItems.length);
+  }
+
+  return <div
+    data-overlay-stage
+    className="relative h-full w-full touch-pan-y overflow-hidden"
+    onTouchStart={event => {
+      if (!isCarousel || interactive || event.touches.length !== 1) return;
+      swipeStart.current = { x: event.touches[0].clientX, y: event.touches[0].clientY };
+    }}
+    onTouchEnd={event => {
+      const start = swipeStart.current;
+      swipeStart.current = null;
+      if (!start || !isCarousel || interactive) return;
+      const touch = event.changedTouches[0];
+      if (!touch) return;
+      const dx = touch.clientX - start.x;
+      const dy = touch.clientY - start.y;
+      if (Math.abs(dx) < 40 || Math.abs(dx) <= Math.abs(dy)) return;
+      moveCarousel(dx < 0 ? 1 : -1);
+    }}
+  >
     {activeUrl && (fileType === "video" && !isCarousel
       ? <video
           src={activeUrl}
@@ -113,10 +137,12 @@ export function PublicationMediaPreview({
     {activeUrl && <TextOverlayLayer config={textConfig} onChange={onTextChange ?? (() => {})} visible={visible} interactive={interactive}/>} 
 
     {isCarousel && <>
-      <button type="button" aria-label="Imagem anterior" onClick={() => setIndex(current => (current - 1 + carouselItems.length) % carouselItems.length)} className="absolute left-2 top-1/2 z-10 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-full bg-slate-950/65 text-white shadow"><ChevronLeft size={17}/></button>
-      <button type="button" aria-label="Próxima imagem" onClick={() => setIndex(current => (current + 1) % carouselItems.length)} className="absolute right-2 top-1/2 z-10 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-full bg-slate-950/65 text-white shadow"><ChevronRight size={17}/></button>
-      <div className="absolute bottom-2 left-1/2 z-10 flex -translate-x-1/2 gap-1 rounded-full bg-slate-950/50 px-2 py-1">
-        {dots.map((id, dotIndex) => <button key={id} type="button" aria-label={`Ver imagem ${dotIndex + 1}`} onClick={() => setIndex(dotIndex)} className={`h-1.5 w-1.5 rounded-full ${dotIndex === safeIndex ? "bg-white" : "bg-white/45"}`}/>) }
+      <div className="absolute bottom-2 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-slate-950/55 px-1.5 py-1">
+        <button type="button" aria-label="Imagem anterior" onClick={() => moveCarousel(-1)} className="grid h-7 w-7 place-items-center rounded-full text-white"><ChevronLeft size={16}/></button>
+        <div className="flex items-center gap-1">
+          {dots.map((id, dotIndex) => <button key={id} type="button" aria-label={`Ver imagem ${dotIndex + 1}`} onClick={() => setIndex(dotIndex)} className={`h-1.5 w-1.5 rounded-full ${dotIndex === safeIndex ? "bg-white" : "bg-white/45"}`}/>) }
+        </div>
+        <button type="button" aria-label="Próxima imagem" onClick={() => moveCarousel(1)} className="grid h-7 w-7 place-items-center rounded-full text-white"><ChevronRight size={16}/></button>
       </div>
       <span className="absolute right-2 top-2 z-10 rounded-full bg-slate-950/65 px-2 py-1 text-[10px] font-black text-white">{safeIndex + 1}/{carouselItems.length}</span>
     </>}
