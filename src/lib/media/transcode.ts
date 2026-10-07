@@ -1,5 +1,7 @@
 "use client";
 
+import { mediaAspectSizes, type MediaAspect } from "./image-transform";
+
 const FFMPEG_CORE_BASE = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/umd";
 const MAX_TRANSCODE_INPUT_BYTES = 350 * 1024 * 1024;
 const MAX_AUDIO_INPUT_BYTES = 150 * 1024 * 1024;
@@ -102,7 +104,8 @@ async function gifCycleDurationMs(file: File): Promise<number | null> {
 
 async function runFFmpeg(args: {
   file: File;
-  mode: "gif" | "video" | "audio";
+  mode: "gif" | "video" | "audio" | "aspect";
+  aspect?: MediaAspect;
   onProgress?: (progress: TranscodeProgress) => void;
 }) {
   if (args.file.size > MAX_TRANSCODE_INPUT_BYTES) {
@@ -120,7 +123,9 @@ async function runFFmpeg(args: {
   const ffmpeg = new FFmpeg();
   const inputExt = args.file.name.match(/\.([a-zA-Z0-9]+)$/)?.[1]?.toLowerCase() || "bin";
   const inputName = `input.${inputExt}`;
-  const outputName = `${safeBaseName(args.file.name)}.mp4`;
+  const outputName = args.mode === "aspect" && args.aspect
+    ? `${safeBaseName(args.file.name)}-${args.aspect.replace(":", "x")}.mp4`
+    : `${safeBaseName(args.file.name)}.mp4`;
   const coverName = "tela-audio-cover.png";
 
   const progressHandler = ({ progress }: { progress: number }) => {
@@ -188,6 +193,23 @@ async function runFFmpeg(args: {
         "-movflags", "+faststart",
         outputName,
       ];
+    } else if (args.mode === "aspect") {
+      if (!args.aspect) throw new Error("media_conversion_failed");
+      const target = mediaAspectSizes[args.aspect];
+      const targetRatio = target.width / target.height;
+      const filter = `scale='if(gt(iw/ih,${targetRatio}),-2,${target.width})':'if(gt(iw/ih,${targetRatio}),${target.height},-2)',crop=${target.width}:${target.height}`;
+      command = [
+        "-i", inputName,
+        "-vf", filter,
+        "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-crf", "23",
+        "-c:a", "aac",
+        "-b:a", "160k",
+        "-pix_fmt", "yuv420p",
+        "-movflags", "+faststart",
+        outputName,
+      ];
     } else {
       command = [
         "-i", inputName,
@@ -239,6 +261,10 @@ export function transcodeGifToMp4(file: File, onProgress?: (progress: TranscodeP
 
 export function transcodeVideoToMp4(file: File, onProgress?: (progress: TranscodeProgress) => void) {
   return runFFmpeg({ file, mode: "video", onProgress });
+}
+
+export function transcodeVideoToAspect(file: File, aspect: MediaAspect, onProgress?: (progress: TranscodeProgress) => void) {
+  return runFFmpeg({ file, mode: "aspect", aspect, onProgress });
 }
 
 export function transcodeAudioToMp4(file: File, onProgress?: (progress: TranscodeProgress) => void) {
