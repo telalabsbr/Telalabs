@@ -1,5 +1,7 @@
 import "server-only";
-import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { createSupabaseAdminClient, createUntypedSupabaseAdminClient } from "@/lib/supabase/admin";
+import { decryptToken } from "@/lib/oauth/token-crypto";
+import { getMetaGraphBaseUrl } from "@/lib/oauth/meta";
 import type { Json } from "@/lib/supabase/database.types";
 import {
   accessTokenFromContext,
@@ -23,6 +25,18 @@ type UnknownPublishAttempt = {
   error_code: string | null;
   provider_request_id: string | null;
   started_at: string;
+};
+
+type InstagramAudioConfiguration = {
+  audioId: string;
+  audioVolume: number;
+  videoVolume: number;
+};
+
+type InstagramRequestAuth = {
+  accessToken: string;
+  accountId: string;
+  baseUrl?: string;
 };
 
 const REEL_MAX_BYTES = 1024 * 1024 * 1024;
@@ -72,6 +86,60 @@ function preflightMedia(media: NonNullable<Awaited<ReturnType<typeof loadRuntime
   }
 
   return invalidContent("Este tipo de mídia ainda não é suportado no Instagram.", "INSTAGRAM_MEDIA_TYPE");
+}
+
+function objectRecord(value: Json | unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function audioConfigurationFromProvider(config: Json): InstagramAudioConfiguration | null {
+  const provider = objectRecord(config);
+  const raw = objectRecord(provider.audio_configuration);
+  const audioId = typeof raw.audio_id === "string" ? raw.audio_id.trim() : "";
+  if (!audioId) return null;
+
+  const volume = (value: unknown) => {
+    const numeric = typeof value === "number" ? value : Number(value);
+    return Number.isFinite(numeric) ? Math.max(0, Math.min(100, Math.round(numeric))) : 100;
+  };
+
+  return {
+    audioId,
+    audioVolume: volume(raw.audio_volume),
+    videoVolume: volume(raw.video_volume),
+  };
+}
+
+async function metaAudioRequestAuth(
+  context: Awaited<ReturnType<typeof loadRuntimePublicationContext>>,
+): Promise<InstagramRequestAuth | null> {
+  const metadata = objectRecord(context.connection.metadata);
+  const metaAssetId = typeof metadata.meta_asset_id === "string" ? metadata.meta_asset_id : "";
+  if (metadata.meta_advanced_enabled !== true || !metaAssetId) return null;
+
+  const admin = createUntypedSupabaseAdminClient();
+  if (!admin) return null;
+
+  const result = await admin.rpc("server_get_meta_asset_audio_credential", {
+    p_meta_asset_id: metaAssetId,
+  });
+  const credential = Array.isArray(result.data) ? result.data[0] : result.data;
+  if (result.error || !credential?.page_access_token_ciphertext || !credential?.instagram_business_account_id) {
+    return null;
+  }
+
+  if (credential.page_expires_at && new Date(String(credential.page_expires_at)).getTime() <= Date.now()) {
+    return null;
+  }
+
+  const accessToken = await decryptToken(String(credential.page_access_token_ciphertext));
+  return {
+    accessToken,
+    accountId: String(credential.instagram_business_account_id),
+    baseUrl: getMetaGraphBaseUrl(),
+  };
 }
 
 async function existingContainer(postTargetId: string) {
@@ -215,18 +283,20 @@ async function markContainerPublished(args: {
   if (mediaAsset.error) throw new Error(mediaAsset.error.message);
 }
 
-async function containerStatus(containerId: string, accessToken: string) {
+async function containerStatus(containerId: string, accessToken: string, baseUrl?: string) {
   return metaGraphRequest<ContainerStatus>({
     path: `/${encodeURIComponent(containerId)}`,
     accessToken,
+    baseUrl,
     params: { fields: "status_code,status" },
   });
 }
 
-async function publishedMedia(mediaId: string, accessToken: string) {
+async function publishedMedia(mediaId: string, accessToken: string, baseUrl?: string) {
   return metaGraphRequest<PublishedMedia>({
     path: `/${encodeURIComponent(mediaId)}`,
     accessToken,
+    baseUrl,
     params: { fields: "id,permalink" },
   });
 }
