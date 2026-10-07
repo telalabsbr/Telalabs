@@ -449,7 +449,10 @@ export default function ConnectionsPage() {
                 : metaAuthorizedInstagram ? "Verificar vínculo" : "Ativar recursos avançados"}</button>}
 
               {advancedInstagram && <div className="mt-3 space-y-2">
-                <div className="flex items-center gap-2 text-xs font-bold text-indigo-700"><CheckCircle2 size={14}/> Recursos avançados ativos</div>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 text-xs font-bold text-indigo-700"><CheckCircle2 size={14}/> Recursos avançados ativos</div>
+                  <button type="button" onClick={() => startMetaOAuth("instagram_advanced", connection.id)} className="rounded-lg border border-indigo-200 bg-white px-2.5 py-1.5 text-[11px] font-black text-indigo-700 hover:bg-indigo-50">Renovar autorização</button>
+                </div>
                 {linkedPageName && <div className="rounded-lg border border-indigo-100 bg-white/80 p-2.5 text-xs leading-5 text-slate-600">
                   <p><span className="font-bold text-slate-800">Página vinculada:</span> {linkedPageName}</p>
                   {linkedFacebookConnected
