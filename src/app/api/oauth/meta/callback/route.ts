@@ -236,7 +236,12 @@ export async function GET(request: NextRequest) {
   try {
     const shortToken = await exchangeAuthorizationCode(config, code);
     const longToken = await exchangeLongLivedToken(config, shortToken);
-    const pages = await discoverAccounts(config.graphBaseUrl, longToken.access_token as string);
+    const longUserAccessToken = longToken.access_token as string;
+    const encryptedUserToken = await encryptToken(longUserAccessToken);
+    const userExpiresAt = longToken.expires_in && Number.isFinite(longToken.expires_in)
+      ? new Date(Date.now() + longToken.expires_in * 1000).toISOString()
+      : null;
+    const pages = await discoverAccounts(config.graphBaseUrl, longUserAccessToken);
 
     let discovered = 0;
     let matchingAssetId: string | null = null;
@@ -269,6 +274,18 @@ export async function GET(request: NextRequest) {
         console.warn("meta_oauth_asset_persist_failed", { code: result.error?.code ?? null });
         throw new Error("meta_asset_persist_failed");
       }
+
+      const userCredential = await admin.rpc("server_set_meta_asset_user_credential", {
+        p_meta_asset_id: result.data,
+        p_user_access_token_ciphertext: encryptedUserToken,
+        p_user_expires_at: userExpiresAt,
+        p_key_version: "aes-gcm-v1",
+      });
+      if (userCredential.error) {
+        console.warn("meta_oauth_user_credential_persist_failed", { code: userCredential.error.code ?? null });
+        throw new Error("meta_user_credential_persist_failed");
+      }
+
       discovered += 1;
 
       const idMatches = Boolean(targetInstagramId && igId === targetInstagramId);
