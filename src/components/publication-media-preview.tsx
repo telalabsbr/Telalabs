@@ -2,7 +2,7 @@
 
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { overlayVisibleAt, type TextOverlayConfig } from "@/lib/media/text-overlay";
+import { overlayVisibleAtEdge, type TextOverlayConfig, type TextOverlayEdge } from "@/lib/media/text-overlay";
 import { TextOverlayLayer } from "./text-overlay-controls";
 import { defaultImageTransform, drawImageTransform, type ImageTransform, type MediaAspect } from "@/lib/media/image-transform";
 
@@ -62,6 +62,9 @@ export function PublicationMediaPreview({
   previewUrl,
   fileType,
   textConfig,
+  textEdge = "both",
+  secondaryTextConfig,
+  secondaryTextEdge = "both",
   durationMs,
   posterUrl,
   carouselItems = [],
@@ -73,6 +76,9 @@ export function PublicationMediaPreview({
   previewUrl: string | null;
   fileType: "image" | "video" | null;
   textConfig: TextOverlayConfig;
+  textEdge?: TextOverlayEdge;
+  secondaryTextConfig?: TextOverlayConfig;
+  secondaryTextEdge?: TextOverlayEdge;
   durationMs?: number | null;
   posterUrl?: string | null;
   carouselItems?: CarouselPreviewItem[];
@@ -88,7 +94,8 @@ export function PublicationMediaPreview({
   const safeIndex = Math.min(index, Math.max(0, carouselItems.length - 1));
   const activeCarouselItem = isCarousel ? carouselItems[safeIndex] : undefined;
   const activeUrl = activeCarouselItem?.previewUrl ?? previewUrl;
-  const visible = fileType !== "video" || overlayVisibleAt(textConfig, currentMs, durationMs);
+  const visible = fileType !== "video" || interactive || overlayVisibleAtEdge(textConfig, currentMs, durationMs, textEdge);
+  const secondaryVisible = !!secondaryTextConfig && (fileType !== "video" || overlayVisibleAtEdge(secondaryTextConfig, currentMs, durationMs, secondaryTextEdge));
 
   useEffect(() => {
     if (index >= carouselItems.length && carouselItems.length) setIndex(carouselItems.length - 1);
@@ -135,6 +142,7 @@ export function PublicationMediaPreview({
         ? <TransformedCarouselImage url={activeUrl} transform={activeCarouselItem.transform ?? defaultImageTransform} aspect={aspect}/>
         : <img src={activeUrl} alt="Prévia final da mídia" className={`h-full w-full ${interactive ? "pointer-events-none" : "touch-pan-y"} ${fit === "contain" ? "object-contain" : "object-cover"}`}/>)}
 
+    {activeUrl && secondaryTextConfig && <TextOverlayLayer config={secondaryTextConfig} onChange={() => {}} visible={secondaryVisible} interactive={false}/>}
     {activeUrl && <TextOverlayLayer config={textConfig} onChange={onTextChange ?? (() => {})} visible={visible} interactive={interactive}/>} 
 
     {isCarousel && <>
