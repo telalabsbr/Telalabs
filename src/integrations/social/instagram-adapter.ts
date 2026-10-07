@@ -376,14 +376,35 @@ export const instagramPublishAdapter: PublishAdapter = {
       };
     }
 
-    const accessToken = await accessTokenFromContext(context);
-    if (!accessToken) {
+    const requestedAudio = audioConfigurationFromProvider(context.target.provider_config);
+    const directAccessToken = await accessTokenFromContext(context);
+    let requestAuth: InstagramRequestAuth | null = directAccessToken
+      ? {
+          accessToken: directAccessToken,
+          accountId: context.connection.provider_account_id,
+        }
+      : null;
+
+    if (requestedAudio) {
+      requestAuth = await metaAudioRequestAuth(context);
+      if (!requestAuth) {
+        return {
+          outcome: "AUTH_REQUIRED",
+          errorCode: "INSTAGRAM_AUDIO_META_AUTH_REQUIRED",
+          errorMessageSafe: "Reautorize os recursos avançados do Instagram para publicar este Reel com música.",
+        };
+      }
+    }
+
+    if (!requestAuth) {
       return {
         outcome: "AUTH_REQUIRED",
         errorCode: "INSTAGRAM_TOKEN_UNAVAILABLE",
         errorMessageSafe: "A autorização do Instagram expirou ou não está disponível.",
       };
     }
+
+    const { accessToken, accountId, baseUrl } = requestAuth;
 
     if (!context.media) {
       return invalidContent("Adicione uma imagem ou vídeo antes de publicar no Instagram.", "INSTAGRAM_MEDIA_REQUIRED");
@@ -408,6 +429,13 @@ export const instagramPublishAdapter: PublishAdapter = {
     }
 
     const isVideo = context.media.mime_type.startsWith("video/");
+    if (requestedAudio && (isStory || isCarousel || !isVideo)) {
+      return invalidContent(
+        "Música do catálogo do Instagram está disponível somente para Reel com um único vídeo.",
+        "INSTAGRAM_AUDIO_REELS_ONLY",
+      );
+    }
+
     let container = await existingContainer(job.postTargetId);
 
     if (container?.state === "PUBLISHED") {
@@ -433,9 +461,10 @@ export const instagramPublishAdapter: PublishAdapter = {
         for (const item of carouselItems) {
           const itemUrl = await issueAttachedMediaDeliveryUrl(context, item);
           const child = await metaGraphRequest<ContainerCreated>({
-            path: `/${encodeURIComponent(context.connection.provider_account_id)}/media`,
+            path: `/${encodeURIComponent(accountId)}/media`,
             method: "POST",
             accessToken,
+            baseUrl,
             params: { image_url: itemUrl, is_carousel_item: true },
           });
           if (!child.ok || !child.data?.id) return classifyMetaFailure(child);
@@ -458,6 +487,13 @@ export const instagramPublishAdapter: PublishAdapter = {
                 caption: context.target.caption,
                 share_to_feed: true,
                 ...(coverUrl ? { cover_url: coverUrl } : {}),
+                ...(requestedAudio ? {
+                  audio_configuration: JSON.stringify({
+                    audio_id: requestedAudio.audioId,
+                    audio_volume: requestedAudio.audioVolume,
+                    video_volume: requestedAudio.videoVolume,
+                  }),
+                } : {}),
               }
             : {
                 image_url: deliveryUrl,
@@ -466,9 +502,10 @@ export const instagramPublishAdapter: PublishAdapter = {
       }
 
       const create = await metaGraphRequest<ContainerCreated>({
-        path: `/${encodeURIComponent(context.connection.provider_account_id)}/media`,
+        path: `/${encodeURIComponent(accountId)}/media`,
         method: "POST",
         accessToken,
+        baseUrl,
         params: createParams,
       });
 
@@ -503,13 +540,13 @@ export const instagramPublishAdapter: PublishAdapter = {
       }
     }
 
-    let statusResponse = await containerStatus(container.provider_asset_id, accessToken);
+    let statusResponse = await containerStatus(container.provider_asset_id, accessToken, baseUrl);
 
     for (let check = 0; check < 3 && statusResponse.ok && statusResponse.data?.status_code !== "FINISHED"; check += 1) {
       const statusCode = statusResponse.data?.status_code;
       if (statusCode === "ERROR" || statusCode === "EXPIRED") break;
       await wait(1500);
-      statusResponse = await containerStatus(container.provider_asset_id, accessToken);
+      statusResponse = await containerStatus(container.provider_asset_id, accessToken, baseUrl);
     }
 
     if (!statusResponse.ok) return classifyMetaFailure(statusResponse);
@@ -534,9 +571,10 @@ export const instagramPublishAdapter: PublishAdapter = {
     }
 
     const publish = await metaGraphRequest<PublishedMedia>({
-      path: `/${encodeURIComponent(context.connection.provider_account_id)}/media_publish`,
+      path: `/${encodeURIComponent(accountId)}/media_publish`,
       method: "POST",
       accessToken,
+      baseUrl,
       params: { creation_id: container.provider_asset_id },
     });
 
@@ -544,7 +582,7 @@ export const instagramPublishAdapter: PublishAdapter = {
       return classifyMetaFailure(publish);
     }
 
-    const mediaDetails = await publishedMedia(publish.data.id, accessToken);
+    const mediaDetails = await publishedMedia(publish.data.id, accessToken, baseUrl);
     const permalink = mediaDetails.ok ? mediaDetails.data?.permalink ?? null : null;
 
     try {
@@ -717,7 +755,7 @@ export const instagramPublishAdapter: PublishAdapter = {
     }
 
     if (container) {
-      const statusResponse = await containerStatus(container.provider_asset_id, accessToken);
+      const statusResponse = await containerStatus(container.provider_asset_id, accessToken, baseUrl);
       if (!statusResponse.ok) return reconcileMetaFailure(statusResponse);
 
       if (statusResponse.data?.status_code === "ERROR" || statusResponse.data?.status_code === "EXPIRED") {
