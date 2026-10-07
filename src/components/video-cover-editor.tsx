@@ -352,8 +352,8 @@ export function VideoCoverEditor({
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div className="flex items-center gap-2">
         <p className="text-sm font-black text-slate-900">Capa do vídeo</p>
-        <details className="relative">
-          <summary className="grid h-7 w-7 cursor-pointer list-none place-items-center rounded-full border border-slate-200 bg-white text-slate-500"><CircleHelp size={13}/></summary>
+        <details className="group relative">
+          <summary className="grid h-7 w-7 cursor-pointer list-none place-items-center rounded-full border border-slate-200 bg-white text-slate-500 transition-colors group-open:border-blue-600 group-open:bg-blue-600 group-open:text-white"><CircleHelp size={13}/></summary>
           <div className="absolute left-0 top-9 z-30 w-56 rounded-lg border border-slate-200 bg-white p-2.5 text-[11px] leading-4 text-slate-600 shadow-lg">Escolha uma capa automática, um frame do vídeo ou envie uma imagem. Depois ajuste enquadramento e texto.</div>
         </details>
       </div>
@@ -380,6 +380,31 @@ export function VideoCoverEditor({
     {mode === "upload" && sourceUrl && <div className="mt-3 flex justify-end"><label className="btn-secondary cursor-pointer !px-3 !py-2 text-xs"><Upload size={14}/> Trocar imagem<input type="file" accept="image/jpeg,image/png,image/webp,image/avif" className="sr-only" onChange={event => chooseUpload(event.target.files?.[0])}/></label></div>}
 
     {mode !== "auto" && <div className="mt-4">
+      <div className="grid grid-cols-2 gap-2">
+        <button type="button" onClick={() => { endGesture(); setCoverEditMode(current => current === "frame" ? "none" : "frame"); }} className={`rounded-lg border px-1.5 py-2 text-[10px] font-black leading-tight sm:px-2 sm:text-xs ${coverEditMode === "frame" ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-blue-200 bg-blue-50 text-blue-700"}`}>
+          {coverEditMode === "frame" ? "Concluir enquadramento" : "Ajustar enquadramento"}
+        </button>
+        <button type="button" onClick={() => { endGesture(); setCoverEditMode(current => current === "text" ? "none" : "text"); }} className={`rounded-lg border px-1.5 py-2 text-[10px] font-black leading-tight sm:px-2 sm:text-xs ${coverEditMode === "text" ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-blue-200 bg-blue-50 text-blue-700"}`}>
+          {coverEditMode === "text" ? "Concluir texto" : "Ajustar texto"}
+        </button>
+      </div>
+
+      <div className="mt-2 flex items-center justify-center">
+        <details className="group relative">
+          <summary className="grid h-7 w-7 cursor-pointer list-none place-items-center rounded-full border border-slate-200 bg-white/70 text-slate-500 transition-colors group-open:border-blue-600 group-open:bg-blue-600 group-open:text-white"><CircleHelp size={13}/></summary>
+          <div className="absolute left-1/2 top-9 z-30 w-64 -translate-x-1/2 rounded-lg border border-slate-200 bg-white p-2.5 text-[11px] leading-4 text-slate-600 shadow-lg">
+            Use dois dedos para ampliar ou reduzir e arraste para reenquadrar a mídia. Para reposicionar ou redimensionar o texto, ative “Ajustar texto” e mexa diretamente no texto sobre a mídia.
+          </div>
+        </details>
+      </div>
+
+      <div className="mt-2 hidden items-center justify-center gap-2 sm:flex">
+        <button type="button" onClick={() => setZoom(current => clamp(current - 0.1, 1, 4))} className="btn-secondary !px-3"><Minus size={15}/></button>
+        <span className="min-w-16 text-center text-xs font-bold text-slate-600">{Math.round(zoom * 100)}%</span>
+        <button type="button" onClick={() => setZoom(current => clamp(current + 0.1, 1, 4))} className="btn-secondary !px-3"><Plus size={15}/></button>
+        <button type="button" onClick={resetPosition} className="btn-secondary !px-3" title="Centralizar imagem"><RotateCcw size={15}/></button>
+      </div>
+
       <div className="mt-3 flex justify-center">
         <div
           data-overlay-stage
@@ -399,23 +424,7 @@ export function VideoCoverEditor({
         </div>
       </div>
 
-      <div className="mt-3 grid grid-cols-2 gap-2">
-        <button type="button" onClick={() => { endGesture(); setCoverEditMode(current => current === "frame" ? "none" : "frame"); }} className={`rounded-lg border px-1.5 py-2 text-[10px] font-black leading-tight sm:px-2 sm:text-xs ${coverEditMode === "frame" ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-blue-200 bg-blue-50 text-blue-700"}`}>
-          {coverEditMode === "frame" ? "Concluir enquadramento" : "Ajustar enquadramento"}
-        </button>
-        <button type="button" onClick={() => { endGesture(); setCoverEditMode(current => current === "text" ? "none" : "text"); }} className={`rounded-lg border px-1.5 py-2 text-[10px] font-black leading-tight sm:px-2 sm:text-xs ${coverEditMode === "text" ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-blue-200 bg-blue-50 text-blue-700"}`}>
-          {coverEditMode === "text" ? "Concluir texto" : "Ajustar texto"}
-        </button>
-      </div>
-      <p className="mt-2 text-center text-[10px] font-semibold text-slate-500 sm:hidden">Use dois dedos para ampliar ou reduzir e arraste para reenquadrar.</p>
-      <div className="mt-3 hidden items-center justify-center gap-2 sm:flex">
-        <button type="button" onClick={() => setZoom(current => clamp(current - 0.1, 1, 4))} className="btn-secondary !px-3"><Minus size={15}/></button>
-        <span className="min-w-16 text-center text-xs font-bold text-slate-600">{Math.round(zoom * 100)}%</span>
-        <button type="button" onClick={() => setZoom(current => clamp(current + 0.1, 1, 4))} className="btn-secondary !px-3"><Plus size={15}/></button>
-        <button type="button" onClick={resetPosition} className="btn-secondary !px-3" title="Centralizar imagem"><RotateCcw size={15}/></button>
-      </div>
-
-      <div className="mt-4 rounded-xl border border-blue-100 bg-white p-3 sm:p-4">
+      <div className="mt-2 rounded-xl border border-blue-100 bg-white p-3 sm:p-4">
         <p className="mb-3 text-xs font-black text-slate-900">Texto e emojis na capa <span className="font-semibold text-slate-400">(opcional)</span></p>
         <TextOverlayControls config={textOverlay} onChange={setTextOverlay} compact onTypingChange={setTypingText}/>
       </div>
