@@ -58,10 +58,12 @@ async function requestMetaAudio(args: {
   url.searchParams.set("ig_user_id", args.igUserId);
   url.searchParams.set("audio_type", args.audioType);
   if (args.query) url.searchParams.set(args.searchParam, args.query);
-  url.searchParams.set("access_token", args.accessToken);
 
   const response = await fetch(url, {
-    headers: { Accept: "application/json" },
+    headers: {
+      Accept: "application/json",
+      Authorization: `Bearer ${args.accessToken}`,
+    },
     cache: "no-store",
   });
   const body = await response.json().catch(() => ({})) as MetaAudioResponse;
