@@ -1,5 +1,7 @@
 "use client";
 
+import { mediaAspectSizes, type MediaAspect } from "./image-transform";
+
 const FFMPEG_CORE_BASE = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/umd";
 const MAX_VIDEO_OVERLAY_BYTES = 350 * 1024 * 1024;
 
@@ -28,7 +30,7 @@ export const defaultTextOverlay: TextOverlayConfig = {
   size: 0.075,
   color: "#ffffff",
   background: "none",
-  backgroundColor: "#2563eb",
+  backgroundColor: "#0047ab",
   x: 0.5,
   y: 0.5,
   boxWidth: 0.72,
@@ -57,6 +59,18 @@ export const overlayFontFamilies: Record<OverlayFont, string> = {
 
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
+}
+
+function colorWithAlpha(color: string, alpha: number) {
+  const normalized = color.trim();
+  const short = normalized.match(/^#([0-9a-f]{3})$/i);
+  const full = normalized.match(/^#([0-9a-f]{6})$/i);
+  const hex = full?.[1] ?? (short ? short[1].split("").map(char => char + char).join("") : null);
+  if (!hex) return normalized;
+  const r = Number.parseInt(hex.slice(0, 2), 16);
+  const g = Number.parseInt(hex.slice(2, 4), 16);
+  const b = Number.parseInt(hex.slice(4, 6), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
 }
 
 function roundRect(
@@ -161,12 +175,10 @@ export function drawTextOverlay(
   const padY = fontSize * 0.24;
 
   if (normalized.background !== "none") {
-    const fills: Record<Exclude<OverlayBackground, "none">, string> = {
-      dark: "rgba(0,0,0,0.68)",
-      light: "rgba(255,255,255,0.88)",
-      color: normalized.backgroundColor || "#2563eb",
-    };
-    context.fillStyle = fills[normalized.background];
+    const selectedBackground = normalized.backgroundColor || "#0047ab";
+    context.fillStyle = normalized.background === "light"
+      ? colorWithAlpha(selectedBackground, 0.38)
+      : selectedBackground;
     roundRect(
       context,
       centerX - widest / 2 - padX,
@@ -272,6 +284,7 @@ export async function composeTextOnVideo(
   file: File,
   config: TextOverlayConfig,
   onProgress?: (progress: number, message: string) => void,
+  aspect?: MediaAspect,
 ) {
   if (file.size > MAX_VIDEO_OVERLAY_BYTES) throw new Error("text_overlay_video_too_large");
 
@@ -280,7 +293,8 @@ export async function composeTextOnVideo(
     import("@ffmpeg/util"),
   ]);
 
-  const dimensions = await getVideoDimensions(file);
+  const sourceDimensions = await getVideoDimensions(file);
+  const dimensions = aspect ? mediaAspectSizes[aspect] : sourceDimensions;
   const overlayBlob = await createOverlayPng(dimensions.width, dimensions.height, config);
   const ffmpeg = new FFmpeg();
   const inputExt = file.name.match(/\.([a-zA-Z0-9]+)$/)?.[1]?.toLowerCase() || "mp4";
@@ -308,10 +322,17 @@ export async function composeTextOnVideo(
       ? `:enable='lte(t,${(normalized.startMs / 1000).toFixed(3)})+gte(t,${((normalized.endMs ?? normalized.startMs) / 1000).toFixed(3)})'`
       : "";
 
+    let filterComplex = `[0:v][1:v]overlay=0:0:format=auto${timing}`;
+    if (aspect) {
+      const target = mediaAspectSizes[aspect];
+      const targetRatio = target.width / target.height;
+      filterComplex = `[0:v]scale='if(gt(iw/ih,${targetRatio}),-2,${target.width})':'if(gt(iw/ih,${targetRatio}),${target.height},-2)',crop=${target.width}:${target.height}[base];[base][1:v]overlay=0:0:format=auto${timing}`;
+    }
+
     const exitCode = await ffmpeg.exec([
       "-i", inputName,
       "-i", overlayName,
-      "-filter_complex", `[0:v][1:v]overlay=0:0:format=auto${timing}`,
+      "-filter_complex", filterComplex,
       "-c:v", "libx264",
       "-preset", "veryfast",
       "-crf", "23",
@@ -346,9 +367,10 @@ export async function composeTextOnMedia(
   kind: "image" | "video",
   config: TextOverlayConfig,
   onProgress?: (progress: number, message: string) => void,
+  aspect?: MediaAspect,
 ) {
   if (!config.text.trim()) return file;
   return kind === "video"
-    ? composeTextOnVideo(file, config, onProgress)
+    ? composeTextOnVideo(file, config, onProgress, aspect)
     : composeTextOnImage(file, config);
 }
