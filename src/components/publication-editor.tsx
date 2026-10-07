@@ -1256,6 +1256,28 @@ export function PublicationEditor() {
       }
     }
 
+    if (postId && !isCarousel && instagramPlacement !== "story") {
+      for (const option of selectedOptions.filter(item => item.platform === "instagram" && !!item.connectionId)) {
+        const connectionId = option.connectionId as string;
+        const audio = instagramAudioSelections[connectionId] ?? null;
+        const audioResult = await client.rpc("set_instagram_audio_config", {
+          p_post_id: postId,
+          p_connection_id: connectionId,
+          p_audio_id: audio?.audioId ?? null,
+          p_audio_volume: audio?.audioVolume ?? 100,
+          p_video_volume: audio?.videoVolume ?? 100,
+          p_audio_title: audio?.title ?? null,
+          p_audio_artist: audio?.artist ?? null,
+          p_audio_type: audio?.audioType ?? "music",
+        });
+        if (audioResult.error) {
+          setSaveError("A publicação foi salva, mas não conseguimos registrar a música do Instagram. Tente novamente antes de publicar.");
+          setSaving(false);
+          return;
+        }
+      }
+    }
+
     if (carouselMediaIds.length > 1 && postId) {
       const mediaResult = await client.rpc("attach_media_items_to_post", {
         p_post_id: postId,
