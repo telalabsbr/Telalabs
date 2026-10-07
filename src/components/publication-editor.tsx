@@ -581,7 +581,16 @@ export function PublicationEditor() {
   const canSaveDraft = selectedOptions.length > 0 && (!requiresDescription || !!base.trim());
   const canCoverTab = fileType === "video" && !!previewUrl && hasInstagram && instagramPlacement !== "story";
   const canTextTab = !!previewUrl && !!selectedFile && instagramPlacement !== "story";
+  const canMusicTab = fileType === "video" && hasInstagram && instagramPlacement !== "story" && !isCarousel;
   const canStoriesTab = !isCarousel && !!previewUrl && !!selectedFile && hasInstagram && instagramPlacement !== "feed";
+  const instagramMusicAccounts = selectedOptions
+    .filter(option => option.platform === "instagram" && !!option.connectionId)
+    .map(option => ({
+      id: option.connectionId as string,
+      label: option.label,
+      handle: option.handle,
+      advancedEnabled: option.advancedEnabled === true,
+    }));
   const storyPreviewTiming = {
     timingMode: storyTextConfig.timingMode,
     startMs: storyTextConfig.startMs,
@@ -594,6 +603,7 @@ export function PublicationEditor() {
     { id: "media", label: "Mídia" },
     ...(canCoverTab ? [{ id: "cover" as const, label: "Capa" }] : []),
     ...(canTextTab ? [{ id: "text" as const, label: "Texto" }] : []),
+    ...(canMusicTab ? [{ id: "music" as const, label: "Música" }] : []),
     ...(canStoriesTab ? [{ id: "stories" as const, label: "Stories" }] : []),
   ];
 
@@ -601,7 +611,7 @@ export function PublicationEditor() {
     if (mediaTabs.some(item => item.id === mediaTab)) return;
     setMediaTab("media");
     setMediaTextTyping(false);
-  }, [mediaTab, canCoverTab, canTextTab, canStoriesTab]);
+  }, [mediaTab, canCoverTab, canTextTab, canMusicTab, canStoriesTab]);
 
   async function handleFile(file?: File) {
     if (!file) return;
