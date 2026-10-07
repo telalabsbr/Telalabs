@@ -37,6 +37,10 @@ import { MediaTextEditor } from "./media-text-editor";
 import { InlineEmojiPicker, TextTimingControl } from "./text-overlay-controls";
 import { PublicationMediaPreview } from "./publication-media-preview";
 import { CarouselImageAdjuster } from "./carousel-image-adjuster";
+import {
+  InstagramMusicEditor,
+  type InstagramAudioSelection,
+} from "./instagram-music-editor";
 import { applyImageTransform, defaultImageTransform, mediaAspectSizes, type ImageTransform } from "@/lib/media/image-transform";
 import { transcodeVideoToAspect } from "@/lib/media/transcode";
 
@@ -44,7 +48,7 @@ type PublishMode = "now" | "schedule";
 type RetentionMode = "delete" | "library";
 type SaveIntent = "draft" | "publish_now" | "schedule";
 type InstagramPlacement = "feed" | "story" | "both";
-type MediaEditorTab = "media" | "cover" | "text" | "stories";
+type MediaEditorTab = "media" | "cover" | "text" | "music" | "stories";
 type StoryTextEdge = "start" | "end";
 
 const mediaAspects: CoverAspect[] = ["9:16", "4:5", "3:4", "1:1", "16:9"];
@@ -329,6 +333,7 @@ export function PublicationEditor() {
   const [storyStartTextConfig, setStoryStartTextConfig] = useState<TextOverlayConfig>({ ...defaultTextOverlay });
   const [storyEndTextConfig, setStoryEndTextConfig] = useState<TextOverlayConfig>({ ...defaultTextOverlay });
   const [storyTextEdge, setStoryTextEdge] = useState<StoryTextEdge>("end");
+  const [instagramAudioSelections, setInstagramAudioSelections] = useState<Record<string, InstagramAudioSelection | null>>({});
   const [carouselItems, setCarouselItems] = useState<CarouselItem[]>([]);
   const [stagedCarouselMedia, setStagedCarouselMedia] = useState<Record<string, { key: string; mediaId: string }>>({});
   const carouselUrlsRef = useRef<Set<string>>(new Set());
