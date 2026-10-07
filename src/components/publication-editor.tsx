@@ -577,6 +577,14 @@ export function PublicationEditor() {
   const canCoverTab = fileType === "video" && !!previewUrl && hasInstagram && instagramPlacement !== "story";
   const canTextTab = !!previewUrl && !!selectedFile && instagramPlacement !== "story";
   const canStoriesTab = !isCarousel && !!previewUrl && !!selectedFile && hasInstagram && instagramPlacement !== "feed";
+  const storyPreviewTiming = {
+    timingMode: storyTextConfig.timingMode,
+    startMs: storyTextConfig.startMs,
+    endMs: storyTextConfig.endMs,
+  } as const;
+  const storyStartPreviewConfig: TextOverlayConfig = { ...storyStartTextConfig, ...storyPreviewTiming };
+  const storyEndPreviewConfig: TextOverlayConfig = { ...storyEndTextConfig, ...storyPreviewTiming };
+
   const mediaTabs: Array<{ id: MediaEditorTab; label: string }> = [
     { id: "media", label: "Mídia" },
     ...(canCoverTab ? [{ id: "cover" as const, label: "Capa" }] : []),
@@ -1812,10 +1820,10 @@ export function PublicationEditor() {
                 </div>
                 <div className="relative bg-gradient-to-br from-indigo-50 via-slate-100 to-violet-100" style={{ aspectRatio: activeOption.platform === "youtube" && activeOption.contentIntent === "LONG_FORM" ? 16 / 9 : activeOption.platform === "instagram" && instagramPlacement === "story" ? 9 / 16 : mediaAspectRatio(outputAspect) }}>
                   {previewUrl && <PublicationMediaPreview previewUrl={previewUrl} fileType={fileType} textConfig={activeOption.platform === "instagram" && instagramPlacement === "story"
-                    ? (storyTextConfig.timingMode === "range" ? storyEndConfig : storyTextConfig)
+                    ? (storyTextConfig.timingMode === "range" ? storyEndPreviewConfig : storyTextConfig)
                     : feedTextConfig}
                   textEdge={activeOption.platform === "instagram" && instagramPlacement === "story" && storyTextConfig.timingMode === "range" ? "end" : "both"}
-                  secondaryTextConfig={activeOption.platform === "instagram" && instagramPlacement === "story" && storyTextConfig.timingMode === "range" ? storyStartConfig : undefined}
+                  secondaryTextConfig={activeOption.platform === "instagram" && instagramPlacement === "story" && storyTextConfig.timingMode === "range" ? storyStartPreviewConfig : undefined}
                   secondaryTextEdge="start" durationMs={mediaMetadata.durationMs} posterUrl={coverSelection.previewUrl} carouselItems={carouselPreviewItems} fit={isCarousel ? "cover" : "contain"} aspect={outputAspect}/>}
                   {!previewUrl && <div className="grid h-full place-items-center text-slate-400"><Play size={30}/></div>}
                   {(activeOption.platform === "tiktok" || activeOption.platform === "kwai") && <PreviewChrome platform={activeOption.platform}/>} 
@@ -1884,10 +1892,10 @@ export function PublicationEditor() {
           {activeOption ? <div className={`relative overflow-hidden rounded-xl border border-slate-200 ${activeOption.platform === "tiktok" || activeOption.platform === "kwai" ? "bg-slate-950" : "bg-white"}`}>
             <div className="relative bg-slate-100" style={{ aspectRatio: activeOption.platform === "tiktok" || activeOption.platform === "kwai" || (activeOption.platform === "instagram" && instagramPlacement === "story") ? 9 / 16 : activeOption.platform === "youtube" && activeOption.contentIntent === "LONG_FORM" ? 16 / 9 : mediaAspectRatio(outputAspect) }}>
               {previewUrl && <PublicationMediaPreview previewUrl={previewUrl} fileType={fileType} textConfig={activeOption.platform === "instagram" && instagramPlacement === "story"
-                    ? (storyTextConfig.timingMode === "range" ? storyEndConfig : storyTextConfig)
+                    ? (storyTextConfig.timingMode === "range" ? storyEndPreviewConfig : storyTextConfig)
                     : feedTextConfig}
                   textEdge={activeOption.platform === "instagram" && instagramPlacement === "story" && storyTextConfig.timingMode === "range" ? "end" : "both"}
-                  secondaryTextConfig={activeOption.platform === "instagram" && instagramPlacement === "story" && storyTextConfig.timingMode === "range" ? storyStartConfig : undefined}
+                  secondaryTextConfig={activeOption.platform === "instagram" && instagramPlacement === "story" && storyTextConfig.timingMode === "range" ? storyStartPreviewConfig : undefined}
                   secondaryTextEdge="start" durationMs={mediaMetadata.durationMs} posterUrl={coverSelection.previewUrl} carouselItems={carouselPreviewItems} fit={isCarousel ? "cover" : "contain"} aspect={outputAspect}/>}
               {!previewUrl && <div className="grid h-full place-items-center text-slate-400"><Play size={34}/></div>}
               {(activeOption.platform === "tiktok" || activeOption.platform === "kwai") && <PreviewChrome platform={activeOption.platform}/>} 
