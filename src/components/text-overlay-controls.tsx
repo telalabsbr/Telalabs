@@ -24,10 +24,22 @@ function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
 }
 
+function colorWithAlpha(color: string, alpha: number) {
+  const normalized = color.trim();
+  const short = normalized.match(/^#([0-9a-f]{3})$/i);
+  const full = normalized.match(/^#([0-9a-f]{6})$/i);
+  const hex = full?.[1] ?? (short ? short[1].split("").map(char => char + char).join("") : null);
+  if (!hex) return normalized;
+  const r = Number.parseInt(hex.slice(0, 2), 16);
+  const g = Number.parseInt(hex.slice(2, 4), 16);
+  const b = Number.parseInt(hex.slice(4, 6), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
 function backgroundCss(config: TextOverlayConfig) {
-  if (config.background === "dark") return "rgba(0,0,0,0.68)";
-  if (config.background === "light") return "rgba(255,255,255,0.88)";
-  if (config.background === "color") return config.backgroundColor || "#2563eb";
+  const selected = config.backgroundColor || "#0047ab";
+  if (config.background === "dark" || config.background === "color") return selected;
+  if (config.background === "light") return colorWithAlpha(selected, 0.38);
   return "transparent";
 }
 
@@ -268,8 +280,8 @@ export function TextTimingControl({
         <button type="button" onClick={() => setMode("all")} className={`rounded-lg px-2 py-2 text-[11px] font-black sm:text-xs ${config.timingMode === "all" ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"}`}>Vídeo todo</button>
         <button type="button" onClick={() => setMode("range")} className={`rounded-lg px-2 py-2 text-[11px] font-black sm:text-xs ${config.timingMode === "range" ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"}`}>Somente um trecho</button>
       </div>
-      <details className="relative shrink-0">
-        <summary className="grid h-8 w-8 cursor-pointer list-none place-items-center rounded-full border border-slate-200 bg-white text-slate-500"><CircleHelp size={14}/></summary>
+      <details className="group relative shrink-0">
+        <summary className="grid h-8 w-8 cursor-pointer list-none place-items-center rounded-full border border-slate-200 bg-white text-slate-500 transition-colors group-open:border-blue-600 group-open:bg-blue-600 group-open:text-white"><CircleHelp size={14}/></summary>
         <div className="absolute right-0 top-10 z-30 w-56 rounded-lg border border-slate-200 bg-white p-2.5 text-[11px] leading-4 text-slate-600 shadow-lg">
           Use “Vídeo todo” para manter o texto sempre visível. Em “Somente um trecho”, ajuste quanto tempo ele aparece no começo e no fim.
         </div>
@@ -460,8 +472,10 @@ export function TextOverlayControls({
           green: "#16a34a", indigo: "#4f46e5", violet: "#7c3aed",
         };
         const normalized = parsed.background && legacyBackgrounds[parsed.background]
-          ? { ...parsed, background: "color" as const, backgroundColor: legacyBackgrounds[parsed.background] }
-          : parsed;
+          ? { ...parsed, background: "dark" as const, backgroundColor: legacyBackgrounds[parsed.background] }
+          : parsed.background === "color"
+            ? { ...parsed, background: "dark" as const }
+            : parsed;
         setSavedStyle(normalized as SavedTextStyle);
       }
       const stored = JSON.parse(localStorage.getItem(RECENT_COLOR_KEY) ?? "[]") as string[];
@@ -499,7 +513,7 @@ export function TextOverlayControls({
   const quickColors = [
     "#ffffff",
     "#111827",
-    customColors[0] ?? "#2563eb",
+    customColors[0] ?? "#0047ab",
     customColors[1] ?? "#dc2626",
   ];
   const currentStyle = styleSnapshot(config);
@@ -558,8 +572,8 @@ export function TextOverlayControls({
     <div className="text-xs font-bold text-slate-700">Fundo
       <button type="button" onClick={() => { setOpenMenu(current => current === "background" ? null : "background"); setCustomPicker(null); }} className="field mt-1 flex w-full items-center justify-between gap-2 px-3 text-left text-sm font-semibold">
         <span className="flex min-w-0 items-center gap-2">
-          {config.background === "color" && <span className="h-4 w-4 shrink-0 rounded-full border border-slate-300" style={{ backgroundColor: config.backgroundColor }}/>}
-          <span>{config.background === "none" ? "Sem fundo" : config.background === "dark" ? "Escuro" : config.background === "light" ? "Claro" : "Cor personalizada"}</span>
+          {config.background !== "none" && <span className="h-4 w-4 shrink-0 rounded-full border border-slate-300" style={{ backgroundColor: backgroundCss(config) }}/>}
+          <span>{config.background === "none" ? "Sem fundo" : config.background === "light" ? "Claro" : "Escuro"}</span>
         </span>
         <ChevronDown size={14} className={`shrink-0 transition-transform ${openMenu === "background" ? "rotate-180" : ""}`}/>
       </button>
@@ -570,14 +584,14 @@ export function TextOverlayControls({
         {([["none", "Sem fundo"], ["dark", "Escuro"], ["light", "Claro"]] as Array<[OverlayBackground, string]>).map(([value, label]) => <button key={value} type="button" onClick={() => { patch({ background: value }); setCustomPicker(null); }} className={`rounded-lg border px-2 py-2 text-xs font-bold ${config.background === value ? "border-blue-400 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-600"}`}>{label}</button>)}
       </div>
       <div className="mt-2 flex items-center gap-2">
-        {quickColors.map((color, index) => <button type="button" key={`background-${index}-${color}`} onClick={() => { patch({ background: "color", backgroundColor: color }); setCustomPicker(null); }} aria-label={`Fundo ${color}`} className={`h-9 w-9 rounded-full border-2 ${config.background === "color" && config.backgroundColor.toLowerCase() === color.toLowerCase() ? "border-blue-600 ring-2 ring-blue-100" : "border-white ring-1 ring-slate-200"}`} style={{ backgroundColor: color }}/>)}
+        {quickColors.map((color, index) => <button type="button" key={`background-${index}-${color}`} onClick={() => { patch({ background: config.background === "light" ? "light" : "dark", backgroundColor: color }); setCustomPicker(null); }} aria-label={`Fundo ${color}`} className={`h-9 w-9 rounded-full border-2 ${config.backgroundColor.toLowerCase() === color.toLowerCase() ? "border-blue-600 ring-2 ring-blue-100" : "border-white ring-1 ring-slate-200"}`} style={{ backgroundColor: color }}/>)}
         <button type="button" aria-label="Personalizar cor de fundo" title="Personalizar cor" onClick={() => setCustomPicker(current => current === "background" ? null : "background")} className="grid h-9 w-9 place-items-center rounded-full border-2 border-white text-sm font-black text-white shadow-sm ring-1 ring-slate-200" style={{ background: "conic-gradient(red, yellow, lime, aqua, blue, magenta, red)" }}>+</button>
       </div>
       {customPicker === "background" && <InlineColorPicker
         value={config.backgroundColor}
-        onChange={color => patch({ background: "color", backgroundColor: color })}
+        onChange={color => patch({ background: config.background === "light" ? "light" : "dark", backgroundColor: color })}
         onCommit={color => {
-          patch({ background: "color", backgroundColor: color });
+          patch({ background: config.background === "light" ? "light" : "dark", backgroundColor: color });
           rememberCustomColor(color);
           setCustomPicker(null);
           setOpenMenu(null);
@@ -590,12 +604,6 @@ export function TextOverlayControls({
       <button type="button" disabled={!savedStyle} onClick={loadStyle} className="btn-secondary w-full !px-2 !py-2 text-xs disabled:cursor-not-allowed disabled:opacity-40"><Check size={14}/> Usar meu estilo</button>
     </div>
 
-    <details className="relative w-fit">
-      <summary className="grid h-7 w-7 cursor-pointer list-none place-items-center rounded-full border border-slate-200 bg-white text-slate-500"><CircleHelp size={13}/></summary>
-      <div className="absolute bottom-9 left-0 z-30 w-60 rounded-lg border border-slate-200 bg-white p-2.5 text-[11px] leading-4 text-slate-600 shadow-lg">
-        Para reposicionar ou redimensionar, ative “Ajustar texto” e mexa diretamente no texto sobre a mídia.
-      </div>
-    </details>
   </div>;
 }
 
