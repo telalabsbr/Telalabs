@@ -30,6 +30,8 @@ export function MediaTextEditor({
   onEditingChange,
   onTypingChange,
   value,
+  showTimingControl = true,
+  allowPositionToggle = true,
 }: {
   sourceFile: File;
   sourceUrl: string;
@@ -47,6 +49,8 @@ export function MediaTextEditor({
   onEditingChange?: (editing: boolean) => void;
   onTypingChange?: (typing: boolean) => void;
   value?: TextOverlayConfig;
+  showTimingControl?: boolean;
+  allowPositionToggle?: boolean;
 }) {
   const [internalConfig, setInternalConfig] = useState<TextOverlayConfig>({ ...defaultTextOverlay });
   const config = value ?? internalConfig;
@@ -96,7 +100,7 @@ export function MediaTextEditor({
       <div className="pointer-events-none absolute inset-x-[6%] inset-y-[4%] rounded-lg border border-dashed border-white/35"/>
     </div>}
 
-    {kind === "video" && <TextTimingControl config={config} durationMs={durationMs} onChange={update}/>}
+    {kind === "video" && showTimingControl && <TextTimingControl config={config} durationMs={durationMs} onChange={update}/>}
 
     <TextOverlayControls
       config={config}
@@ -108,7 +112,7 @@ export function MediaTextEditor({
       }}
     />
 
-    <div className="flex items-center justify-center gap-2">
+    {allowPositionToggle && <div className="flex items-center justify-center gap-2">
       <button
         type="button"
         onClick={toggleEditing}
@@ -116,13 +120,13 @@ export function MediaTextEditor({
       >
         {positionEditing ? "Concluir ajuste" : "Ajustar texto"}
       </button>
-      <details className="relative">
-        <summary className="grid h-8 w-8 cursor-pointer list-none place-items-center rounded-full border border-slate-200 bg-white text-slate-500"><CircleHelp size={14}/></summary>
+      <details className="group relative">
+        <summary className="grid h-8 w-8 cursor-pointer list-none place-items-center rounded-full border border-slate-200 bg-white text-slate-500 transition-colors group-open:border-blue-600 group-open:bg-blue-600 group-open:text-white"><CircleHelp size={14}/></summary>
         <div className="absolute bottom-10 right-0 z-30 w-56 rounded-lg border border-slate-200 bg-white p-2.5 text-[11px] leading-4 text-slate-600 shadow-lg">
           Ative para arrastar ou redimensionar o texto. Fora do texto, a página continua rolando normalmente.
         </div>
       </details>
-    </div>
+    </div>}
   </div>;
 
   if (collapsible) {
@@ -145,9 +149,9 @@ export function MediaTextEditor({
   }
 
   return <div className="rounded-xl border border-blue-100 bg-blue-50/35 p-3 sm:p-4">
-    <div className="mb-4">
+    {title && <div className="mb-4">
       <p className="flex items-center gap-2 text-sm font-black text-slate-900"><Type size={16} className="text-blue-600"/>{title}</p>
-    </div>
+    </div>}
     {editor}
   </div>;
 }
