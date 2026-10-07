@@ -31,7 +31,7 @@ import { useTenantData } from "@/components/tenant-provider";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { uploadMediaFile } from "@/lib/media/upload";
 import { prepareMediaFile, type PreparedMediaMetadata } from "@/lib/media/compatibility";
-import { composeTextOnMedia, defaultTextOverlay, type TextOverlayConfig } from "@/lib/media/text-overlay";
+import { composeTextOnMedia, composeTimedTextLayersOnVideo, defaultTextOverlay, type TextOverlayConfig } from "@/lib/media/text-overlay";
 import { VideoCoverEditor, type CoverAspect, type CoverSelection } from "./video-cover-editor";
 import { MediaTextEditor } from "./media-text-editor";
 import { InlineEmojiPicker, TextTimingControl } from "./text-overlay-controls";
@@ -45,6 +45,7 @@ type RetentionMode = "delete" | "library";
 type SaveIntent = "draft" | "publish_now" | "schedule";
 type InstagramPlacement = "feed" | "story" | "both";
 type MediaEditorTab = "media" | "cover" | "text" | "stories";
+type StoryTextEdge = "start" | "end";
 
 const mediaAspects: CoverAspect[] = ["9:16", "4:5", "3:4", "1:1", "16:9"];
 
@@ -325,6 +326,9 @@ export function PublicationEditor() {
   const [isDirty, setIsDirty] = useState(false);
   const [feedTextConfig, setFeedTextConfig] = useState<TextOverlayConfig>({ ...defaultTextOverlay });
   const [storyTextConfig, setStoryTextConfig] = useState<TextOverlayConfig>({ ...defaultTextOverlay });
+  const [storyStartTextConfig, setStoryStartTextConfig] = useState<TextOverlayConfig>({ ...defaultTextOverlay });
+  const [storyEndTextConfig, setStoryEndTextConfig] = useState<TextOverlayConfig>({ ...defaultTextOverlay });
+  const [storyTextEdge, setStoryTextEdge] = useState<StoryTextEdge>("end");
   const [carouselItems, setCarouselItems] = useState<CarouselItem[]>([]);
   const [stagedCarouselMedia, setStagedCarouselMedia] = useState<Record<string, { key: string; mediaId: string }>>({});
   const carouselUrlsRef = useRef<Set<string>>(new Set());
@@ -606,6 +610,9 @@ export function PublicationEditor() {
     setMediaTab("media");
     setFeedTextConfig({ ...defaultTextOverlay });
     setStoryTextConfig({ ...defaultTextOverlay });
+    setStoryStartTextConfig({ ...defaultTextOverlay });
+    setStoryEndTextConfig({ ...defaultTextOverlay });
+    setStoryTextEdge("end");
     setOutputAspect("9:16");
     if (coverSelection.previewUrl) URL.revokeObjectURL(coverSelection.previewUrl);
     setCoverSelection({ mode: "auto", file: null, previewUrl: null, aspect: "9:16" });
@@ -663,6 +670,9 @@ export function PublicationEditor() {
     setStagedStoryMedia(null);
     setFeedTextConfig({ ...defaultTextOverlay });
     setStoryTextConfig({ ...defaultTextOverlay });
+    setStoryStartTextConfig({ ...defaultTextOverlay });
+    setStoryEndTextConfig({ ...defaultTextOverlay });
+    setStoryTextEdge("end");
     setOutputAspect("4:5");
     setMediaTab("media");
     setInstagramPlacement("feed");
@@ -805,6 +815,9 @@ export function PublicationEditor() {
     setMediaTextTyping(false);
     setFeedTextConfig({ ...defaultTextOverlay });
     setStoryTextConfig({ ...defaultTextOverlay });
+    setStoryStartTextConfig({ ...defaultTextOverlay });
+    setStoryEndTextConfig({ ...defaultTextOverlay });
+    setStoryTextEdge("end");
     setPublishComplete(false);
     setPublishResults([]);
     setPublishedUrl(null);
@@ -942,6 +955,16 @@ export function PublicationEditor() {
       return;
     }
 
+    const sharedStoryTiming = {
+      timingMode: storyTextConfig.timingMode,
+      startMs: storyTextConfig.startMs,
+      endMs: storyTextConfig.endMs,
+    } as const;
+    const storyStartConfig: TextOverlayConfig = { ...storyStartTextConfig, ...sharedStoryTiming };
+    const storyEndConfig: TextOverlayConfig = { ...storyEndTextConfig, ...sharedStoryTiming };
+    const storyRangeHasText = storyTextConfig.timingMode === "range"
+      && (!!storyStartConfig.text.trim() || !!storyEndConfig.text.trim());
+
     const selectedKind: "image" | "video" = fileType ?? (selectedFile?.type.startsWith("video/") ? "video" : "image");
     let baseMediaFile = selectedFile;
     let baseMediaMetadata = mediaMetadata;
@@ -986,20 +1009,52 @@ export function PublicationEditor() {
           });
         };
 
+        const prepareStoryVariant = async () => {
+          if (selectedKind !== "video" || storyTextConfig.timingMode !== "range") {
+            return prepareVariant("9:16", storyTextConfig, "Preparando versão dos Stories...");
+          }
+
+          if (storyRangeHasText) {
+            setSaveMessage("Preparando textos do início e fim dos Stories...");
+            return composeTimedTextLayersOnVideo(
+              selectedFile,
+              [
+                { config: storyStartConfig, edge: "start" },
+                { config: storyEndConfig, edge: "end" },
+              ],
+              (progress, message) => {
+                setUploadProgress(progress);
+                setSaveMessage(message);
+              },
+              "9:16",
+            );
+          }
+
+          if (mediaMatchesAspect(mediaMetadata, "9:16")) return selectedFile;
+          setSaveMessage("Ajustando o vídeo dos Stories para 9:16...");
+          return transcodeVideoToAspect(selectedFile, "9:16", progress => {
+            setUploadProgress(progress.progress);
+            setSaveMessage(progress.message);
+          });
+        };
+
         const baseAspect: CoverAspect = instagramPlacement === "story" ? "9:16" : outputAspect;
         const baseText = instagramPlacement === "story" ? storyTextConfig : feedTextConfig;
-        baseMediaFile = await prepareVariant(
-          baseAspect,
-          baseText,
-          instagramPlacement === "story" ? "Preparando versão dos Stories..." : "Preparando mídia no formato selecionado...",
-        );
+        baseMediaFile = instagramPlacement === "story"
+          ? await prepareStoryVariant()
+          : await prepareVariant(
+              baseAspect,
+              baseText,
+              "Preparando mídia no formato selecionado...",
+            );
         baseMediaMetadata = baseMediaFile === selectedFile ? mediaMetadata : metadataForAspect(mediaMetadata, baseAspect);
 
         if (instagramPlacement === "both") {
           const storyNeedsOwnFile = outputAspect !== "9:16"
+            || storyRangeHasText
             || JSON.stringify(feedTextConfig) !== JSON.stringify(storyTextConfig);
           if (storyNeedsOwnFile) {
-            storyMediaFile = await prepareVariant("9:16", storyTextConfig, "Preparando versão dos Stories...");
+            storyMediaFile = await prepareStoryVariant();
             storyMediaMetadata = storyMediaFile === selectedFile ? mediaMetadata : metadataForAspect(mediaMetadata, "9:16");
           }
         }
@@ -1549,34 +1604,91 @@ export function PublicationEditor() {
             </div>}
 
             {mediaTab === "stories" && canStoriesTab && previewUrl && selectedFile && <div className="mt-3 space-y-2">
-              {fileType === "video" && <TextTimingControl config={storyTextConfig} durationMs={mediaMetadata.durationMs} onChange={config => { setStoryTextConfig(config); setStagedStoryMedia(null); setIsDirty(true); }}/>}
-              <div className={`sticky top-2 z-20 mx-auto aspect-[9/16] overflow-hidden rounded-xl bg-black shadow-sm transition-all sm:static ${mediaTextTyping ? "w-[140px] sm:w-full sm:max-w-[360px]" : "w-full max-w-[360px]"}`}>
-                <PublicationMediaPreview
-                  previewUrl={previewUrl}
-                  fileType={fileType}
-                  textConfig={storyTextConfig}
-                  durationMs={mediaMetadata.durationMs}
-                  fit="cover"
-                  aspect="9:16"
-                  interactive
-                  onTextChange={config => { setStoryTextConfig(config); setStagedStoryMedia(null); setIsDirty(true); }}
-                />
-              </div>
-              <MediaTextEditor
-                sourceFile={selectedFile}
-                sourceUrl={previewUrl}
-                kind={fileType === "video" ? "video" : "image"}
-                width={mediaMetadata.width}
-                height={mediaMetadata.height}
+              {fileType === "video" && <TextTimingControl
+                config={storyTextConfig}
                 durationMs={mediaMetadata.durationMs}
-                title=""
-                value={storyTextConfig}
-                showPreview={false}
-                showTimingControl={false}
-                allowPositionToggle={false}
-                onTypingChange={setMediaTextTyping}
-                onChange={(_file, _nextPreviewUrl, config) => { setStoryTextConfig(config); setStagedStoryMedia(null); setIsDirty(true); }}
-              />
+                onChange={config => {
+                  setStoryTextConfig(config);
+                  setStoryStartTextConfig(current => ({ ...current, timingMode: config.timingMode, startMs: config.startMs, endMs: config.endMs }));
+                  setStoryEndTextConfig(current => ({ ...current, timingMode: config.timingMode, startMs: config.startMs, endMs: config.endMs }));
+                  setStagedStoryMedia(null);
+                  setIsDirty(true);
+                }}
+              />}
+              {(() => {
+                const sharedTiming = { timingMode: storyTextConfig.timingMode, startMs: storyTextConfig.startMs, endMs: storyTextConfig.endMs } as const;
+                const startConfig: TextOverlayConfig = { ...storyStartTextConfig, ...sharedTiming };
+                const endConfig: TextOverlayConfig = { ...storyEndTextConfig, ...sharedTiming };
+                const activeConfig = storyTextConfig.timingMode === "range"
+                  ? (storyTextEdge === "start" ? startConfig : endConfig)
+                  : storyTextConfig;
+                const secondaryConfig = storyTextConfig.timingMode === "range"
+                  ? (storyTextEdge === "start" ? endConfig : startConfig)
+                  : undefined;
+                const activeEdge = storyTextConfig.timingMode === "range" ? storyTextEdge : "both";
+                const secondaryEdge = storyTextEdge === "start" ? "end" : "start";
+
+                const updateActiveStoryText = (config: TextOverlayConfig) => {
+                  if (storyTextConfig.timingMode !== "range") {
+                    setStoryTextConfig(config);
+                  } else if (storyTextEdge === "start") {
+                    setStoryStartTextConfig(config);
+                  } else {
+                    setStoryEndTextConfig(config);
+                  }
+                  setStagedStoryMedia(null);
+                  setIsDirty(true);
+                };
+
+                const edgeSelector = storyTextConfig.timingMode === "range" ? <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-[11px] font-bold text-slate-600">
+                  <span className="text-slate-400">Editar:</span>
+                  {(["start", "end"] as StoryTextEdge[]).map(edge => <label key={edge} className="flex cursor-pointer items-center gap-1.5">
+                    <input
+                      type="radio"
+                      name="story-text-edge"
+                      value={edge}
+                      checked={storyTextEdge === edge}
+                      onChange={() => setStoryTextEdge(edge)}
+                      className="accent-blue-600"
+                    />
+                    {edge === "start" ? "Início" : "Fim"}
+                  </label>)}
+                </div> : undefined;
+
+                return <>
+                  <div className={`sticky top-2 z-20 mx-auto aspect-[9/16] overflow-hidden rounded-xl bg-black shadow-sm transition-all sm:static ${mediaTextTyping ? "w-[140px] sm:w-full sm:max-w-[360px]" : "w-full max-w-[360px]"}`}>
+                    <PublicationMediaPreview
+                      previewUrl={previewUrl}
+                      fileType={fileType}
+                      textConfig={activeConfig}
+                      textEdge={activeEdge}
+                      secondaryTextConfig={secondaryConfig}
+                      secondaryTextEdge={secondaryEdge}
+                      durationMs={mediaMetadata.durationMs}
+                      fit="cover"
+                      aspect="9:16"
+                      interactive
+                      onTextChange={updateActiveStoryText}
+                    />
+                  </div>
+                  <MediaTextEditor
+                    sourceFile={selectedFile}
+                    sourceUrl={previewUrl}
+                    kind={fileType === "video" ? "video" : "image"}
+                    width={mediaMetadata.width}
+                    height={mediaMetadata.height}
+                    durationMs={mediaMetadata.durationMs}
+                    title=""
+                    value={activeConfig}
+                    showPreview={false}
+                    showTimingControl={false}
+                    allowPositionToggle={false}
+                    editorAccessory={edgeSelector}
+                    onTypingChange={setMediaTextTyping}
+                    onChange={(_file, _nextPreviewUrl, config) => updateActiveStoryText(config)}
+                  />
+                </>;
+              })()}
             </div>}
 
           </div> : <div className="mt-4 grid min-w-0 gap-3 sm:grid-cols-3">
@@ -1699,7 +1811,12 @@ export function PublicationEditor() {
                   <MoreHorizontal size={17} className={activeOption.platform === "tiktok" || activeOption.platform === "kwai" ? "text-white/70" : "text-slate-400"}/>
                 </div>
                 <div className="relative bg-gradient-to-br from-indigo-50 via-slate-100 to-violet-100" style={{ aspectRatio: activeOption.platform === "youtube" && activeOption.contentIntent === "LONG_FORM" ? 16 / 9 : activeOption.platform === "instagram" && instagramPlacement === "story" ? 9 / 16 : mediaAspectRatio(outputAspect) }}>
-                  {previewUrl && <PublicationMediaPreview previewUrl={previewUrl} fileType={fileType} textConfig={activeOption.platform === "instagram" && instagramPlacement === "story" ? storyTextConfig : feedTextConfig} durationMs={mediaMetadata.durationMs} posterUrl={coverSelection.previewUrl} carouselItems={carouselPreviewItems} fit={isCarousel ? "cover" : "contain"} aspect={outputAspect}/>}
+                  {previewUrl && <PublicationMediaPreview previewUrl={previewUrl} fileType={fileType} textConfig={activeOption.platform === "instagram" && instagramPlacement === "story"
+                    ? (storyTextConfig.timingMode === "range" ? storyEndConfig : storyTextConfig)
+                    : feedTextConfig}
+                  textEdge={activeOption.platform === "instagram" && instagramPlacement === "story" && storyTextConfig.timingMode === "range" ? "end" : "both"}
+                  secondaryTextConfig={activeOption.platform === "instagram" && instagramPlacement === "story" && storyTextConfig.timingMode === "range" ? storyStartConfig : undefined}
+                  secondaryTextEdge="start" durationMs={mediaMetadata.durationMs} posterUrl={coverSelection.previewUrl} carouselItems={carouselPreviewItems} fit={isCarousel ? "cover" : "contain"} aspect={outputAspect}/>}
                   {!previewUrl && <div className="grid h-full place-items-center text-slate-400"><Play size={30}/></div>}
                   {(activeOption.platform === "tiktok" || activeOption.platform === "kwai") && <PreviewChrome platform={activeOption.platform}/>} 
                 </div>
@@ -1728,7 +1845,7 @@ export function PublicationEditor() {
           </div>
           <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
             <button disabled={saving || !canSaveDraft} onClick={() => void persist("draft")} className="btn-secondary w-full disabled:opacity-50">Salvar rascunho</button>
-            <button disabled={saving || !canSubmit} onClick={() => void persist(mode === "now" ? "publish_now" : "schedule")} className="btn-primary w-full disabled:cursor-not-allowed disabled:opacity-40">{mode === "now" ? <Send size={16}/> : <Clock3 size={16}/>} {saving ? (mode === "now" ? "Publicando..." : "Salvando...") : mode === "now" ? "Publicar agora" : "Agendar publicação"}</button>
+            <button disabled={saving || !canSubmit} onClick={() => void persist(mode === "now" ? "publish_now" : "schedule")} className="btn-primary w-full disabled:cursor-not-allowed disabled:opacity-40">{mode === "now" ? <Send size={16}/> : <Clock3 size={16}/>} {saving ? (mode === "now" ? "Publicando..." : "Salvando...") : mode === "now" ? "Publicar agora" : "Publicar agendamento"}</button>
           </div>
           {saveMessage && <p role="status" className="mt-3 rounded-lg bg-emerald-50 p-3 text-sm font-semibold leading-5 text-emerald-700 sm:text-xs">{saveMessage}</p>}
           {!!publishResults.length && <div className="mt-3 space-y-2">
@@ -1766,7 +1883,12 @@ export function PublicationEditor() {
         <div className="max-h-[80vh] overflow-y-auto bg-slate-50 p-4">
           {activeOption ? <div className={`relative overflow-hidden rounded-xl border border-slate-200 ${activeOption.platform === "tiktok" || activeOption.platform === "kwai" ? "bg-slate-950" : "bg-white"}`}>
             <div className="relative bg-slate-100" style={{ aspectRatio: activeOption.platform === "tiktok" || activeOption.platform === "kwai" || (activeOption.platform === "instagram" && instagramPlacement === "story") ? 9 / 16 : activeOption.platform === "youtube" && activeOption.contentIntent === "LONG_FORM" ? 16 / 9 : mediaAspectRatio(outputAspect) }}>
-              {previewUrl && <PublicationMediaPreview previewUrl={previewUrl} fileType={fileType} textConfig={activeOption.platform === "instagram" && instagramPlacement === "story" ? storyTextConfig : feedTextConfig} durationMs={mediaMetadata.durationMs} posterUrl={coverSelection.previewUrl} carouselItems={carouselPreviewItems} fit={isCarousel ? "cover" : "contain"} aspect={outputAspect}/>}
+              {previewUrl && <PublicationMediaPreview previewUrl={previewUrl} fileType={fileType} textConfig={activeOption.platform === "instagram" && instagramPlacement === "story"
+                    ? (storyTextConfig.timingMode === "range" ? storyEndConfig : storyTextConfig)
+                    : feedTextConfig}
+                  textEdge={activeOption.platform === "instagram" && instagramPlacement === "story" && storyTextConfig.timingMode === "range" ? "end" : "both"}
+                  secondaryTextConfig={activeOption.platform === "instagram" && instagramPlacement === "story" && storyTextConfig.timingMode === "range" ? storyStartConfig : undefined}
+                  secondaryTextEdge="start" durationMs={mediaMetadata.durationMs} posterUrl={coverSelection.previewUrl} carouselItems={carouselPreviewItems} fit={isCarousel ? "cover" : "contain"} aspect={outputAspect}/>}
               {!previewUrl && <div className="grid h-full place-items-center text-slate-400"><Play size={34}/></div>}
               {(activeOption.platform === "tiktok" || activeOption.platform === "kwai") && <PreviewChrome platform={activeOption.platform}/>} 
             </div>
