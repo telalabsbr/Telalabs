@@ -46,11 +46,12 @@ type SaveIntent = "draft" | "publish_now" | "schedule";
 type InstagramPlacement = "feed" | "story" | "both";
 type MediaEditorTab = "media" | "cover" | "text" | "stories";
 
-const mediaAspects: CoverAspect[] = ["9:16", "4:5", "1:1", "16:9"];
+const mediaAspects: CoverAspect[] = ["9:16", "4:5", "3:4", "1:1", "16:9"];
 
 function mediaAspectRatio(aspect: CoverAspect) {
   if (aspect === "9:16") return 9 / 16;
   if (aspect === "4:5") return 4 / 5;
+  if (aspect === "3:4") return 3 / 4;
   if (aspect === "1:1") return 1;
   return 16 / 9;
 }
@@ -68,7 +69,7 @@ function metadataForAspect(metadata: PreparedMediaMetadata, aspect: CoverAspect)
 function loadedAspectLabel(width: number | null | undefined, height: number | null | undefined) {
   if (!width || !height) return null;
   const ratio = width / height;
-  const known: Array<[CoverAspect, number]> = [["9:16", 9 / 16], ["4:5", 4 / 5], ["1:1", 1], ["16:9", 16 / 9]];
+  const known: Array<[CoverAspect, number]> = [["9:16", 9 / 16], ["4:5", 4 / 5], ["3:4", 3 / 4], ["1:1", 1], ["16:9", 16 / 9]];
   const nearest = known.reduce((best, current) => Math.abs(current[1] - ratio) < Math.abs(best[1] - ratio) ? current : best);
   return Math.abs(nearest[1] - ratio) < 0.045 ? nearest[0] : `${width}×${height}`;
 }
@@ -1472,7 +1473,7 @@ export function PublicationEditor() {
 
                 <div className="mt-4 border-t border-slate-200 pt-4">
                   <p className="text-xs font-black text-slate-700">Formato da mídia</p>
-                  <div className="mt-2 grid grid-cols-4 gap-1.5">
+                  <div className="mt-2 grid grid-cols-5 gap-1.5">
                     {mediaAspects.map(aspect => <button key={aspect} type="button" onClick={() => { setOutputAspect(aspect); setCoverSelection(current => ({ ...current, aspect })); setStagedMedia(null); setStagedCover(null); setStagedCarouselMedia({}); setIsDirty(true); }} className={`rounded-lg border px-1.5 py-2 text-xs font-black ${outputAspect === aspect ? "border-blue-500 bg-blue-600 text-white" : "border-slate-200 bg-white text-slate-600"}`}>{aspect}</button>)}
                   </div>
                   {loadedAspectLabel(mediaMetadata.width, mediaMetadata.height) && loadedAspectLabel(mediaMetadata.width, mediaMetadata.height) !== outputAspect && <p className="mt-2 text-[11px] font-semibold text-slate-500">Formato carregado: {loadedAspectLabel(mediaMetadata.width, mediaMetadata.height)}</p>}
