@@ -1,7 +1,7 @@
 "use client";
 
 import { Music2, Search, Volume2, X } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 
 export type InstagramAudioType = "music" | "original_sound";
 
