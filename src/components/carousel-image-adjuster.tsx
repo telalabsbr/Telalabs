@@ -22,6 +22,7 @@ function clamp(value: number, min: number, max: number) {
 function aspectRatio(aspect: MediaAspect) {
   if (aspect === "9:16") return 9 / 16;
   if (aspect === "4:5") return 4 / 5;
+  if (aspect === "3:4") return 3 / 4;
   if (aspect === "1:1") return 1;
   return 16 / 9;
 }
