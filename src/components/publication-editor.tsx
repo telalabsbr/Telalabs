@@ -1677,6 +1677,20 @@ export function PublicationEditor() {
               />
             </div>}
 
+            {mediaTab === "music" && canMusicTab && <div className="mt-3">
+              {instagramPlacement === "both" && <p className="mb-3 rounded-lg border border-blue-100 bg-blue-50 p-2.5 text-[11px] font-semibold leading-4 text-blue-800">A música será aplicada ao Reel do Feed. A cópia publicada nos Stories mantém o áudio original do vídeo.</p>}
+              <InstagramMusicEditor
+                brandId={tenant.activeBrand.id}
+                accounts={instagramMusicAccounts}
+                selections={instagramAudioSelections}
+                onChange={(connectionId, value) => {
+                  setInstagramAudioSelections(current => ({ ...current, [connectionId]: value }));
+                  setSaveMessage("");
+                  setIsDirty(true);
+                }}
+              />
+            </div>}
+
             {mediaTab === "stories" && canStoriesTab && previewUrl && selectedFile && <div className="mt-3 space-y-2">
               {fileType === "video" && <TextTimingControl
                 config={storyTextConfig}
