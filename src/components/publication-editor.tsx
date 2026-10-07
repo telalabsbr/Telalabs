@@ -416,6 +416,7 @@ export function PublicationEditor() {
       const selected: string[] = [];
       const nextTexts: Record<string, string> = {};
       const nextTitles: Record<string, string> = {};
+      const nextAudioSelections: Record<string, InstagramAudioSelection | null> = {};
       const nextTimes: Record<string, string> = {};
       const clockValues: string[] = [];
       let hasInstagramFeedTarget = false;
@@ -427,8 +428,32 @@ export function PublicationEditor() {
           : {};
         const isInstagramStory = target.provider === "instagram" && targetConfig.surface === "story";
         if (target.provider === "instagram") {
-          if (isInstagramStory) hasInstagramStoryTarget = true;
-          else hasInstagramFeedTarget = true;
+          if (isInstagramStory) {
+            hasInstagramStoryTarget = true;
+          } else {
+            hasInstagramFeedTarget = true;
+            const rawAudio = targetConfig.audio_configuration && typeof targetConfig.audio_configuration === "object" && !Array.isArray(targetConfig.audio_configuration)
+              ? targetConfig.audio_configuration as Record<string, unknown>
+              : null;
+            const audioId = typeof rawAudio?.audio_id === "string" ? rawAudio.audio_id : "";
+            if (audioId && target.social_connection_id) {
+              const numericVolume = (value: unknown) => {
+                const parsed = typeof value === "number" ? value : Number(value);
+                return Number.isFinite(parsed) ? Math.max(0, Math.min(100, Math.round(parsed))) : 100;
+              };
+              nextAudioSelections[target.social_connection_id] = {
+                audioId,
+                title: typeof targetConfig.audio_title === "string" && targetConfig.audio_title ? targetConfig.audio_title : "Música do Instagram",
+                artist: typeof targetConfig.audio_artist === "string" ? targetConfig.audio_artist : null,
+                audioType: targetConfig.audio_type === "original_sound" ? "original_sound" : "music",
+                durationMs: null,
+                coverUrl: null,
+                previewUrl: null,
+                audioVolume: numericVolume(rawAudio?.audio_volume),
+                videoVolume: numericVolume(rawAudio?.video_volume),
+              };
+            }
+          }
         }
 
         const optionId = target.provider === "youtube" && target.content_intent_override === "SHORT_FORM"
@@ -459,6 +484,7 @@ export function PublicationEditor() {
       setActiveId(selected[0] ?? "");
       setTexts(nextTexts);
       setTitles(nextTitles);
+      setInstagramAudioSelections(nextAudioSelections);
       setInstagramPlacement(hasInstagramStoryTarget ? (hasInstagramFeedTarget ? "both" : "story") : "feed");
 
       const firstScheduled = targets.find(target => {
