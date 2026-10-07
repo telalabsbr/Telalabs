@@ -24,6 +24,19 @@ export type Database = Omit<GeneratedDatabase, "public"> & {
         Args: { p_media_asset_ids: string[]; p_post_id: string };
         Returns: number;
       };
+      set_instagram_audio_config: {
+        Args: {
+          p_post_id: string;
+          p_connection_id: string;
+          p_audio_id?: string | null;
+          p_audio_volume?: number;
+          p_video_volume?: number;
+          p_audio_title?: string | null;
+          p_audio_artist?: string | null;
+          p_audio_type?: "music" | "original_sound";
+        };
+        Returns: number;
+      };
     };
   };
 };
