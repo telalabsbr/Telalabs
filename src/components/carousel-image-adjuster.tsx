@@ -157,16 +157,12 @@ export function CarouselImageAdjuster({
       }}
     >
       <canvas ref={canvasRef} className="pointer-events-none h-full w-full select-none"/>
-      {items.length > 1 && <>
-        <button type="button" aria-label="Imagem anterior" onClick={event => { event.stopPropagation(); setIndex(current => (current - 1 + items.length) % items.length); }} className="absolute left-2 top-1/2 z-10 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-full bg-slate-950/65 text-white shadow"><ChevronLeft size={17}/></button>
-        <button type="button" aria-label="Próxima imagem" onClick={event => { event.stopPropagation(); setIndex(current => (current + 1) % items.length); }} className="absolute right-2 top-1/2 z-10 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-full bg-slate-950/65 text-white shadow"><ChevronRight size={17}/></button>
-      </>}
       <span className="pointer-events-none absolute right-2 top-2 rounded-full bg-slate-950/65 px-2 py-1 text-[10px] font-black text-white">{safeIndex + 1}/{items.length}</span>
     </div>
 
     <div className="flex items-center justify-between gap-2">
       <details className="group relative">
-        <summary className="grid h-8 w-8 cursor-pointer list-none place-items-center rounded-full border border-slate-200 bg-white text-slate-500"><CircleHelp size={15}/></summary>
+        <summary className="grid h-8 w-8 cursor-pointer list-none place-items-center rounded-full border border-slate-200 bg-white text-slate-500 transition-colors group-open:border-blue-600 group-open:bg-blue-600 group-open:text-white"><CircleHelp size={15}/></summary>
         <div className="absolute left-0 top-10 z-30 w-56 rounded-lg border border-slate-200 bg-white p-2.5 text-[11px] leading-4 text-slate-600 shadow-lg">
           Arraste para reenquadrar. No celular, use dois dedos para aproximar ou reduzir.
         </div>
@@ -177,8 +173,12 @@ export function CarouselImageAdjuster({
       </div>
     </div>
 
-    {items.length > 1 && <div className="flex justify-center gap-1.5">
-      {items.map((entry, dotIndex) => <button key={entry.id} type="button" aria-label={`Ajustar imagem ${dotIndex + 1}`} onClick={() => setIndex(dotIndex)} className={`h-2 w-2 rounded-full ${dotIndex === safeIndex ? "bg-blue-600" : "bg-slate-300"}`}/>)}
+    {items.length > 1 && <div className="flex items-center justify-center gap-1.5">
+      <button type="button" aria-label="Imagem anterior" onClick={() => setIndex(current => (current - 1 + items.length) % items.length)} className="grid h-8 w-8 place-items-center rounded-full border border-slate-200 bg-white text-slate-600"><ChevronLeft size={16}/></button>
+      <div className="flex items-center gap-1.5 px-1">
+        {items.map((entry, dotIndex) => <button key={entry.id} type="button" aria-label={`Ajustar imagem ${dotIndex + 1}`} onClick={() => setIndex(dotIndex)} className={`h-2 w-2 rounded-full ${dotIndex === safeIndex ? "bg-blue-600" : "bg-slate-300"}`}/>)}
+      </div>
+      <button type="button" aria-label="Próxima imagem" onClick={() => setIndex(current => (current + 1) % items.length)} className="grid h-8 w-8 place-items-center rounded-full border border-slate-200 bg-white text-slate-600"><ChevronRight size={16}/></button>
     </div>}
   </div>;
 }
