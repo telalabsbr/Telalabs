@@ -636,6 +636,7 @@ export function PublicationEditor() {
     setStoryStartTextConfig({ ...defaultTextOverlay });
     setStoryEndTextConfig({ ...defaultTextOverlay });
     setStoryTextEdge("end");
+    setInstagramAudioSelections({});
     setOutputAspect("9:16");
     if (coverSelection.previewUrl) URL.revokeObjectURL(coverSelection.previewUrl);
     setCoverSelection({ mode: "auto", file: null, previewUrl: null, aspect: "9:16" });
@@ -696,6 +697,7 @@ export function PublicationEditor() {
     setStoryStartTextConfig({ ...defaultTextOverlay });
     setStoryEndTextConfig({ ...defaultTextOverlay });
     setStoryTextEdge("end");
+    setInstagramAudioSelections({});
     setOutputAspect("4:5");
     setMediaTab("media");
     setInstagramPlacement("feed");
@@ -841,6 +843,7 @@ export function PublicationEditor() {
     setStoryStartTextConfig({ ...defaultTextOverlay });
     setStoryEndTextConfig({ ...defaultTextOverlay });
     setStoryTextEdge("end");
+    setInstagramAudioSelections({});
     setPublishComplete(false);
     setPublishResults([]);
     setPublishedUrl(null);
