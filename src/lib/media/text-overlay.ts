@@ -8,6 +8,7 @@ const MAX_VIDEO_OVERLAY_BYTES = 350 * 1024 * 1024;
 export type OverlayFont = "clean" | "classic" | "modern" | "strong" | "mono" | "hand";
 export type OverlayBackground = "none" | "dark" | "light" | "color";
 export type OverlayTimingMode = "all" | "range";
+export type TextOverlayEdge = "both" | "start" | "end";
 
 export type TextOverlayConfig = {
   text: string;
@@ -141,9 +142,19 @@ export function overlayVisibleAt(config: TextOverlayConfig, currentMs: number, d
   if (config.timingMode !== "range") return true;
   const normalized = normalizeTextOverlay(config, durationMs);
   const end = normalized.endMs ?? durationMs ?? Number.MAX_SAFE_INTEGER;
-  // No modo por trecho, as duas alças representam quanto do começo e quanto do
-  // final exibem o texto. O espaço central entre elas é a área sem texto.
   return currentMs <= normalized.startMs || currentMs >= end;
+}
+
+export function overlayVisibleAtEdge(
+  config: TextOverlayConfig,
+  currentMs: number,
+  durationMs: number | null | undefined,
+  edge: TextOverlayEdge,
+) {
+  if (edge === "both" || config.timingMode !== "range") return overlayVisibleAt(config, currentMs, durationMs);
+  const normalized = normalizeTextOverlay(config, durationMs);
+  const end = normalized.endMs ?? durationMs ?? Number.MAX_SAFE_INTEGER;
+  return edge === "start" ? currentMs <= normalized.startMs : currentMs >= end;
 }
 
 export function drawTextOverlay(
@@ -350,6 +361,107 @@ export async function composeTextOnVideo(
     if (!bytes.byteLength) throw new Error("text_overlay_video_failed");
     onProgress?.(100, "Texto aplicado.");
     return new File([bytes.buffer as ArrayBuffer], `${file.name.replace(/\.[^.]+$/, "") || "video"}-texto.mp4`, {
+      type: "video/mp4",
+      lastModified: Date.now(),
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message === "text_overlay_video_too_large") throw error;
+    throw new Error("text_overlay_video_failed");
+  } finally {
+    ffmpeg.off("progress", progressHandler);
+    ffmpeg.terminate();
+  }
+}
+
+export async function composeTimedTextLayersOnVideo(
+  file: File,
+  layers: Array<{ config: TextOverlayConfig; edge: Exclude<TextOverlayEdge, "both"> }>,
+  onProgress?: (progress: number, message: string) => void,
+  aspect?: MediaAspect,
+) {
+  const activeLayers = layers.filter(layer => layer.config.text.trim());
+  if (!activeLayers.length) return file;
+  if (file.size > MAX_VIDEO_OVERLAY_BYTES) throw new Error("text_overlay_video_too_large");
+
+  const [{ FFmpeg }, { fetchFile, toBlobURL }] = await Promise.all([
+    import("@ffmpeg/ffmpeg"),
+    import("@ffmpeg/util"),
+  ]);
+
+  const sourceDimensions = await getVideoDimensions(file);
+  const dimensions = aspect ? mediaAspectSizes[aspect] : sourceDimensions;
+  const overlayBlobs = await Promise.all(activeLayers.map(layer => createOverlayPng(dimensions.width, dimensions.height, layer.config)));
+  const ffmpeg = new FFmpeg();
+  const inputExt = file.name.match(/\.([a-zA-Z0-9]+)$/)?.[1]?.toLowerCase() || "mp4";
+  const inputName = `input.${inputExt}`;
+  const outputName = "midia-com-textos.mp4";
+
+  const progressHandler = ({ progress }: { progress: number }) => {
+    const bounded = Math.max(0, Math.min(1, Number.isFinite(progress) ? progress : 0));
+    onProgress?.(Math.round(bounded * 100), "Aplicando textos ao vídeo...");
+  };
+  ffmpeg.on("progress", progressHandler);
+
+  try {
+    onProgress?.(1, "Carregando editor de vídeo...");
+    await ffmpeg.load({
+      coreURL: await toBlobURL(`${FFMPEG_CORE_BASE}/ffmpeg-core.js`, "text/javascript"),
+      wasmURL: await toBlobURL(`${FFMPEG_CORE_BASE}/ffmpeg-core.wasm`, "application/wasm"),
+    });
+    await ffmpeg.writeFile(inputName, await fetchFile(file));
+
+    for (let index = 0; index < overlayBlobs.length; index += 1) {
+      await ffmpeg.writeFile(`text-overlay-${index}.png`, await fetchFile(overlayBlobs[index]));
+    }
+
+    const filters: string[] = [];
+    if (aspect) {
+      const target = mediaAspectSizes[aspect];
+      const targetRatio = target.width / target.height;
+      filters.push(`[0:v]scale='if(gt(iw/ih,${targetRatio}),-2,${target.width})':'if(gt(iw/ih,${targetRatio}),${target.height},-2)',crop=${target.width}:${target.height}[base0]`);
+    } else {
+      filters.push("[0:v]null[base0]");
+    }
+
+    let currentLabel = "base0";
+    activeLayers.forEach((layer, index) => {
+      const normalized = normalizeTextOverlay(layer.config);
+      const endMs = normalized.endMs ?? normalized.startMs;
+      const timing = layer.edge === "start"
+        ? `:enable='lte(t,${(normalized.startMs / 1000).toFixed(3)})'`
+        : `:enable='gte(t,${(endMs / 1000).toFixed(3)})'`;
+      const nextLabel = index === activeLayers.length - 1 ? "vout" : `base${index + 1}`;
+      filters.push(`[${currentLabel}][${index + 1}:v]overlay=0:0:format=auto${timing}[${nextLabel}]`);
+      currentLabel = nextLabel;
+    });
+
+    const args = ["-i", inputName];
+    activeLayers.forEach((_, index) => {
+      args.push("-i", `text-overlay-${index}.png`);
+    });
+    args.push(
+      "-filter_complex", filters.join(";"),
+      "-map", "[vout]",
+      "-map", "0:a?",
+      "-c:v", "libx264",
+      "-preset", "veryfast",
+      "-crf", "23",
+      "-c:a", "aac",
+      "-b:a", "160k",
+      "-pix_fmt", "yuv420p",
+      "-movflags", "+faststart",
+      outputName,
+    );
+
+    const exitCode = await ffmpeg.exec(args);
+    if (exitCode !== 0) throw new Error("text_overlay_video_failed");
+
+    const output = await ffmpeg.readFile(outputName);
+    if (typeof output === "string") throw new Error("text_overlay_video_failed");
+    const bytes = new Uint8Array(output);
+    if (!bytes.byteLength) throw new Error("text_overlay_video_failed");
+    onProgress?.(100, "Textos aplicados.");
+    return new File([bytes.buffer as ArrayBuffer], `${file.name.replace(/\.[^.]+$/, "") || "video"}-textos.mp4`, {
       type: "video/mp4",
       lastModified: Date.now(),
     });
