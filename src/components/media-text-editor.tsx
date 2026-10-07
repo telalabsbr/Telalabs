@@ -1,7 +1,7 @@
 "use client";
 
 import { CircleHelp, Type } from "lucide-react";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import {
   defaultTextOverlay,
   overlayVisibleAt,
@@ -32,6 +32,7 @@ export function MediaTextEditor({
   value,
   showTimingControl = true,
   allowPositionToggle = true,
+  editorAccessory,
 }: {
   sourceFile: File;
   sourceUrl: string;
@@ -51,6 +52,7 @@ export function MediaTextEditor({
   value?: TextOverlayConfig;
   showTimingControl?: boolean;
   allowPositionToggle?: boolean;
+  editorAccessory?: ReactNode;
 }) {
   const [internalConfig, setInternalConfig] = useState<TextOverlayConfig>({ ...defaultTextOverlay });
   const config = value ?? internalConfig;
@@ -110,6 +112,7 @@ export function MediaTextEditor({
         setTyping(next);
         onTypingChange?.(next);
       }}
+      afterEmoji={editorAccessory}
     />
 
     {allowPositionToggle && <div className="flex items-center justify-center gap-2">
