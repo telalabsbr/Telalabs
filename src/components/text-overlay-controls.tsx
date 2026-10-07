@@ -1,7 +1,7 @@
 "use client";
 
 import { Check, ChevronDown, ChevronUp, CircleHelp, SmilePlus, Star } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   overlayFontFamilies,
   overlayFontLabels,
@@ -451,11 +451,13 @@ export function TextOverlayControls({
   onChange,
   compact = false,
   onTypingChange,
+  afterEmoji,
 }: {
   config: TextOverlayConfig;
   onChange: (config: TextOverlayConfig) => void;
   compact?: boolean;
   onTypingChange?: (typing: boolean) => void;
+  afterEmoji?: ReactNode;
 }) {
   const [savedStyle, setSavedStyle] = useState<SavedTextStyle | null>(null);
   const [openMenu, setOpenMenu] = useState<"font" | "text" | "background" | null>(null);
@@ -531,7 +533,10 @@ export function TextOverlayControls({
       maxLength={240}
     />
 
-    <InlineEmojiPicker value={config.text} onChange={text => patch({ text })}/>
+    {afterEmoji ? <div className="flex flex-wrap items-center justify-between gap-2">
+      <InlineEmojiPicker value={config.text} onChange={text => patch({ text })}/>
+      {afterEmoji}
+    </div> : <InlineEmojiPicker value={config.text} onChange={text => patch({ text })}/>} 
 
     <div className="grid grid-cols-2 gap-2">
       <div className="min-w-0 text-xs font-bold text-slate-700">Fonte
