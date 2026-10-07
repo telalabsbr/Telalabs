@@ -14,7 +14,7 @@ export const defaultImageTransform: ImageTransform = {
   panY: 0,
 };
 
-const aspectSizes: Record<MediaAspect, { width: number; height: number }> = {
+export const mediaAspectSizes: Record<MediaAspect, { width: number; height: number }> = {
   "9:16": { width: 1080, height: 1920 },
   "4:5": { width: 1080, height: 1350 },
   "1:1": { width: 1080, height: 1080 },
@@ -81,7 +81,7 @@ export async function applyImageTransform(
   const image = await decodeImage(file);
   const sourceWidth = "naturalWidth" in image ? image.naturalWidth : image.width;
   const sourceHeight = "naturalHeight" in image ? image.naturalHeight : image.height;
-  const output = aspectSizes[aspect];
+  const output = mediaAspectSizes[aspect];
   const canvas = document.createElement("canvas");
   canvas.width = output.width;
   canvas.height = output.height;
