@@ -631,14 +631,35 @@ export const instagramPublishAdapter: PublishAdapter = {
       };
     }
 
-    const accessToken = await accessTokenFromContext(context);
-    if (!accessToken) {
+    const requestedAudio = audioConfigurationFromProvider(context.target.provider_config);
+    const directAccessToken = await accessTokenFromContext(context);
+    let requestAuth: InstagramRequestAuth | null = directAccessToken
+      ? {
+          accessToken: directAccessToken,
+          accountId: context.connection.provider_account_id,
+        }
+      : null;
+
+    if (requestedAudio) {
+      requestAuth = await metaAudioRequestAuth(context);
+      if (!requestAuth) {
+        return {
+          outcome: "AUTH_REQUIRED",
+          errorCode: "INSTAGRAM_AUDIO_META_AUTH_REQUIRED",
+          errorMessageSafe: "Reautorize os recursos avançados do Instagram para verificar este Reel com música.",
+        };
+      }
+    }
+
+    if (!requestAuth) {
       return {
         outcome: "AUTH_REQUIRED",
         errorCode: "INSTAGRAM_TOKEN_UNAVAILABLE",
         errorMessageSafe: "A autorização do Instagram expirou ou não está disponível.",
       };
     }
+
+    const { accessToken, baseUrl } = requestAuth;
 
     const container = await existingContainer(job.postTargetId);
     if (container?.state === "PUBLISHED") {
@@ -656,7 +677,7 @@ export const instagramPublishAdapter: PublishAdapter = {
     const providerObjectId = unknownAttempt?.provider_request_id ?? null;
 
     if (unknownCode === "INSTAGRAM_PUBLISH_PERSIST_UNKNOWN" && providerObjectId) {
-      const mediaResponse = await publishedMedia(providerObjectId, accessToken);
+      const mediaResponse = await publishedMedia(providerObjectId, accessToken, baseUrl);
       if (!mediaResponse.ok) return reconcileMetaFailure(mediaResponse);
 
       if (!mediaResponse.data?.id || mediaResponse.data.id !== providerObjectId) {
@@ -710,7 +731,7 @@ export const instagramPublishAdapter: PublishAdapter = {
         unknownCode === "INSTAGRAM_CONTAINER_NOT_RELOADED") &&
       providerObjectId
     ) {
-      const statusResponse = await containerStatus(providerObjectId, accessToken);
+      const statusResponse = await containerStatus(providerObjectId, accessToken, baseUrl);
       if (!statusResponse.ok) return reconcileMetaFailure(statusResponse);
 
       if (statusResponse.data?.status_code === "ERROR" || statusResponse.data?.status_code === "EXPIRED") {
