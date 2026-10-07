@@ -34,10 +34,11 @@ import { prepareMediaFile, type PreparedMediaMetadata } from "@/lib/media/compat
 import { composeTextOnMedia, defaultTextOverlay, type TextOverlayConfig } from "@/lib/media/text-overlay";
 import { VideoCoverEditor, type CoverAspect, type CoverSelection } from "./video-cover-editor";
 import { MediaTextEditor } from "./media-text-editor";
-import { InlineEmojiPicker } from "./text-overlay-controls";
+import { InlineEmojiPicker, TextTimingControl } from "./text-overlay-controls";
 import { PublicationMediaPreview } from "./publication-media-preview";
 import { CarouselImageAdjuster } from "./carousel-image-adjuster";
-import { applyImageTransform, defaultImageTransform, type ImageTransform } from "@/lib/media/image-transform";
+import { applyImageTransform, defaultImageTransform, mediaAspectSizes, type ImageTransform } from "@/lib/media/image-transform";
+import { transcodeVideoToAspect } from "@/lib/media/transcode";
 
 type PublishMode = "now" | "schedule";
 type RetentionMode = "delete" | "library";
@@ -52,6 +53,16 @@ function mediaAspectRatio(aspect: CoverAspect) {
   if (aspect === "4:5") return 4 / 5;
   if (aspect === "1:1") return 1;
   return 16 / 9;
+}
+
+function mediaMatchesAspect(metadata: PreparedMediaMetadata, aspect: CoverAspect) {
+  if (!metadata.width || !metadata.height) return false;
+  return Math.abs(metadata.width / metadata.height - mediaAspectRatio(aspect)) < 0.01;
+}
+
+function metadataForAspect(metadata: PreparedMediaMetadata, aspect: CoverAspect): PreparedMediaMetadata {
+  const size = mediaAspectSizes[aspect];
+  return { ...metadata, width: size.width, height: size.height };
 }
 
 function loadedAspectLabel(width: number | null | undefined, height: number | null | undefined) {
@@ -307,7 +318,6 @@ export function PublicationEditor() {
   const [instagramPlacement, setInstagramPlacement] = useState<InstagramPlacement>("both");
   const [outputAspect, setOutputAspect] = useState<CoverAspect>("9:16");
   const [mediaTab, setMediaTab] = useState<MediaEditorTab>("media");
-  const [mediaTextEditing, setMediaTextEditing] = useState(false);
   const [mediaTextTyping, setMediaTextTyping] = useState(false);
   const [carouselMode, setCarouselMode] = useState(false);
   const [carouselAdjusting, setCarouselAdjusting] = useState(false);
@@ -572,7 +582,6 @@ export function PublicationEditor() {
   useEffect(() => {
     if (mediaTabs.some(item => item.id === mediaTab)) return;
     setMediaTab("media");
-    setMediaTextEditing(false);
     setMediaTextTyping(false);
   }, [mediaTab, canCoverTab, canTextTab, canStoriesTab]);
 
@@ -594,7 +603,6 @@ export function PublicationEditor() {
     carouselUrlsRef.current.clear();
     setCarouselItems([]);
     setMediaTab("media");
-    setMediaTextEditing(false);
     setFeedTextConfig({ ...defaultTextOverlay });
     setStoryTextConfig({ ...defaultTextOverlay });
     setOutputAspect("9:16");
@@ -654,9 +662,8 @@ export function PublicationEditor() {
     setStagedStoryMedia(null);
     setFeedTextConfig({ ...defaultTextOverlay });
     setStoryTextConfig({ ...defaultTextOverlay });
-    setOutputAspect("9:16");
+    setOutputAspect("4:5");
     setMediaTab("media");
-    setMediaTextEditing(false);
     setInstagramPlacement("feed");
     setCarouselMode(true);
     setCarouselAdjusting(false);
@@ -936,49 +943,76 @@ export function PublicationEditor() {
 
     const selectedKind: "image" | "video" = fileType ?? (selectedFile?.type.startsWith("video/") ? "video" : "image");
     let baseMediaFile = selectedFile;
+    let baseMediaMetadata = mediaMetadata;
     let storyMediaFile: File | null = null;
+    let storyMediaMetadata = metadataForAspect(mediaMetadata, "9:16");
     let carouselMediaFiles: File[] = [];
 
     try {
       if (isCarousel) {
         setSaveMessage("Preparando imagens do carrossel...");
         carouselMediaFiles = await Promise.all(carouselItems.map(async item => {
-          const adjustedFile = item.adjusted
-            ? await applyImageTransform(item.file, outputAspect, item.transform)
-            : item.file;
+          const adjustedFile = await applyImageTransform(item.file, outputAspect, item.transform);
           return composeTextOnMedia(adjustedFile, "image", feedTextConfig);
         }));
         baseMediaFile = null;
-      } else if (selectedFile && instagramPlacement === "story" && storyTextConfig.text.trim()) {
-        setSaveMessage(selectedKind === "video" ? "Preparando texto no Story..." : "Preparando imagem do Story...");
-        baseMediaFile = await composeTextOnMedia(selectedFile, selectedKind, storyTextConfig, (progress, message) => {
-          setUploadProgress(progress);
-          setSaveMessage(message);
-        });
-      } else if (selectedFile && instagramPlacement !== "story" && feedTextConfig.text.trim()) {
-        setSaveMessage(selectedKind === "video" ? "Preparando texto no vídeo..." : "Preparando texto na imagem...");
-        baseMediaFile = await composeTextOnMedia(selectedFile, selectedKind, feedTextConfig, (progress, message) => {
-          setUploadProgress(progress);
-          setSaveMessage(message);
-        });
-      }
+      } else if (selectedFile) {
+        const prepareVariant = async (
+          aspect: CoverAspect,
+          textConfig: TextOverlayConfig,
+          label: string,
+        ) => {
+          if (selectedKind === "image") {
+            setSaveMessage(label);
+            const framed = await applyImageTransform(selectedFile, aspect, defaultImageTransform);
+            return composeTextOnMedia(framed, "image", textConfig);
+          }
 
-      if (selectedFile && instagramPlacement === "both" && (storyTextConfig.text.trim() || feedTextConfig.text.trim())) {
-        if (storyTextConfig.text.trim()) {
-          setSaveMessage(selectedKind === "video" ? "Preparando versão dos Stories..." : "Preparando imagem dos Stories...");
-          storyMediaFile = await composeTextOnMedia(selectedFile, selectedKind, storyTextConfig, (progress, message) => {
-            setUploadProgress(progress);
-            setSaveMessage(message);
+          if (textConfig.text.trim()) {
+            setSaveMessage(label);
+            return composeTextOnMedia(selectedFile, "video", textConfig, (progress, message) => {
+              setUploadProgress(progress);
+              setSaveMessage(message);
+            }, aspect);
+          }
+
+          if (mediaMatchesAspect(mediaMetadata, aspect)) return selectedFile;
+
+          setSaveMessage("Ajustando o vídeo ao formato selecionado...");
+          return transcodeVideoToAspect(selectedFile, aspect, progress => {
+            setUploadProgress(progress.progress);
+            setSaveMessage(progress.message);
           });
-        } else {
-          storyMediaFile = selectedFile;
+        };
+
+        const baseAspect: CoverAspect = instagramPlacement === "story" ? "9:16" : outputAspect;
+        const baseText = instagramPlacement === "story" ? storyTextConfig : feedTextConfig;
+        baseMediaFile = await prepareVariant(
+          baseAspect,
+          baseText,
+          instagramPlacement === "story" ? "Preparando versão dos Stories..." : "Preparando mídia no formato selecionado...",
+        );
+        baseMediaMetadata = baseMediaFile === selectedFile ? mediaMetadata : metadataForAspect(mediaMetadata, baseAspect);
+
+        if (instagramPlacement === "both") {
+          const storyNeedsOwnFile = outputAspect !== "9:16"
+            || JSON.stringify(feedTextConfig) !== JSON.stringify(storyTextConfig);
+          if (storyNeedsOwnFile) {
+            storyMediaFile = await prepareVariant("9:16", storyTextConfig, "Preparando versão dos Stories...");
+            storyMediaMetadata = storyMediaFile === selectedFile ? mediaMetadata : metadataForAspect(mediaMetadata, "9:16");
+          }
         }
       }
     } catch (overlayError) {
-      const code = overlayError instanceof Error ? overlayError.message : "text_overlay_failed";
-      setSaveError(code === "text_overlay_video_too_large"
+      const code = overlayError instanceof Error ? overlayError.message : "media_prepare_failed";
+      const message = code === "text_overlay_video_too_large"
         ? "Este vídeo é grande demais para aplicar texto no navegador. Remova o texto do vídeo ou use um arquivo menor."
-        : "Não foi possível preparar o texto sobre a mídia. Revise a edição e tente novamente.");
+        : code === "media_conversion_too_large"
+          ? "Este vídeo é grande demais para ajustar o formato no navegador. Use um arquivo menor ou mantenha uma proporção compatível com o original."
+          : code === "media_conversion_failed"
+            ? "Não foi possível ajustar este vídeo ao formato escolhido. Tente outro arquivo ou um MP4 já compatível."
+            : "Não foi possível preparar a mídia no formato escolhido. Revise a edição e tente novamente.";
+      setSaveError(message);
       setSaveMessage("");
       setUploadProgress(null);
       setSaving(false);
@@ -1005,7 +1039,7 @@ export function PublicationEditor() {
             file: carouselFile,
             brandId: tenant.activeBrand.id,
             retention,
-            metadata: sourceItem.metadata,
+            metadata: metadataForAspect(sourceItem.metadata, outputAspect),
           });
           nextStaged[sourceItem.id] = { key: mediaKey, mediaId: uploaded.mediaId };
           carouselMediaIds.push(uploaded.mediaId);
@@ -1035,7 +1069,7 @@ export function PublicationEditor() {
             file: baseMediaFile,
             brandId: tenant.activeBrand.id,
             retention,
-            metadata: mediaMetadata,
+            metadata: baseMediaMetadata,
             onProgress: progress => {
               setUploadProgress(progress.percent);
               setSaveMessage(`Enviando mídia: ${progress.percent}%`);
@@ -1148,7 +1182,7 @@ export function PublicationEditor() {
             file: storyMediaFile,
             brandId: tenant.activeBrand.id,
             retention,
-            metadata: mediaMetadata,
+            metadata: storyMediaMetadata,
           });
           storyMediaId = uploadedStory.mediaId;
           setStagedStoryMedia({ key: storyKey, mediaId: uploadedStory.mediaId });
@@ -1388,7 +1422,7 @@ export function PublicationEditor() {
               {mediaTabs.map(item => <button
                 key={item.id}
                 type="button"
-                onClick={() => { setMediaTab(item.id); setMediaTextEditing(false); setMediaTextTyping(false); setCarouselAdjusting(false); }}
+                onClick={() => { setMediaTab(item.id); setMediaTextTyping(false); setCarouselAdjusting(false); }}
                 className={`min-w-0 rounded-lg px-1.5 py-2 text-center text-[11px] font-black transition-colors sm:px-3 sm:text-xs ${mediaTab === item.id ? "bg-white text-blue-700 shadow-sm" : "text-slate-500"}`}
               >{item.label}</button>)}
             </div>
@@ -1403,7 +1437,7 @@ export function PublicationEditor() {
                   />
                 : <div
                     className="mx-auto w-full max-w-[360px] overflow-hidden rounded-xl bg-black shadow-sm"
-                    style={{ aspectRatio: isCarousel ? mediaAspectRatio(outputAspect) : mediaMetadata.width && mediaMetadata.height ? mediaMetadata.width / mediaMetadata.height : mediaAspectRatio(outputAspect) }}
+                    style={{ aspectRatio: mediaAspectRatio(outputAspect) }}
                   >
                     {previewUrl ? <PublicationMediaPreview
                       previewUrl={previewUrl}
@@ -1411,7 +1445,7 @@ export function PublicationEditor() {
                       textConfig={{ ...defaultTextOverlay }}
                       durationMs={mediaMetadata.durationMs}
                       carouselItems={carouselPreviewItems}
-                      fit={isCarousel ? "cover" : "contain"}
+                      fit="cover"
                       aspect={outputAspect}
                     /> : <div className="grid h-full place-items-center text-center text-slate-400"><div><Play className="mx-auto" size={28}/><p className="mt-2 px-3 text-xs font-bold">Mídia já vinculada</p></div></div>}
                   </div>}
@@ -1428,18 +1462,18 @@ export function PublicationEditor() {
                   <p className="mt-1 text-xs font-bold text-slate-500">Upload {uploadProgress}%</p>
                 </div>}
 
-                <div className="mt-4 flex flex-wrap gap-2">
+                <div className={`mt-4 ${isCarousel ? "grid grid-cols-3 gap-1.5" : "flex flex-wrap gap-2"}`}>
                   {isCarousel ? <>
-                    <label className="btn-secondary cursor-pointer"><UploadCloud size={15}/> Substituir<input type="file" multiple accept=".jpg,.jpeg,.png,.webp,.avif,.heic,.heif,.bmp,image/jpeg,image/png,image/webp,image/avif,image/heic,image/heif,image/bmp" className="sr-only" onChange={event => void handleCarouselFiles(event.target.files)}/></label>
-                    <label className="btn-secondary cursor-pointer"><Plus size={15}/> Adicionar<input type="file" multiple accept=".jpg,.jpeg,.png,.webp,.avif,.heic,.heif,.bmp,image/jpeg,image/png,image/webp,image/avif,image/heic,image/heif,image/bmp" className="sr-only" onChange={event => void handleAddCarouselFiles(event.target.files)}/></label>
+                    <label className="btn-secondary w-full cursor-pointer justify-center !px-1.5 !py-2 text-[11px] sm:text-xs"><UploadCloud size={14}/> Substituir<input type="file" multiple accept=".jpg,.jpeg,.png,.webp,.avif,.heic,.heif,.bmp,image/jpeg,image/png,image/webp,image/avif,image/heic,image/heif,image/bmp" className="sr-only" onChange={event => void handleCarouselFiles(event.target.files)}/></label>
+                    <label className="btn-secondary w-full cursor-pointer justify-center !px-1.5 !py-2 text-[11px] sm:text-xs"><Plus size={14}/> Adicionar<input type="file" multiple accept=".jpg,.jpeg,.png,.webp,.avif,.heic,.heif,.bmp,image/jpeg,image/png,image/webp,image/avif,image/heic,image/heif,image/bmp" className="sr-only" onChange={event => void handleAddCarouselFiles(event.target.files)}/></label>
                   </> : <label className="btn-secondary cursor-pointer"><UploadCloud size={15}/> Substituir<input type="file" accept=".jpg,.jpeg,.png,.webp,.avif,.heic,.heif,.bmp,.gif,.mp4,.mov,.webm,.avi,.mkv,.mpeg,.mpg,.m4v,.3gp,.ogv,.mp3,.wav,.m4a,.aac,.ogg,.flac,image/jpeg,image/png,image/webp,image/avif,image/heic,image/heif,image/bmp,image/gif,video/mp4,video/quicktime,video/webm,video/x-msvideo,video/x-matroska,video/mpeg,video/x-m4v,video/3gpp,video/ogg,audio/mpeg,audio/wav,audio/mp4,audio/aac,audio/ogg,audio/flac" className="sr-only" onChange={event => handleFile(event.target.files?.[0])}/></label>}
-                  {selectedFile && <button type="button" onClick={removeFile} className="btn-secondary !text-red-600"><Trash2 size={15}/> Cancelar</button>}
+                  {selectedFile && <button type="button" onClick={removeFile} className={`btn-secondary !text-red-600 ${isCarousel ? "w-full justify-center !px-1.5 !py-2 text-[11px] sm:text-xs" : ""}`}><Trash2 size={isCarousel ? 14 : 15}/> Cancelar</button>}
                 </div>
 
                 <div className="mt-4 border-t border-slate-200 pt-4">
                   <p className="text-xs font-black text-slate-700">Formato da mídia</p>
                   <div className="mt-2 grid grid-cols-4 gap-1.5">
-                    {mediaAspects.map(aspect => <button key={aspect} type="button" onClick={() => { setOutputAspect(aspect); setCoverSelection(current => ({ ...current, aspect })); setStagedCover(null); setStagedCarouselMedia({}); setIsDirty(true); }} className={`rounded-lg border px-1.5 py-2 text-xs font-black ${outputAspect === aspect ? "border-blue-500 bg-blue-600 text-white" : "border-slate-200 bg-white text-slate-600"}`}>{aspect}</button>)}
+                    {mediaAspects.map(aspect => <button key={aspect} type="button" onClick={() => { setOutputAspect(aspect); setCoverSelection(current => ({ ...current, aspect })); setStagedMedia(null); setStagedCover(null); setStagedCarouselMedia({}); setIsDirty(true); }} className={`rounded-lg border px-1.5 py-2 text-xs font-black ${outputAspect === aspect ? "border-blue-500 bg-blue-600 text-white" : "border-slate-200 bg-white text-slate-600"}`}>{aspect}</button>)}
                   </div>
                   {loadedAspectLabel(mediaMetadata.width, mediaMetadata.height) && loadedAspectLabel(mediaMetadata.width, mediaMetadata.height) !== outputAspect && <p className="mt-2 text-[11px] font-semibold text-slate-500">Formato carregado: {loadedAspectLabel(mediaMetadata.width, mediaMetadata.height)}</p>}
                 </div>
@@ -1480,8 +1514,9 @@ export function PublicationEditor() {
               />
             </div>}
 
-            {mediaTab === "text" && canTextTab && previewUrl && selectedFile && <div className="mt-3 space-y-3">
-              <div className={`sticky top-2 z-20 mx-auto overflow-hidden rounded-xl bg-black shadow-sm transition-all sm:static ${mediaTextTyping ? "w-[140px] sm:w-full sm:max-w-[360px]" : "w-full max-w-[360px]"} ${mediaTextEditing ? "ring-2 ring-blue-400" : ""}`} style={{ aspectRatio: mediaAspectRatio(outputAspect) }}>
+            {mediaTab === "text" && canTextTab && previewUrl && selectedFile && <div className="mt-3 space-y-2">
+              {fileType === "video" && <TextTimingControl config={feedTextConfig} durationMs={mediaMetadata.durationMs} onChange={config => { setFeedTextConfig(config); setStagedMedia(null); setIsDirty(true); }}/>}
+              <div className={`sticky top-2 z-20 mx-auto overflow-hidden rounded-xl bg-black shadow-sm transition-all sm:static ${mediaTextTyping ? "w-[140px] sm:w-full sm:max-w-[360px]" : "w-full max-w-[360px]"}`} style={{ aspectRatio: mediaAspectRatio(outputAspect) }}>
                 <PublicationMediaPreview
                   previewUrl={previewUrl}
                   fileType={fileType}
@@ -1489,9 +1524,9 @@ export function PublicationEditor() {
                   durationMs={mediaMetadata.durationMs}
                   posterUrl={coverSelection.previewUrl}
                   carouselItems={carouselPreviewItems}
-                  fit={isCarousel ? "cover" : "contain"}
+                  fit="cover"
                   aspect={outputAspect}
-                  interactive={mediaTextEditing}
+                  interactive
                   onTextChange={config => { setFeedTextConfig(config); setStagedMedia(null); setStagedCarouselMedia({}); setIsDirty(true); }}
                 />
               </div>
@@ -1502,24 +1537,27 @@ export function PublicationEditor() {
                 width={mediaMetadata.width}
                 height={mediaMetadata.height}
                 durationMs={mediaMetadata.durationMs}
-                title={isCarousel ? "Texto no carrossel" : fileType === "video" ? "Texto no vídeo" : "Texto na imagem"}
+                title=""
                 value={feedTextConfig}
                 showPreview={false}
-                onEditingChange={setMediaTextEditing}
+                showTimingControl={false}
+                allowPositionToggle={false}
                 onTypingChange={setMediaTextTyping}
                 onChange={(_file, _nextPreviewUrl, config) => { setFeedTextConfig(config); setStagedMedia(null); setStagedCarouselMedia({}); setIsDirty(true); }}
               />
             </div>}
 
-            {mediaTab === "stories" && canStoriesTab && previewUrl && selectedFile && <div className="mt-3 space-y-3">
-              <div className={`sticky top-2 z-20 mx-auto aspect-[9/16] overflow-hidden rounded-xl bg-black shadow-sm transition-all sm:static ${mediaTextTyping ? "w-[140px] sm:w-full sm:max-w-[360px]" : "w-full max-w-[360px]"} ${mediaTextEditing ? "ring-2 ring-blue-400" : ""}`}>
+            {mediaTab === "stories" && canStoriesTab && previewUrl && selectedFile && <div className="mt-3 space-y-2">
+              {fileType === "video" && <TextTimingControl config={storyTextConfig} durationMs={mediaMetadata.durationMs} onChange={config => { setStoryTextConfig(config); setStagedStoryMedia(null); setIsDirty(true); }}/>}
+              <div className={`sticky top-2 z-20 mx-auto aspect-[9/16] overflow-hidden rounded-xl bg-black shadow-sm transition-all sm:static ${mediaTextTyping ? "w-[140px] sm:w-full sm:max-w-[360px]" : "w-full max-w-[360px]"}`}>
                 <PublicationMediaPreview
                   previewUrl={previewUrl}
                   fileType={fileType}
                   textConfig={storyTextConfig}
                   durationMs={mediaMetadata.durationMs}
-                  fit="contain"
-                  interactive={mediaTextEditing}
+                  fit="cover"
+                  aspect="9:16"
+                  interactive
                   onTextChange={config => { setStoryTextConfig(config); setStagedStoryMedia(null); setIsDirty(true); }}
                 />
               </div>
@@ -1530,14 +1568,16 @@ export function PublicationEditor() {
                 width={mediaMetadata.width}
                 height={mediaMetadata.height}
                 durationMs={mediaMetadata.durationMs}
-                title="Texto nos Stories"
+                title=""
                 value={storyTextConfig}
                 showPreview={false}
-                onEditingChange={setMediaTextEditing}
+                showTimingControl={false}
+                allowPositionToggle={false}
                 onTypingChange={setMediaTextTyping}
                 onChange={(_file, _nextPreviewUrl, config) => { setStoryTextConfig(config); setStagedStoryMedia(null); setIsDirty(true); }}
               />
             </div>}
+
           </div> : <div className="mt-4 grid min-w-0 gap-3 sm:grid-cols-3">
             <label className="flex min-h-36 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-indigo-200 bg-indigo-50/40 p-5 text-center transition-colors hover:bg-indigo-50">
               <ImagePlus className="text-indigo-600" size={26}/>
@@ -1575,14 +1615,14 @@ export function PublicationEditor() {
           {!customize ? <div className="mt-4">
             <textarea value={base} onChange={event => { setBase(event.target.value); setSaveMessage(""); setIsDirty(true); }} onInput={event => { event.currentTarget.style.height = "0px"; event.currentTarget.style.height = `${event.currentTarget.scrollHeight}px`; }} placeholder={requiresDescription ? "Escreva a descrição principal aqui..." : "Descrição opcional para organizar esta publicação..."} className="field min-h-36 touch-pan-y resize-none overflow-hidden p-4 text-base sm:text-sm"/>
             <div className="mt-2"><InlineEmojiPicker value={base} onChange={value => { setBase(value); setSaveMessage(""); setIsDirty(true); }}/></div>
-            <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="mt-3">
               <span className="text-sm text-slate-500 sm:text-xs">{base.length} caracteres</span>
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <div className="mt-3 flex flex-col items-center gap-2">
+                <button onClick={adaptAll} disabled={!base.trim() || !selectedOptions.some(option => !(option.platform === "instagram" && instagramPlacement === "story"))} className="btn-primary disabled:cursor-not-allowed disabled:opacity-40"><Sparkles size={16}/> Adaptar para todas as redes</button>
                 <label className="flex items-center gap-2 text-sm font-semibold text-slate-600 sm:text-xs">
                   <input type="checkbox" checked={includeEmojis} onChange={event => { setIncludeEmojis(event.target.checked); setIsDirty(true); }}/>
                   Usar emojis
                 </label>
-                <button onClick={adaptAll} disabled={!base.trim() || !selectedOptions.some(option => !(option.platform === "instagram" && instagramPlacement === "story"))} className="btn-primary disabled:cursor-not-allowed disabled:opacity-40"><Sparkles size={16}/> Adaptar para todas</button>
               </div>
             </div>
           </div> : <div className="mt-4 min-w-0">
@@ -1638,9 +1678,9 @@ export function PublicationEditor() {
           <div className="flex items-center justify-between gap-3 border-b border-slate-200 p-4">
             <div>
               <p className="font-bold text-slate-950">Prévia da publicação</p>
-              <p className="mt-1 text-sm leading-5 text-slate-500 sm:text-xs">Simulação aproximada por rede. A interface oficial pode mudar.</p>
+              <p className="mt-1 text-sm leading-5 text-slate-500 sm:text-xs">Simulação aproximada por rede.<span className="block">A interface oficial pode mudar.</span></p>
             </div>
-            <button type="button" onClick={() => setPreviewOpen(true)} className="btn-secondary !px-3"><Eye size={15}/> Visualizar</button>
+            <button type="button" onClick={() => setPreviewOpen(true)} className="btn-secondary shrink-0 whitespace-nowrap !px-3"><Eye size={15}/> Ver</button>
           </div>
 
           {selectedOptions.length ? <>
