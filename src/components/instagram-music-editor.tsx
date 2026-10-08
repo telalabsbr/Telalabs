@@ -1,6 +1,6 @@
 "use client";
 
-import { Music2, Search, Volume2, X } from "lucide-react";
+import { ExternalLink, Music2, Search, Volume2, X } from "lucide-react";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 
 export type InstagramAudioType = "music" | "original_sound";
@@ -246,6 +246,13 @@ export function InstagramMusicEditor({
               </button>
             </div>
             {item.download_url && <audio className="mt-2 h-8 w-full" controls preload="none" src={item.download_url}/>}
+            {item.on_platform_audio_preview_link && <a
+              href={item.on_platform_audio_preview_link}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-2 inline-flex items-center gap-1 text-[11px] font-black text-blue-700 underline"
+            ><ExternalLink size={12}/> Ouvir no Instagram</a>}
+            {!item.download_url && !item.on_platform_audio_preview_link && <p className="mt-2 text-[11px] leading-4 text-slate-400">A Meta não forneceu prévia reproduzível para este áudio.</p>}
           </div>;
         })}
       </div>}
