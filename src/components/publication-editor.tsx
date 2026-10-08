@@ -1122,7 +1122,7 @@ export function PublicationEditor() {
               (progress, message) => {
                 setUploadProgress(progress);
                 setSaveMessage(message);
-                reportPublishProgress(progressStart + progress * (progressSpan / 100), message);
+                reportPublishProgress(5 + progress * 0.30, message);
               },
               aspect,
             );
@@ -1133,7 +1133,7 @@ export function PublicationEditor() {
           return transcodeVideoToAspect(selectedFile, aspect, progress => {
             setUploadProgress(progress.progress);
             setSaveMessage(progress.message);
-            reportPublishProgress(progressStart + progress.progress * (progressSpan / 100), progress.message);
+            reportPublishProgress(5 + progress.progress * 0.30, progress.message);
           });
         };
 
