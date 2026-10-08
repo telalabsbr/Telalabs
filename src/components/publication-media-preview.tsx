@@ -88,13 +88,16 @@ export function PublicationMediaPreview({
   aspect?: MediaAspect;
 }) {
   const [currentMs, setCurrentMs] = useState(0);
+  const [playing, setPlaying] = useState(false);
   const [index, setIndex] = useState(0);
   const swipeStart = useRef<{ x: number; y: number } | null>(null);
   const isCarousel = carouselItems.length > 1;
   const safeIndex = Math.min(index, Math.max(0, carouselItems.length - 1));
   const activeCarouselItem = isCarousel ? carouselItems[safeIndex] : undefined;
   const activeUrl = activeCarouselItem?.previewUrl ?? previewUrl;
-  const visible = fileType !== "video" || interactive || overlayVisibleAtEdge(textConfig, currentMs, durationMs, textEdge);
+  const visible = fileType !== "video"
+    || (interactive && !playing)
+    || overlayVisibleAtEdge(textConfig, currentMs, durationMs, textEdge);
   const secondaryVisible = !!secondaryTextConfig && (fileType !== "video" || overlayVisibleAtEdge(secondaryTextConfig, currentMs, durationMs, secondaryTextEdge));
 
   useEffect(() => {
@@ -131,10 +134,13 @@ export function PublicationMediaPreview({
       ? <video
           src={activeUrl}
           poster={posterUrl || undefined}
-          className={`h-full w-full ${interactive ? "pointer-events-none" : "touch-pan-y"} ${fit === "contain" ? "object-contain" : "object-cover"}`}
+          className={`h-full w-full touch-pan-y ${fit === "contain" ? "object-contain" : "object-cover"}`}
           controls
           playsInline
           preload="metadata"
+          onPlay={() => setPlaying(true)}
+          onPause={() => setPlaying(false)}
+          onEnded={() => setPlaying(false)}
           onTimeUpdate={event => setCurrentMs(event.currentTarget.currentTime * 1000)}
           onSeeked={event => setCurrentMs(event.currentTarget.currentTime * 1000)}
         />
