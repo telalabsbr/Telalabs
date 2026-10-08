@@ -1569,13 +1569,18 @@ export function PublicationEditor() {
           </div>
 
           {previewUrl || existingMedia ? <div className="mt-4 min-w-0">
-            <div className="grid gap-1 rounded-xl bg-slate-100 p-1" style={{ gridTemplateColumns: `repeat(${mediaTabs.length}, minmax(0, 1fr))` }}>
+            <div
+              className="grid gap-1 rounded-xl bg-slate-100 p-1"
+              style={{ gridTemplateColumns: mediaTabs.map(item => item.compact ? "0.55fr" : item.id === "stories" ? "1.15fr" : "1fr").join(" ") }}
+            >
               {mediaTabs.map(item => <button
                 key={item.id}
                 type="button"
+                aria-label={item.id === "music" ? "Música" : item.label}
+                title={item.id === "music" ? "Música" : undefined}
                 onClick={() => { setMediaTab(item.id); setMediaTextTyping(false); setCarouselAdjusting(false); }}
-                className={`min-w-0 rounded-lg px-1.5 py-2 text-center text-[11px] font-black transition-colors sm:px-3 sm:text-xs ${mediaTab === item.id ? "bg-white text-blue-700 shadow-sm" : "text-slate-500"}`}
-              >{item.label}</button>)}
+                className={`flex min-w-0 items-center justify-center whitespace-nowrap rounded-lg px-1 py-2 text-center text-[11px] font-black transition-colors sm:px-3 sm:text-xs ${mediaTab === item.id ? "bg-white text-blue-700 shadow-sm" : "text-slate-500"}`}
+              >{item.id === "music" ? <Music2 size={16}/> : item.label}</button>)}
             </div>
 
             {mediaTab === "media" && <div className="mt-3">
