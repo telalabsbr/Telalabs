@@ -1078,6 +1078,8 @@ export function PublicationEditor() {
           aspect: CoverAspect,
           textConfig: TextOverlayConfig,
           label: string,
+          progressStart = 5,
+          progressSpan = 30,
         ) => {
           if (selectedKind === "image") {
             setSaveMessage(label);
@@ -1090,7 +1092,7 @@ export function PublicationEditor() {
             return composeTextOnMedia(selectedFile, "video", textConfig, (progress, message) => {
               setUploadProgress(progress);
               setSaveMessage(message);
-              reportPublishProgress(5 + progress * 0.30, message);
+              reportPublishProgress(progressStart + progress * (progressSpan / 100), message);
             }, aspect);
           }
 
@@ -1100,7 +1102,7 @@ export function PublicationEditor() {
           return transcodeVideoToAspect(selectedFile, aspect, progress => {
             setUploadProgress(progress.progress);
             setSaveMessage(progress.message);
-            reportPublishProgress(5 + progress.progress * 0.30, progress.message);
+            reportPublishProgress(progressStart + progress.progress * (progressSpan / 100), progress.message);
           });
         };
 
@@ -1120,7 +1122,7 @@ export function PublicationEditor() {
               (progress, message) => {
                 setUploadProgress(progress);
                 setSaveMessage(message);
-                reportPublishProgress(5 + progress * 0.30, message);
+                reportPublishProgress(progressStart + progress * (progressSpan / 100), message);
               },
               aspect,
             );
@@ -1131,13 +1133,13 @@ export function PublicationEditor() {
           return transcodeVideoToAspect(selectedFile, aspect, progress => {
             setUploadProgress(progress.progress);
             setSaveMessage(progress.message);
-            reportPublishProgress(5 + progress.progress * 0.30, progress.message);
+            reportPublishProgress(progressStart + progress.progress * (progressSpan / 100), progress.message);
           });
         };
 
         const prepareStoryVariant = async () => {
           if (selectedKind !== "video" || storyTextConfig.timingMode !== "range") {
-            return prepareVariant("9:16", storyTextConfig, "Preparando versão dos Stories...");
+            return prepareVariant("9:16", storyTextConfig, "Preparando versão dos Stories...", 35, 25);
           }
 
           if (storyRangeHasText) {
