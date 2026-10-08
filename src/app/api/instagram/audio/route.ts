@@ -18,6 +18,7 @@ type MetaAudioItem = {
   display_artist?: string | null;
   ig_artist?: string | null;
   cover_artwork_thumbnail_url?: string | null;
+  cover_artwork_thumbnail_uri?: string | null;
   cover_artwork_url?: string | null;
   download_url?: string | null;
   preview_url?: string | null;
@@ -28,6 +29,7 @@ type MetaAudioItem = {
 };
 
 type MetaAudioResponse = {
+  audio?: MetaAudioItem[];
   data?: MetaAudioItem[];
   error?: {
     message?: string;
@@ -194,7 +196,7 @@ export async function GET(request: NextRequest) {
     }, { status: result.response.status >= 400 && result.response.status < 500 ? 400 : 502 });
   }
 
-  const audio = (result.body.data ?? []).map(item => {
+  const audio = (result.body.audio ?? result.body.data ?? []).map(item => {
     const audioId = item.audio_id ?? item.id ?? "";
     return {
       audio_id: audioId,
@@ -202,7 +204,7 @@ export async function GET(request: NextRequest) {
       audio_type: item.audio_type === "original_sound" ? "original_sound" : audioType,
       duration_in_ms: item.duration_in_ms ?? item.duration ?? null,
       display_artist: item.display_artist ?? item.ig_artist ?? null,
-      cover_artwork_thumbnail_url: item.cover_artwork_thumbnail_url ?? item.cover_artwork_url ?? null,
+      cover_artwork_thumbnail_url: item.cover_artwork_thumbnail_uri ?? item.cover_artwork_thumbnail_url ?? item.cover_artwork_url ?? null,
       download_url: item.download_url ?? item.preview_url ?? null,
       ig_username: item.ig_username ?? item.creator_username ?? null,
       profile_picture_url: item.profile_picture_url ?? null,
