@@ -346,13 +346,15 @@ export async function composeTextOnVideo(
   try {
     onProgress?.(1, "Carregando editor de vídeo...");
     await withTimeout(
-      ffmpeg.load({
+      (async () => ffmpeg.load({
         coreURL: await toBlobURL(`${FFMPEG_CORE_BASE}/ffmpeg-core.js`, "text/javascript"),
         wasmURL: await toBlobURL(`${FFMPEG_CORE_BASE}/ffmpeg-core.wasm`, "application/wasm"),
-      }),
+      }))(),
       TEXT_ENGINE_LOAD_TIMEOUT_MS,
       "text_overlay_engine_timeout",
-      () => ffmpeg.terminate(),
+      () => {
+        try { ffmpeg.terminate(); } catch { /* ignore */ }
+      },
     );
     await ffmpeg.writeFile(inputName, await fetchFile(file));
     await ffmpeg.writeFile(overlayName, await fetchFile(overlayBlob));
@@ -385,7 +387,9 @@ export async function composeTextOnVideo(
       ]),
       TEXT_RENDER_TIMEOUT_MS,
       "text_overlay_video_timeout",
-      () => ffmpeg.terminate(),
+      () => {
+        try { ffmpeg.terminate(); } catch { /* ignore */ }
+      },
     );
     if (exitCode !== 0) throw new Error("text_overlay_video_failed");
 
@@ -407,7 +411,7 @@ export async function composeTextOnVideo(
     throw new Error("text_overlay_video_failed");
   } finally {
     ffmpeg.off("progress", progressHandler);
-    ffmpeg.terminate();
+    try { ffmpeg.terminate(); } catch { /* ignore */ }
   }
 }
 
@@ -443,13 +447,15 @@ export async function composeTimedTextLayersOnVideo(
   try {
     onProgress?.(1, "Carregando editor de vídeo...");
     await withTimeout(
-      ffmpeg.load({
+      (async () => ffmpeg.load({
         coreURL: await toBlobURL(`${FFMPEG_CORE_BASE}/ffmpeg-core.js`, "text/javascript"),
         wasmURL: await toBlobURL(`${FFMPEG_CORE_BASE}/ffmpeg-core.wasm`, "application/wasm"),
-      }),
+      }))(),
       TEXT_ENGINE_LOAD_TIMEOUT_MS,
       "text_overlay_engine_timeout",
-      () => ffmpeg.terminate(),
+      () => {
+        try { ffmpeg.terminate(); } catch { /* ignore */ }
+      },
     );
     await ffmpeg.writeFile(inputName, await fetchFile(file));
 
@@ -500,7 +506,9 @@ export async function composeTimedTextLayersOnVideo(
       ffmpeg.exec(args),
       TEXT_RENDER_TIMEOUT_MS,
       "text_overlay_video_timeout",
-      () => ffmpeg.terminate(),
+      () => {
+        try { ffmpeg.terminate(); } catch { /* ignore */ }
+      },
     );
     if (exitCode !== 0) throw new Error("text_overlay_video_failed");
 
@@ -522,7 +530,7 @@ export async function composeTimedTextLayersOnVideo(
     throw new Error("text_overlay_video_failed");
   } finally {
     ffmpeg.off("progress", progressHandler);
-    ffmpeg.terminate();
+    try { ffmpeg.terminate(); } catch { /* ignore */ }
   }
 }
 
