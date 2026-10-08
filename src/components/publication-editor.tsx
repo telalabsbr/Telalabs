@@ -312,6 +312,8 @@ export function PublicationEditor() {
   const [saveMessage, setSaveMessage] = useState("");
   const [saveError, setSaveError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [publishProgress, setPublishProgress] = useState<number | null>(null);
+  const [publishProgressMessage, setPublishProgressMessage] = useState("");
   const [fileName, setFileName] = useState("");
   const [fileType, setFileType] = useState<"image" | "video" | null>(null);
   const [fileSize, setFileSize] = useState(0);
@@ -942,6 +944,12 @@ export function PublicationEditor() {
 
   const effectiveText = (option: DestinationOption) => texts[option.id] ?? base;
 
+  function reportPublishProgress(percent: number, message: string) {
+    const bounded = Math.max(0, Math.min(100, Math.round(percent)));
+    setPublishProgress(current => current === null ? bounded : Math.max(current, bounded));
+    setPublishProgressMessage(message);
+  }
+
   const checks: ComposerCheck[] = selectedOptions.map(option => {
     const storyOnly = option.platform === "instagram" && instagramPlacement === "story";
     if (!storyOnly && !base.trim()) return { option, level: "error" as const, text: "Adicione a descrição base" };
@@ -999,6 +1007,8 @@ export function PublicationEditor() {
     setSaving(true);
     setSaveError("");
     setSaveMessage("");
+    setPublishProgress(1);
+    setPublishProgressMessage("Preparando publicação...");
     setPublishComplete(false);
     setPublishResults([]);
     setPublishedUrl(null);
