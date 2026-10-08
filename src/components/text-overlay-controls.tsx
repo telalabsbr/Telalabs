@@ -81,12 +81,12 @@ export function InlineEmojiPicker({
   }
 
   return <div>
-    <div className="flex flex-wrap items-center gap-1.5">
-      {quick.map(emoji => <button type="button" key={emoji} onClick={() => appendEmoji(emoji)} className="grid h-9 w-9 place-items-center rounded-lg border border-slate-200 bg-white text-lg active:scale-95">{emoji}</button>)}
-      <button type="button" aria-label="Escolher mais emojis" title="Mais emojis" onClick={() => setMoreEmojis(current => !current)} className={`grid h-9 w-9 place-items-center rounded-lg border ${moreEmojis ? "border-blue-300 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-600"}`}><SmilePlus size={17}/></button>
+    <div className="flex flex-wrap items-center gap-1">
+      {quick.map(emoji => <button type="button" key={emoji} onClick={() => appendEmoji(emoji)} className="grid h-8 w-8 place-items-center rounded-lg border border-slate-200 bg-white text-base active:scale-95">{emoji}</button>)}
+      <button type="button" aria-label="Escolher mais emojis" title="Mais emojis" onClick={() => setMoreEmojis(current => !current)} className={`grid h-8 w-8 place-items-center rounded-lg border ${moreEmojis ? "border-blue-300 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-600"}`}><SmilePlus size={16}/></button>
     </div>
-    {moreEmojis && <div className="mt-2 grid max-h-40 grid-cols-8 gap-1 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 sm:grid-cols-10">
-      {EMOJI_LIBRARY.map(emoji => <button type="button" key={emoji} onClick={() => appendEmoji(emoji)} className="grid h-9 w-9 place-items-center rounded-lg text-lg hover:bg-slate-100">{emoji}</button>)}
+    {moreEmojis && <div className="mt-1 grid max-h-40 grid-cols-8 gap-1 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 sm:grid-cols-10">
+      {EMOJI_LIBRARY.map(emoji => <button type="button" key={emoji} onClick={() => appendEmoji(emoji)} className="grid h-8 w-8 place-items-center rounded-lg text-base hover:bg-slate-100">{emoji}</button>)}
     </div>}
   </div>;
 }
@@ -250,6 +250,7 @@ export function TextTimingControl({
   const trackRef = useRef<HTMLDivElement | null>(null);
   const start = clamp(config.startMs, 0, duration || 0);
   const end = clamp(config.endMs ?? duration, start, duration || 0);
+  const handlesOverlap = duration > 0 && Math.abs(end - start) / duration < 0.08;
 
   function setMode(mode: "all" | "range") {
     if (mode === "all") {
@@ -278,12 +279,12 @@ export function TextTimingControl({
     <div className="flex items-center gap-2">
       <div className="grid min-w-0 flex-1 grid-cols-2 gap-1.5">
         <button type="button" onClick={() => setMode("all")} className={`rounded-lg px-2 py-2 text-[11px] font-black sm:text-xs ${config.timingMode === "all" ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"}`}>Vídeo todo</button>
-        <button type="button" onClick={() => setMode("range")} className={`rounded-lg px-2 py-2 text-[11px] font-black sm:text-xs ${config.timingMode === "range" ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"}`}>Somente um trecho</button>
+        <button type="button" onClick={() => setMode("range")} className={`rounded-lg px-2 py-2 text-[11px] font-black sm:text-xs ${config.timingMode === "range" ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"}`}>Trechos</button>
       </div>
       <details className="group relative shrink-0">
         <summary className="grid h-8 w-8 cursor-pointer list-none place-items-center rounded-full border border-slate-200 bg-white text-slate-500 transition-colors group-open:border-blue-600 group-open:bg-blue-600 group-open:text-white"><CircleHelp size={14}/></summary>
         <div className="absolute right-0 top-10 z-30 w-56 rounded-lg border border-slate-200 bg-white p-2.5 text-[11px] leading-4 text-slate-600 shadow-lg">
-          Use “Vídeo todo” para manter o texto sempre visível. Em “Somente um trecho”, ajuste quanto tempo ele aparece no começo e no fim.
+          Use “Vídeo todo” para manter o texto sempre visível. Em “Trechos”, ajuste quanto tempo cada texto aparece no começo e no fim.
         </div>
       </details>
     </div>
@@ -307,15 +308,19 @@ export function TextTimingControl({
         >
           <div className="absolute left-0 right-0 top-1/2 h-2 -translate-y-1/2 rounded-full bg-slate-200"/>
           <div className="absolute left-0 top-1/2 h-2 -translate-y-1/2 rounded-l-full bg-blue-500" style={{ width: `${(start / duration) * 100}%` }}/>
-          <div className="absolute right-0 top-1/2 h-2 -translate-y-1/2 rounded-r-full bg-blue-500" style={{ width: `${((duration - end) / duration) * 100}%` }}/>
+          <div className="absolute right-0 top-1/2 h-2 -translate-y-1/2 rounded-r-full bg-blue-400" style={{ width: `${((duration - end) / duration) * 100}%` }}/>
           {(["start", "end"] as const).map(handle => {
             const value = handle === "start" ? start : end;
             return <button
               key={handle}
               type="button"
               aria-label={handle === "start" ? "Início do texto" : "Fim do texto"}
-              className="absolute top-1/2 h-7 w-7 -translate-x-1/2 -translate-y-1/2 touch-none rounded-full border-4 border-white bg-blue-600 shadow-md"
-              style={{ left: `${(value / duration) * 100}%` }}
+              className={`absolute h-7 w-7 -translate-x-1/2 -translate-y-1/2 touch-none rounded-full border-4 border-white shadow-md ${handle === "start" ? "bg-blue-600" : "bg-blue-400"}`}
+              style={{
+                left: `${(value / duration) * 100}%`,
+                top: handlesOverlap ? (handle === "start" ? "calc(50% - 5px)" : "calc(50% + 5px)") : "50%",
+                zIndex: dragging === handle ? 30 : handle === "end" ? 20 : 10,
+              }}
               onPointerDown={event => {
                 event.currentTarget.setPointerCapture(event.pointerId);
                 setDragging(handle);
@@ -522,21 +527,23 @@ export function TextOverlayControls({
   const isCurrentStyleSaved = !!savedStyle && JSON.stringify(savedStyle) === JSON.stringify(currentStyle);
 
   return <div className={compact ? "space-y-3" : "space-y-4"}>
-    <textarea
-      value={config.text}
-      onChange={event => patch({ text: event.target.value })}
-      onFocus={() => onTypingChange?.(true)}
-      onBlur={() => onTypingChange?.(false)}
-      onInput={event => { event.currentTarget.style.height = "0px"; event.currentTarget.style.height = `${event.currentTarget.scrollHeight}px`; }}
-      className="field min-h-20 touch-pan-y resize-none overflow-hidden p-3 text-base sm:text-sm"
-      placeholder="Digite o texto ou adicione um emoji..."
-      maxLength={240}
-    />
+    <div className="space-y-1">
+      <textarea
+        value={config.text}
+        onChange={event => patch({ text: event.target.value })}
+        onFocus={() => onTypingChange?.(true)}
+        onBlur={() => onTypingChange?.(false)}
+        onInput={event => { event.currentTarget.style.height = "0px"; event.currentTarget.style.height = `${event.currentTarget.scrollHeight}px`; }}
+        className="field min-h-20 touch-pan-y resize-none overflow-hidden p-3 text-base sm:text-sm"
+        placeholder="Digite o texto ou adicione um emoji..."
+        maxLength={240}
+      />
 
-    {afterEmoji ? <div className="flex flex-wrap items-center justify-between gap-2">
-      <InlineEmojiPicker value={config.text} onChange={text => patch({ text })}/>
-      {afterEmoji}
-    </div> : <InlineEmojiPicker value={config.text} onChange={text => patch({ text })}/>} 
+      {afterEmoji ? <div className="flex flex-wrap items-center justify-between gap-1.5">
+        <InlineEmojiPicker value={config.text} onChange={text => patch({ text })}/>
+        {afterEmoji}
+      </div> : <InlineEmojiPicker value={config.text} onChange={text => patch({ text })}/>}
+    </div>
 
     <div className="grid grid-cols-2 gap-2">
       <div className="min-w-0 text-xs font-bold text-slate-700">Fonte
