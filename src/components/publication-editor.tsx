@@ -1090,6 +1090,7 @@ export function PublicationEditor() {
             return composeTextOnMedia(selectedFile, "video", textConfig, (progress, message) => {
               setUploadProgress(progress);
               setSaveMessage(message);
+              reportPublishProgress(5 + progress * 0.30, message);
             }, aspect);
           }
 
@@ -1099,6 +1100,7 @@ export function PublicationEditor() {
           return transcodeVideoToAspect(selectedFile, aspect, progress => {
             setUploadProgress(progress.progress);
             setSaveMessage(progress.message);
+            reportPublishProgress(5 + progress.progress * 0.30, progress.message);
           });
         };
 
@@ -1118,6 +1120,7 @@ export function PublicationEditor() {
               (progress, message) => {
                 setUploadProgress(progress);
                 setSaveMessage(message);
+                reportPublishProgress(5 + progress * 0.30, message);
               },
               aspect,
             );
@@ -1128,6 +1131,7 @@ export function PublicationEditor() {
           return transcodeVideoToAspect(selectedFile, aspect, progress => {
             setUploadProgress(progress.progress);
             setSaveMessage(progress.message);
+            reportPublishProgress(5 + progress.progress * 0.30, progress.message);
           });
         };
 
@@ -1147,6 +1151,7 @@ export function PublicationEditor() {
               (progress, message) => {
                 setUploadProgress(progress);
                 setSaveMessage(message);
+                reportPublishProgress(35 + progress * 0.25, message);
               },
               "9:16",
             );
@@ -1157,6 +1162,7 @@ export function PublicationEditor() {
           return transcodeVideoToAspect(selectedFile, "9:16", progress => {
             setUploadProgress(progress.progress);
             setSaveMessage(progress.message);
+            reportPublishProgress(35 + progress.progress * 0.25, progress.message);
           });
         };
 
@@ -1177,10 +1183,13 @@ export function PublicationEditor() {
           }
         }
       }
+      reportPublishProgress(60, "Mídia preparada. Iniciando upload...");
     } catch (overlayError) {
       const code = overlayError instanceof Error ? overlayError.message : "media_prepare_failed";
       const message = code === "text_overlay_video_too_large"
         ? "Este vídeo é grande demais para aplicar texto no navegador. Remova o texto do vídeo ou use um arquivo menor."
+        : code === "text_overlay_video_timeout" || code === "text_overlay_engine_timeout"
+          ? "A preparação do vídeo com texto demorou demais neste aparelho e foi interrompida para não ficar travada. Tente um vídeo menor ou mais curto; nada foi enviado às redes."
         : code === "media_conversion_too_large"
           ? "Este vídeo é grande demais para ajustar o formato no navegador. Use um arquivo menor ou mantenha uma proporção compatível com o original."
           : code === "media_conversion_failed"
@@ -1189,6 +1198,7 @@ export function PublicationEditor() {
       setSaveError(message);
       setSaveMessage("");
       setUploadProgress(null);
+      setPublishProgressMessage("Preparação interrompida.");
       setSaving(false);
       return;
     }
