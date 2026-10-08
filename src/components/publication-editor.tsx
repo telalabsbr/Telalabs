@@ -1671,36 +1671,95 @@ export function PublicationEditor() {
             </div>}
 
             {mediaTab === "text" && canTextTab && previewUrl && selectedFile && <div className="mt-3 space-y-2">
-              {fileType === "video" && <TextTimingControl config={feedTextConfig} durationMs={mediaMetadata.durationMs} onChange={config => { setFeedTextConfig(config); setStagedMedia(null); setIsDirty(true); }}/>}
-              <div className={`sticky top-2 z-20 mx-auto overflow-hidden rounded-xl bg-black shadow-sm transition-all sm:static ${mediaTextTyping ? "w-[140px] sm:w-full sm:max-w-[360px]" : "w-full max-w-[360px]"}`} style={{ aspectRatio: mediaAspectRatio(outputAspect) }}>
-                <PublicationMediaPreview
-                  previewUrl={previewUrl}
-                  fileType={fileType}
-                  textConfig={feedTextConfig}
-                  durationMs={mediaMetadata.durationMs}
-                  posterUrl={coverSelection.previewUrl}
-                  carouselItems={carouselPreviewItems}
-                  fit="cover"
-                  aspect={outputAspect}
-                  interactive
-                  onTextChange={config => { setFeedTextConfig(config); setStagedMedia(null); setStagedCarouselMedia({}); setIsDirty(true); }}
-                />
-              </div>
-              <MediaTextEditor
-                sourceFile={selectedFile}
-                sourceUrl={previewUrl}
-                kind={fileType === "video" ? "video" : "image"}
-                width={mediaMetadata.width}
-                height={mediaMetadata.height}
+              {fileType === "video" && <TextTimingControl
+                config={feedTextConfig}
                 durationMs={mediaMetadata.durationMs}
-                title=""
-                value={feedTextConfig}
-                showPreview={false}
-                showTimingControl={false}
-                allowPositionToggle={false}
-                onTypingChange={setMediaTextTyping}
-                onChange={(_file, _nextPreviewUrl, config) => { setFeedTextConfig(config); setStagedMedia(null); setStagedCarouselMedia({}); setIsDirty(true); }}
-              />
+                onChange={config => {
+                  setFeedTextConfig(config);
+                  setFeedStartTextConfig(current => ({ ...current, timingMode: config.timingMode, startMs: config.startMs, endMs: config.endMs }));
+                  setFeedEndTextConfig(current => ({ ...current, timingMode: config.timingMode, startMs: config.startMs, endMs: config.endMs }));
+                  setStagedMedia(null);
+                  setStagedCarouselMedia({});
+                  setIsDirty(true);
+                }}
+              />}
+              {(() => {
+                const sharedTiming = { timingMode: feedTextConfig.timingMode, startMs: feedTextConfig.startMs, endMs: feedTextConfig.endMs } as const;
+                const startConfig: TextOverlayConfig = { ...feedStartTextConfig, ...sharedTiming };
+                const endConfig: TextOverlayConfig = { ...feedEndTextConfig, ...sharedTiming };
+                const activeConfig = feedTextConfig.timingMode === "range"
+                  ? (feedTextEdge === "start" ? startConfig : endConfig)
+                  : feedTextConfig;
+                const secondaryConfig = feedTextConfig.timingMode === "range"
+                  ? (feedTextEdge === "start" ? endConfig : startConfig)
+                  : undefined;
+                const activeEdge = feedTextConfig.timingMode === "range" ? feedTextEdge : "both";
+                const secondaryEdge = feedTextEdge === "start" ? "end" : "start";
+
+                const updateActiveFeedText = (config: TextOverlayConfig) => {
+                  if (feedTextConfig.timingMode !== "range") {
+                    setFeedTextConfig(config);
+                  } else if (feedTextEdge === "start") {
+                    setFeedStartTextConfig(config);
+                  } else {
+                    setFeedEndTextConfig(config);
+                  }
+                  setStagedMedia(null);
+                  setStagedCarouselMedia({});
+                  setIsDirty(true);
+                };
+
+                const edgeSelector = feedTextConfig.timingMode === "range" ? <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-[11px] font-bold text-slate-600">
+                  <span className="text-slate-500">Editar texto:</span>
+                  {(["start", "end"] as TextEdge[]).map(edge => <label key={edge} className="flex cursor-pointer items-center gap-1.5">
+                    <input
+                      type="radio"
+                      name="feed-text-edge"
+                      value={edge}
+                      checked={feedTextEdge === edge}
+                      onChange={() => setFeedTextEdge(edge)}
+                      className="accent-blue-600"
+                    />
+                    {edge === "start" ? "Início" : "Fim"}
+                  </label>)}
+                </div> : undefined;
+
+                return <>
+                  <div className={`sticky top-2 z-20 mx-auto overflow-hidden rounded-xl bg-black shadow-sm transition-all sm:static ${mediaTextTyping ? "w-[140px] sm:w-full sm:max-w-[360px]" : "w-full max-w-[360px]"}`} style={{ aspectRatio: mediaAspectRatio(outputAspect) }}>
+                    <PublicationMediaPreview
+                      previewUrl={previewUrl}
+                      fileType={fileType}
+                      textConfig={activeConfig}
+                      textEdge={activeEdge}
+                      secondaryTextConfig={secondaryConfig}
+                      secondaryTextEdge={secondaryEdge}
+                      durationMs={mediaMetadata.durationMs}
+                      posterUrl={coverSelection.previewUrl}
+                      carouselItems={carouselPreviewItems}
+                      fit="cover"
+                      aspect={outputAspect}
+                      interactive
+                      onTextChange={updateActiveFeedText}
+                    />
+                  </div>
+                  <MediaTextEditor
+                    sourceFile={selectedFile}
+                    sourceUrl={previewUrl}
+                    kind={fileType === "video" ? "video" : "image"}
+                    width={mediaMetadata.width}
+                    height={mediaMetadata.height}
+                    durationMs={mediaMetadata.durationMs}
+                    title=""
+                    value={activeConfig}
+                    showPreview={false}
+                    showTimingControl={false}
+                    allowPositionToggle={false}
+                    editorAccessory={edgeSelector}
+                    onTypingChange={setMediaTextTyping}
+                    onChange={(_file, _nextPreviewUrl, config) => updateActiveFeedText(config)}
+                  />
+                </>;
+              })()}
             </div>}
 
             {mediaTab === "music" && canMusicTab && <div className="mt-3">
@@ -1755,7 +1814,7 @@ export function PublicationEditor() {
                 };
 
                 const edgeSelector = storyTextConfig.timingMode === "range" ? <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-[11px] font-bold text-slate-600">
-                  <span className="text-slate-400">Editar:</span>
+                  <span className="text-slate-500">Editar texto:</span>
                   {(["start", "end"] as TextEdge[]).map(edge => <label key={edge} className="flex cursor-pointer items-center gap-1.5">
                     <input
                       type="radio"
