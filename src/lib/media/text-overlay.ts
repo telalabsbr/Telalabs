@@ -4,6 +4,30 @@ import { mediaAspectSizes, type MediaAspect } from "./image-transform";
 
 const FFMPEG_CORE_BASE = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/umd";
 const MAX_VIDEO_OVERLAY_BYTES = 350 * 1024 * 1024;
+const TEXT_ENGINE_LOAD_TIMEOUT_MS = 45_000;
+const TEXT_RENDER_TIMEOUT_MS = 180_000;
+
+async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  code: string,
+  onTimeout?: () => void,
+) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          try { onTimeout?.(); } catch { /* ignore */ }
+          reject(new Error(code));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 
 export type OverlayFont = "clean" | "classic" | "modern" | "strong" | "mono" | "hand";
 export type OverlayBackground = "none" | "dark" | "light" | "color";
@@ -321,10 +345,15 @@ export async function composeTextOnVideo(
 
   try {
     onProgress?.(1, "Carregando editor de vídeo...");
-    await ffmpeg.load({
-      coreURL: await toBlobURL(`${FFMPEG_CORE_BASE}/ffmpeg-core.js`, "text/javascript"),
-      wasmURL: await toBlobURL(`${FFMPEG_CORE_BASE}/ffmpeg-core.wasm`, "application/wasm"),
-    });
+    await withTimeout(
+      ffmpeg.load({
+        coreURL: await toBlobURL(`${FFMPEG_CORE_BASE}/ffmpeg-core.js`, "text/javascript"),
+        wasmURL: await toBlobURL(`${FFMPEG_CORE_BASE}/ffmpeg-core.wasm`, "application/wasm"),
+      }),
+      TEXT_ENGINE_LOAD_TIMEOUT_MS,
+      "text_overlay_engine_timeout",
+      () => ffmpeg.terminate(),
+    );
     await ffmpeg.writeFile(inputName, await fetchFile(file));
     await ffmpeg.writeFile(overlayName, await fetchFile(overlayBlob));
 
@@ -340,19 +369,24 @@ export async function composeTextOnVideo(
       filterComplex = `[0:v]scale='if(gt(iw/ih,${targetRatio}),-2,${target.width})':'if(gt(iw/ih,${targetRatio}),${target.height},-2)',crop=${target.width}:${target.height}[base];[base][1:v]overlay=0:0:format=auto${timing}`;
     }
 
-    const exitCode = await ffmpeg.exec([
-      "-i", inputName,
-      "-i", overlayName,
-      "-filter_complex", filterComplex,
-      "-c:v", "libx264",
-      "-preset", "veryfast",
-      "-crf", "23",
-      "-c:a", "aac",
-      "-b:a", "160k",
-      "-pix_fmt", "yuv420p",
-      "-movflags", "+faststart",
-      outputName,
-    ]);
+    const exitCode = await withTimeout(
+      ffmpeg.exec([
+        "-i", inputName,
+        "-i", overlayName,
+        "-filter_complex", filterComplex,
+        "-c:v", "libx264",
+        "-preset", "ultrafast",
+        "-crf", "25",
+        "-c:a", "aac",
+        "-b:a", "160k",
+        "-pix_fmt", "yuv420p",
+        "-movflags", "+faststart",
+        outputName,
+      ]),
+      TEXT_RENDER_TIMEOUT_MS,
+      "text_overlay_video_timeout",
+      () => ffmpeg.terminate(),
+    );
     if (exitCode !== 0) throw new Error("text_overlay_video_failed");
 
     const output = await ffmpeg.readFile(outputName);
@@ -365,7 +399,11 @@ export async function composeTextOnVideo(
       lastModified: Date.now(),
     });
   } catch (error) {
-    if (error instanceof Error && error.message === "text_overlay_video_too_large") throw error;
+    if (error instanceof Error && [
+      "text_overlay_video_too_large",
+      "text_overlay_video_timeout",
+      "text_overlay_engine_timeout",
+    ].includes(error.message)) throw error;
     throw new Error("text_overlay_video_failed");
   } finally {
     ffmpeg.off("progress", progressHandler);
@@ -404,10 +442,15 @@ export async function composeTimedTextLayersOnVideo(
 
   try {
     onProgress?.(1, "Carregando editor de vídeo...");
-    await ffmpeg.load({
-      coreURL: await toBlobURL(`${FFMPEG_CORE_BASE}/ffmpeg-core.js`, "text/javascript"),
-      wasmURL: await toBlobURL(`${FFMPEG_CORE_BASE}/ffmpeg-core.wasm`, "application/wasm"),
-    });
+    await withTimeout(
+      ffmpeg.load({
+        coreURL: await toBlobURL(`${FFMPEG_CORE_BASE}/ffmpeg-core.js`, "text/javascript"),
+        wasmURL: await toBlobURL(`${FFMPEG_CORE_BASE}/ffmpeg-core.wasm`, "application/wasm"),
+      }),
+      TEXT_ENGINE_LOAD_TIMEOUT_MS,
+      "text_overlay_engine_timeout",
+      () => ffmpeg.terminate(),
+    );
     await ffmpeg.writeFile(inputName, await fetchFile(file));
 
     for (let index = 0; index < overlayBlobs.length; index += 1) {
@@ -444,8 +487,8 @@ export async function composeTimedTextLayersOnVideo(
       "-map", "[vout]",
       "-map", "0:a?",
       "-c:v", "libx264",
-      "-preset", "veryfast",
-      "-crf", "23",
+      "-preset", "ultrafast",
+      "-crf", "25",
       "-c:a", "aac",
       "-b:a", "160k",
       "-pix_fmt", "yuv420p",
@@ -453,7 +496,12 @@ export async function composeTimedTextLayersOnVideo(
       outputName,
     );
 
-    const exitCode = await ffmpeg.exec(args);
+    const exitCode = await withTimeout(
+      ffmpeg.exec(args),
+      TEXT_RENDER_TIMEOUT_MS,
+      "text_overlay_video_timeout",
+      () => ffmpeg.terminate(),
+    );
     if (exitCode !== 0) throw new Error("text_overlay_video_failed");
 
     const output = await ffmpeg.readFile(outputName);
@@ -466,7 +514,11 @@ export async function composeTimedTextLayersOnVideo(
       lastModified: Date.now(),
     });
   } catch (error) {
-    if (error instanceof Error && error.message === "text_overlay_video_too_large") throw error;
+    if (error instanceof Error && [
+      "text_overlay_video_too_large",
+      "text_overlay_video_timeout",
+      "text_overlay_engine_timeout",
+    ].includes(error.message)) throw error;
     throw new Error("text_overlay_video_failed");
   } finally {
     ffmpeg.off("progress", progressHandler);
