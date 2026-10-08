@@ -175,9 +175,14 @@ export function InstagramMusicEditor({
       <p className="mt-1 text-xs leading-5 text-amber-800">A biblioteca de músicas do Instagram exige a conexão via Facebook Login. Ative os recursos avançados desta conta em Contas sociais.</p>
       <a href="/conexoes" className="btn-secondary mt-3 !px-3 !py-2 text-xs">Ir para Contas sociais</a>
     </div> : <>
-      <div className="grid grid-cols-2 gap-2">
-        <button type="button" onClick={() => setAudioType("music")} className={`rounded-lg border px-3 py-2 text-xs font-black ${audioType === "music" ? "border-blue-500 bg-blue-600 text-white" : "border-slate-200 bg-white text-slate-600"}`}>Músicas</button>
-        <button type="button" onClick={() => setAudioType("original_sound")} className={`rounded-lg border px-3 py-2 text-xs font-black ${audioType === "original_sound" ? "border-blue-500 bg-blue-600 text-white" : "border-slate-200 bg-white text-slate-600"}`}>Áudios originais</button>
+      <div>
+        <div className="grid grid-cols-2 gap-2">
+          <button type="button" onClick={() => setAudioType("music")} className={`rounded-lg border px-3 py-2 text-xs font-black ${audioType === "music" ? "border-blue-500 bg-blue-600 text-white" : "border-slate-200 bg-white text-slate-600"}`}>Músicas</button>
+          <button type="button" onClick={() => setAudioType("original_sound")} className={`rounded-lg border px-3 py-2 text-xs font-black ${audioType === "original_sound" ? "border-blue-500 bg-blue-600 text-white" : "border-slate-200 bg-white text-slate-600"}`}>Áudios originais</button>
+        </div>
+        <p className="mt-1.5 text-[11px] leading-4 text-slate-500">{audioType === "music"
+          ? "Músicas: catálogo autorizado pela Meta para uso por integrações."
+          : "Áudios originais: sons criados em Reels, como falas, memes e outros áudios reutilizáveis."}</p>
       </div>
 
       <form onSubmit={submit} className="flex gap-2">
