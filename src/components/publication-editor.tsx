@@ -1476,6 +1476,7 @@ export function PublicationEditor() {
       reportPublishProgress(100, "Envio iniciado. Você já pode sair desta tela.");
       setSaveMessage("Envio iniciado. Você já pode sair desta tela; o worker continuará a publicação em segundo plano.");
     } else if (editingPostId) {
+      reportPublishProgress(100, "Alterações salvas.");
       setSaveMessage("Alterações salvas no Supabase real.");
     } else if (intent === "draft") {
       reportPublishProgress(100, "Rascunho salvo.");
@@ -2055,6 +2056,17 @@ export function PublicationEditor() {
             <button disabled={saving || !canSaveDraft} onClick={() => void persist("draft")} className="btn-secondary w-full disabled:opacity-50">Salvar rascunho</button>
             <button disabled={saving || !canSubmit} onClick={() => void persist(mode === "now" ? "publish_now" : "schedule")} className="btn-primary w-full disabled:cursor-not-allowed disabled:opacity-40">{mode === "now" ? <Send size={16}/> : <Clock3 size={16}/>} {saving ? (mode === "now" ? "Publicando..." : "Salvando...") : mode === "now" ? "Publicar agora" : "Publicar agendamento"}</button>
           </div>
+          {publishProgress !== null && <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <div className="flex items-center justify-between gap-3 text-xs font-black text-slate-700">
+              <span className="truncate">{publishProgressMessage || "Preparando publicação..."}</span>
+              <span className="shrink-0">{publishProgress}%</span>
+            </div>
+            <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200">
+              <div className="h-full rounded-full bg-blue-600 transition-[width] duration-300" style={{ width: `${publishProgress}%` }}/>
+            </div>
+            {saving && publishProgress < 100 && <p className="mt-2 text-[11px] leading-4 text-slate-500">Mantenha esta tela aberta durante a preparação e o upload.</p>}
+            {!saving && publishProgress === 100 && mode === "now" && <p className="mt-2 text-[11px] font-bold leading-4 text-emerald-700">A publicação já foi entregue ao worker. Você pode fechar ou sair desta tela.</p>}
+          </div>}
           {saveMessage && <p role="status" className="mt-3 rounded-lg bg-emerald-50 p-3 text-sm font-semibold leading-5 text-emerald-700 sm:text-xs">{saveMessage}</p>}
           {!!publishResults.length && <div className="mt-3 space-y-2">
             <p className="text-xs font-black uppercase tracking-wide text-slate-400">Resultado por destino</p>
