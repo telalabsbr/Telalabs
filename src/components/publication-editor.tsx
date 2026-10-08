@@ -1220,6 +1220,7 @@ export function PublicationEditor() {
         }
         setUploadProgress(Math.round((index / carouselMediaFiles.length) * 100));
         setSaveMessage(`Enviando imagem ${index + 1} de ${carouselMediaFiles.length}...`);
+        reportPublishProgress(60 + (index / Math.max(1, carouselMediaFiles.length)) * 18, `Enviando imagem ${index + 1} de ${carouselMediaFiles.length}...`);
         try {
           const uploaded = await uploadMediaFile({
             file: carouselFile,
@@ -1259,6 +1260,7 @@ export function PublicationEditor() {
             onProgress: progress => {
               setUploadProgress(progress.percent);
               setSaveMessage(`Enviando mídia: ${progress.percent}%`);
+              reportPublishProgress(60 + progress.percent * 0.18, `Enviando mídia: ${progress.percent}%`);
             },
           });
           mediaId = uploaded.mediaId;
@@ -1282,6 +1284,7 @@ export function PublicationEditor() {
       }
     }
 
+    reportPublishProgress(79, "Salvando publicação...");
     const timezone = tenant.activeBrand.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
     const targets = selectedOptions.map(option => {
       const targetTime = differentTimes ? (destinationTimes[option.id] || time) : time;
@@ -1324,6 +1327,7 @@ export function PublicationEditor() {
     }
 
     const postId = typeof result.data === "string" ? result.data : editingPostId;
+    reportPublishProgress(83, "Publicação salva. Vinculando mídia e configurações...");
 
     if (!isCarousel && instagramPlacement === "both" && hasInstagram && postId) {
       const storyResult = await client.rpc("add_instagram_story_targets", { p_post_id: postId });
@@ -1391,6 +1395,9 @@ export function PublicationEditor() {
             brandId: tenant.activeBrand.id,
             retention,
             metadata: storyMediaMetadata,
+            onProgress: progress => {
+              reportPublishProgress(84 + progress.percent * 0.08, `Enviando versão dos Stories: ${progress.percent}%`);
+            },
           });
           storyMediaId = uploadedStory.mediaId;
           setStagedStoryMedia({ key: storyKey, mediaId: uploadedStory.mediaId });
@@ -1425,6 +1432,9 @@ export function PublicationEditor() {
             file: coverSelection.file,
             brandId: tenant.activeBrand.id,
             retention,
+            onProgress: progress => {
+              reportPublishProgress(92 + progress.percent * 0.04, `Enviando capa: ${progress.percent}%`);
+            },
           });
           coverMediaId = uploadedCover.mediaId;
           setStagedCover({ key: coverKey, mediaId: uploadedCover.mediaId });
@@ -1447,67 +1457,31 @@ export function PublicationEditor() {
     }
 
     if (intent === "publish_now" && postId) {
-      setSaveMessage("Mídia pronta. Enviando para as redes habilitadas...");
+      reportPublishProgress(98, "Publicação pronta. Entregando ao worker...");
+      setSaveMessage("Publicação pronta. Iniciando envio para as redes...");
 
-      let publishResponse: Response;
-      try {
-        publishResponse = await fetch("/api/publications/publish-now", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ post_id: postId }),
-        });
-      } catch {
-        setSaveError("A publicação foi salva, mas o envio externo não pôde ser iniciado agora.");
-        setSaving(false);
-        return;
-      }
+      // A chamada direta acelera o envio quando a tela continua aberta, mas não
+      // bloqueia mais o usuário por até vários minutos. O worker periódico do
+      // Supabase é o fallback durável e processa jobs pendentes a cada minuto.
+      void fetch("/api/publications/publish-now", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ post_id: postId }),
+        keepalive: true,
+      }).catch(() => undefined);
 
-      const publishResult = await publishResponse.json().catch(() => null) as null | {
-        claimed?: number;
-        succeeded?: number;
-        needsRetry?: number;
-        failed?: number;
-        message?: string;
-        error?: string;
-        results?: PublishAttemptResult[];
-      };
-
-      if (!publishResponse.ok) {
-        setSaveError(publishResult?.message ?? "A publicação foi salva, mas o worker não conseguiu iniciar o envio externo.");
-        setSaving(false);
-        return;
-      }
-
-      const results = publishResult?.results ?? [];
-      setPublishResults(results);
-
-      const succeeded = publishResult?.succeeded ?? 0;
-      const needsRetry = publishResult?.needsRetry ?? 0;
-      const failed = publishResult?.failed ?? 0;
-
-      if (failed > 0) {
-        const firstFailure = results.find(item => !["SUCCEEDED", "TRANSIENT_FAILURE", "RATE_LIMIT", "UNKNOWN"].includes(item.outcome));
-        if (succeeded > 0) setSaveMessage(`${succeeded} destino${succeeded === 1 ? " publicado" : "s publicados"}.`);
-        setSaveError(firstFailure?.errorMessage ?? "A publicação foi processada, mas um dos destinos recusou o conteúdo.");
-      } else if (needsRetry > 0) {
-        setSaveMessage(succeeded > 0
-          ? `${succeeded} destino${succeeded === 1 ? " publicado" : "s publicados"}. ${needsRetry} aguardando nova tentativa automática.`
-          : "Envio iniciado. Os destinos abaixo aguardam nova tentativa automática.");
-      } else if (succeeded > 0) {
-        const directUrl = results.find(item => item.outcome === "SUCCEEDED" && item.publicUrl)?.publicUrl ?? null;
-        setPublishedUrl(directUrl);
-        setPublishComplete(true);
-        setSaveMessage(succeeded === 1 ? "Publicado." : `${succeeded} destinos publicados.`);
-      } else if ((publishResult?.claimed ?? 0) === 0) {
-        setSaveMessage("Publicação salva. Não havia destino habilitado aguardando envio neste instante.");
-      } else {
-        setSaveMessage("Publicação processada pelo worker.");
-      }
+      setPublishResults([]);
+      setPublishedUrl(null);
+      setPublishComplete(false);
+      reportPublishProgress(100, "Envio iniciado. Você já pode sair desta tela.");
+      setSaveMessage("Envio iniciado. Você já pode sair desta tela; o worker continuará a publicação em segundo plano.");
     } else if (editingPostId) {
       setSaveMessage("Alterações salvas no Supabase real.");
     } else if (intent === "draft") {
+      reportPublishProgress(100, "Rascunho salvo.");
       setSaveMessage("Rascunho salvo no Supabase real.");
     } else {
+      reportPublishProgress(100, "Agendamento salvo.");
       setSaveMessage("Agendamento salvo. O worker enviará cada destino no horário configurado.");
     }
 
