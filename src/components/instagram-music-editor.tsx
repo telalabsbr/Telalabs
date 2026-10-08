@@ -61,6 +61,7 @@ export function InstagramMusicEditor({
   const [results, setResults] = useState<AudioResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [loadedOnce, setLoadedOnce] = useState(false);
   const [needsReauthorization, setNeedsReauthorization] = useState(false);
 
   useEffect(() => {
@@ -79,6 +80,7 @@ export function InstagramMusicEditor({
 
     setLoading(true);
     setError("");
+    setLoadedOnce(false);
     setNeedsReauthorization(false);
 
     try {
@@ -114,6 +116,7 @@ export function InstagramMusicEditor({
       }
 
       setResults(body?.audio ?? []);
+      setLoadedOnce(true);
     } catch {
       setError("Não foi possível carregar músicas do Instagram agora.");
       setResults([]);
@@ -125,6 +128,7 @@ export function InstagramMusicEditor({
   useEffect(() => {
     setResults([]);
     setError("");
+    setLoadedOnce(false);
     setNeedsReauthorization(false);
   }, [activeAccountId, audioType]);
 
@@ -243,7 +247,9 @@ export function InstagramMusicEditor({
 
       {!loading && !error && !results.length && <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-center">
         <Music2 className="mx-auto text-slate-400" size={22}/>
-        <p className="mt-2 text-xs font-semibold leading-5 text-slate-500">Busque uma faixa ou toque em “Ver em alta”. O catálogo pode ser diferente do aplicativo do Instagram.</p>
+        <p className="mt-2 text-xs font-semibold leading-5 text-slate-500">{loadedOnce
+          ? "Nenhum áudio autorizado pela Meta foi encontrado para esta busca. Tente outro termo ou veja os áudios em alta."
+          : "Busque uma faixa ou toque em “Ver em alta”. O catálogo pode ser diferente do aplicativo do Instagram."}</p>
       </div>}
     </>}
   </div>;
