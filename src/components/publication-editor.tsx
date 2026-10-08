@@ -1028,6 +1028,16 @@ export function PublicationEditor() {
       return;
     }
 
+    const sharedFeedTiming = {
+      timingMode: feedTextConfig.timingMode,
+      startMs: feedTextConfig.startMs,
+      endMs: feedTextConfig.endMs,
+    } as const;
+    const feedStartConfig: TextOverlayConfig = { ...feedStartTextConfig, ...sharedFeedTiming };
+    const feedEndConfig: TextOverlayConfig = { ...feedEndTextConfig, ...sharedFeedTiming };
+    const feedRangeHasText = feedTextConfig.timingMode === "range"
+      && (!!feedStartConfig.text.trim() || !!feedEndConfig.text.trim());
+
     const sharedStoryTiming = {
       timingMode: storyTextConfig.timingMode,
       startMs: storyTextConfig.startMs,
@@ -1082,6 +1092,35 @@ export function PublicationEditor() {
           });
         };
 
+        const prepareFeedVariant = async (aspect: CoverAspect) => {
+          if (selectedKind !== "video" || feedTextConfig.timingMode !== "range") {
+            return prepareVariant(aspect, feedTextConfig, "Preparando mídia no formato selecionado...");
+          }
+
+          if (feedRangeHasText) {
+            setSaveMessage("Preparando textos do início e fim...");
+            return composeTimedTextLayersOnVideo(
+              selectedFile,
+              [
+                { config: feedStartConfig, edge: "start" },
+                { config: feedEndConfig, edge: "end" },
+              ],
+              (progress, message) => {
+                setUploadProgress(progress);
+                setSaveMessage(message);
+              },
+              aspect,
+            );
+          }
+
+          if (mediaMatchesAspect(mediaMetadata, aspect)) return selectedFile;
+          setSaveMessage("Ajustando o vídeo ao formato selecionado...");
+          return transcodeVideoToAspect(selectedFile, aspect, progress => {
+            setUploadProgress(progress.progress);
+            setSaveMessage(progress.message);
+          });
+        };
+
         const prepareStoryVariant = async () => {
           if (selectedKind !== "video" || storyTextConfig.timingMode !== "range") {
             return prepareVariant("9:16", storyTextConfig, "Preparando versão dos Stories...");
@@ -1112,18 +1151,14 @@ export function PublicationEditor() {
         };
 
         const baseAspect: CoverAspect = instagramPlacement === "story" ? "9:16" : outputAspect;
-        const baseText = instagramPlacement === "story" ? storyTextConfig : feedTextConfig;
         baseMediaFile = instagramPlacement === "story"
           ? await prepareStoryVariant()
-          : await prepareVariant(
-              baseAspect,
-              baseText,
-              "Preparando mídia no formato selecionado...",
-            );
+          : await prepareFeedVariant(baseAspect);
         baseMediaMetadata = baseMediaFile === selectedFile ? mediaMetadata : metadataForAspect(mediaMetadata, baseAspect);
 
         if (instagramPlacement === "both") {
           const storyNeedsOwnFile = outputAspect !== "9:16"
+            || feedRangeHasText
             || storyRangeHasText
             || JSON.stringify(feedTextConfig) !== JSON.stringify(storyTextConfig);
           if (storyNeedsOwnFile) {
