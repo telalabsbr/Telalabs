@@ -15,6 +15,7 @@ import {
   Library,
   MessageCircle,
   MoreHorizontal,
+  Music2,
   Play,
   Plus,
   Repeat2,
@@ -49,7 +50,7 @@ type RetentionMode = "delete" | "library";
 type SaveIntent = "draft" | "publish_now" | "schedule";
 type InstagramPlacement = "feed" | "story" | "both";
 type MediaEditorTab = "media" | "cover" | "text" | "music" | "stories";
-type StoryTextEdge = "start" | "end";
+type TextEdge = "start" | "end";
 
 const mediaAspects: CoverAspect[] = ["9:16", "4:5", "3:4", "1:1", "16:9"];
 
@@ -329,10 +330,13 @@ export function PublicationEditor() {
   const [carouselAdjusting, setCarouselAdjusting] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
   const [feedTextConfig, setFeedTextConfig] = useState<TextOverlayConfig>({ ...defaultTextOverlay });
+  const [feedStartTextConfig, setFeedStartTextConfig] = useState<TextOverlayConfig>({ ...defaultTextOverlay });
+  const [feedEndTextConfig, setFeedEndTextConfig] = useState<TextOverlayConfig>({ ...defaultTextOverlay });
+  const [feedTextEdge, setFeedTextEdge] = useState<TextEdge>("end");
   const [storyTextConfig, setStoryTextConfig] = useState<TextOverlayConfig>({ ...defaultTextOverlay });
   const [storyStartTextConfig, setStoryStartTextConfig] = useState<TextOverlayConfig>({ ...defaultTextOverlay });
   const [storyEndTextConfig, setStoryEndTextConfig] = useState<TextOverlayConfig>({ ...defaultTextOverlay });
-  const [storyTextEdge, setStoryTextEdge] = useState<StoryTextEdge>("end");
+  const [storyTextEdge, setStoryTextEdge] = useState<TextEdge>("end");
   const [instagramAudioSelections, setInstagramAudioSelections] = useState<Record<string, InstagramAudioSelection | null>>({});
   const [carouselItems, setCarouselItems] = useState<CarouselItem[]>([]);
   const [stagedCarouselMedia, setStagedCarouselMedia] = useState<Record<string, { key: string; mediaId: string }>>({});
@@ -617,6 +621,14 @@ export function PublicationEditor() {
       handle: option.handle,
       advancedEnabled: option.advancedEnabled === true,
     }));
+  const feedPreviewTiming = {
+    timingMode: feedTextConfig.timingMode,
+    startMs: feedTextConfig.startMs,
+    endMs: feedTextConfig.endMs,
+  } as const;
+  const feedStartPreviewConfig: TextOverlayConfig = { ...feedStartTextConfig, ...feedPreviewTiming };
+  const feedEndPreviewConfig: TextOverlayConfig = { ...feedEndTextConfig, ...feedPreviewTiming };
+
   const storyPreviewTiming = {
     timingMode: storyTextConfig.timingMode,
     startMs: storyTextConfig.startMs,
@@ -625,12 +637,12 @@ export function PublicationEditor() {
   const storyStartPreviewConfig: TextOverlayConfig = { ...storyStartTextConfig, ...storyPreviewTiming };
   const storyEndPreviewConfig: TextOverlayConfig = { ...storyEndTextConfig, ...storyPreviewTiming };
 
-  const mediaTabs: Array<{ id: MediaEditorTab; label: string }> = [
+  const mediaTabs: Array<{ id: MediaEditorTab; label: string; compact?: boolean }> = [
     { id: "media", label: "Mídia" },
     ...(canCoverTab ? [{ id: "cover" as const, label: "Capa" }] : []),
     ...(canTextTab ? [{ id: "text" as const, label: "Texto" }] : []),
-    ...(canMusicTab ? [{ id: "music" as const, label: "Música" }] : []),
     ...(canStoriesTab ? [{ id: "stories" as const, label: "Stories" }] : []),
+    ...(canMusicTab ? [{ id: "music" as const, label: "Música", compact: true }] : []),
   ];
 
   useEffect(() => {
@@ -658,6 +670,9 @@ export function PublicationEditor() {
     setCarouselItems([]);
     setMediaTab("media");
     setFeedTextConfig({ ...defaultTextOverlay });
+    setFeedStartTextConfig({ ...defaultTextOverlay });
+    setFeedEndTextConfig({ ...defaultTextOverlay });
+    setFeedTextEdge("end");
     setStoryTextConfig({ ...defaultTextOverlay });
     setStoryStartTextConfig({ ...defaultTextOverlay });
     setStoryEndTextConfig({ ...defaultTextOverlay });
@@ -719,6 +734,9 @@ export function PublicationEditor() {
     setStagedCover(null);
     setStagedStoryMedia(null);
     setFeedTextConfig({ ...defaultTextOverlay });
+    setFeedStartTextConfig({ ...defaultTextOverlay });
+    setFeedEndTextConfig({ ...defaultTextOverlay });
+    setFeedTextEdge("end");
     setStoryTextConfig({ ...defaultTextOverlay });
     setStoryStartTextConfig({ ...defaultTextOverlay });
     setStoryEndTextConfig({ ...defaultTextOverlay });
@@ -865,6 +883,9 @@ export function PublicationEditor() {
     setCarouselAdjusting(false);
     setMediaTextTyping(false);
     setFeedTextConfig({ ...defaultTextOverlay });
+    setFeedStartTextConfig({ ...defaultTextOverlay });
+    setFeedEndTextConfig({ ...defaultTextOverlay });
+    setFeedTextEdge("end");
     setStoryTextConfig({ ...defaultTextOverlay });
     setStoryStartTextConfig({ ...defaultTextOverlay });
     setStoryEndTextConfig({ ...defaultTextOverlay });
@@ -1730,7 +1751,7 @@ export function PublicationEditor() {
 
                 const edgeSelector = storyTextConfig.timingMode === "range" ? <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-[11px] font-bold text-slate-600">
                   <span className="text-slate-400">Editar:</span>
-                  {(["start", "end"] as StoryTextEdge[]).map(edge => <label key={edge} className="flex cursor-pointer items-center gap-1.5">
+                  {(["start", "end"] as TextEdge[]).map(edge => <label key={edge} className="flex cursor-pointer items-center gap-1.5">
                     <input
                       type="radio"
                       name="story-text-edge"
