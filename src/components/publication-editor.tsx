@@ -1935,7 +1935,7 @@ export function PublicationEditor() {
 
           {!customize ? <div className="mt-4">
             <textarea value={base} onChange={event => { setBase(event.target.value); setSaveMessage(""); setIsDirty(true); }} onInput={event => { event.currentTarget.style.height = "0px"; event.currentTarget.style.height = `${event.currentTarget.scrollHeight}px`; }} placeholder={requiresDescription ? "Escreva a descrição principal aqui..." : "Descrição opcional para organizar esta publicação..."} className="field min-h-36 touch-pan-y resize-none overflow-hidden p-4 text-base sm:text-sm"/>
-            <div className="mt-2"><InlineEmojiPicker value={base} onChange={value => { setBase(value); setSaveMessage(""); setIsDirty(true); }}/></div>
+            <div className="mt-1"><InlineEmojiPicker value={base} onChange={value => { setBase(value); setSaveMessage(""); setIsDirty(true); }}/></div>
             <div className="mt-3">
               <span className="text-sm text-slate-500 sm:text-xs">{base.length} caracteres</span>
               <div className="mt-3 flex flex-col items-center gap-2">
@@ -1955,7 +1955,7 @@ export function PublicationEditor() {
                 {activeOption.platform === "youtube" && activeOption.contentIntent === "LONG_FORM" && <label className="mb-3 block text-sm font-bold text-slate-700 sm:text-xs">Título do YouTube<input value={titles[activeOption.id] ?? ""} onChange={event => { setTitles(current => ({ ...current, [activeOption.id]: event.target.value })); setIsDirty(true); }} className="field mt-1 px-3 text-base sm:text-sm" placeholder="Título do vídeo"/></label>}
                 {activeOption.platform === "instagram" && instagramPlacement === "story" ? <div className="rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm leading-6 text-blue-800">Este Instagram está configurado para publicar somente em Stories. A descrição não é enviada para o Story.</div> : <>
                   <textarea value={effectiveText(activeOption)} onChange={event => { setTexts(current => ({ ...current, [activeOption.id]: event.target.value })); setIsDirty(true); }} onInput={event => { event.currentTarget.style.height = "0px"; event.currentTarget.style.height = `${event.currentTarget.scrollHeight}px`; }} className="field min-h-36 touch-pan-y resize-none overflow-hidden p-4 text-base sm:text-sm"/>
-                  <div className="mt-2"><InlineEmojiPicker value={effectiveText(activeOption)} onChange={value => { setTexts(current => ({ ...current, [activeOption.id]: value })); setIsDirty(true); }}/></div>
+                  <div className="mt-1"><InlineEmojiPicker value={effectiveText(activeOption)} onChange={value => { setTexts(current => ({ ...current, [activeOption.id]: value })); setIsDirty(true); }}/></div>
                   <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
                     <p className="text-sm text-slate-500 sm:text-xs">Personalização de {activeOption.label}.</p>
                     <button onClick={() => { setTexts(current => ({ ...current, [activeOption.id]: base })); setIsDirty(true); }} className="text-sm font-bold text-indigo-600 sm:text-xs">Usar descrição base</button>
@@ -2021,9 +2021,13 @@ export function PublicationEditor() {
                 <div className="relative bg-gradient-to-br from-indigo-50 via-slate-100 to-violet-100" style={{ aspectRatio: activeOption.platform === "youtube" && activeOption.contentIntent === "LONG_FORM" ? 16 / 9 : activeOption.platform === "instagram" && instagramPlacement === "story" ? 9 / 16 : mediaAspectRatio(outputAspect) }}>
                   {previewUrl && <PublicationMediaPreview previewUrl={previewUrl} fileType={fileType} textConfig={activeOption.platform === "instagram" && instagramPlacement === "story"
                     ? (storyTextConfig.timingMode === "range" ? storyEndPreviewConfig : storyTextConfig)
-                    : feedTextConfig}
-                  textEdge={activeOption.platform === "instagram" && instagramPlacement === "story" && storyTextConfig.timingMode === "range" ? "end" : "both"}
-                  secondaryTextConfig={activeOption.platform === "instagram" && instagramPlacement === "story" && storyTextConfig.timingMode === "range" ? storyStartPreviewConfig : undefined}
+                    : (feedTextConfig.timingMode === "range" ? feedEndPreviewConfig : feedTextConfig)}
+                  textEdge={activeOption.platform === "instagram" && instagramPlacement === "story" && storyTextConfig.timingMode === "range"
+                    ? "end"
+                    : feedTextConfig.timingMode === "range" ? "end" : "both"}
+                  secondaryTextConfig={activeOption.platform === "instagram" && instagramPlacement === "story" && storyTextConfig.timingMode === "range"
+                    ? storyStartPreviewConfig
+                    : feedTextConfig.timingMode === "range" ? feedStartPreviewConfig : undefined}
                   secondaryTextEdge="start" durationMs={mediaMetadata.durationMs} posterUrl={coverSelection.previewUrl} carouselItems={carouselPreviewItems} fit={isCarousel ? "cover" : "contain"} aspect={outputAspect}/>}
                   {!previewUrl && <div className="grid h-full place-items-center text-slate-400"><Play size={30}/></div>}
                   {(activeOption.platform === "tiktok" || activeOption.platform === "kwai") && <PreviewChrome platform={activeOption.platform}/>} 
@@ -2093,9 +2097,13 @@ export function PublicationEditor() {
             <div className="relative bg-slate-100" style={{ aspectRatio: activeOption.platform === "tiktok" || activeOption.platform === "kwai" || (activeOption.platform === "instagram" && instagramPlacement === "story") ? 9 / 16 : activeOption.platform === "youtube" && activeOption.contentIntent === "LONG_FORM" ? 16 / 9 : mediaAspectRatio(outputAspect) }}>
               {previewUrl && <PublicationMediaPreview previewUrl={previewUrl} fileType={fileType} textConfig={activeOption.platform === "instagram" && instagramPlacement === "story"
                     ? (storyTextConfig.timingMode === "range" ? storyEndPreviewConfig : storyTextConfig)
-                    : feedTextConfig}
-                  textEdge={activeOption.platform === "instagram" && instagramPlacement === "story" && storyTextConfig.timingMode === "range" ? "end" : "both"}
-                  secondaryTextConfig={activeOption.platform === "instagram" && instagramPlacement === "story" && storyTextConfig.timingMode === "range" ? storyStartPreviewConfig : undefined}
+                    : (feedTextConfig.timingMode === "range" ? feedEndPreviewConfig : feedTextConfig)}
+                  textEdge={activeOption.platform === "instagram" && instagramPlacement === "story" && storyTextConfig.timingMode === "range"
+                    ? "end"
+                    : feedTextConfig.timingMode === "range" ? "end" : "both"}
+                  secondaryTextConfig={activeOption.platform === "instagram" && instagramPlacement === "story" && storyTextConfig.timingMode === "range"
+                    ? storyStartPreviewConfig
+                    : feedTextConfig.timingMode === "range" ? feedStartPreviewConfig : undefined}
                   secondaryTextEdge="start" durationMs={mediaMetadata.durationMs} posterUrl={coverSelection.previewUrl} carouselItems={carouselPreviewItems} fit={isCarousel ? "cover" : "contain"} aspect={outputAspect}/>}
               {!previewUrl && <div className="grid h-full place-items-center text-slate-400"><Play size={34}/></div>}
               {(activeOption.platform === "tiktok" || activeOption.platform === "kwai") && <PreviewChrome platform={activeOption.platform}/>} 
