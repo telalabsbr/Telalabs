@@ -7,6 +7,14 @@ const MAX_VIDEO_OVERLAY_BYTES = 350 * 1024 * 1024;
 const TEXT_ENGINE_LOAD_TIMEOUT_MS = 45_000;
 const TEXT_RENDER_TIMEOUT_MS = 180_000;
 
+export const textOverlayVideoSizes: Record<MediaAspect, { width: number; height: number }> = {
+  "9:16": { width: 720, height: 1280 },
+  "4:5": { width: 768, height: 960 },
+  "3:4": { width: 720, height: 960 },
+  "1:1": { width: 960, height: 960 },
+  "16:9": { width: 1280, height: 720 },
+};
+
 async function withTimeout<T>(
   promise: Promise<T>,
   timeoutMs: number,
@@ -329,7 +337,7 @@ export async function composeTextOnVideo(
   ]);
 
   const sourceDimensions = await getVideoDimensions(file);
-  const dimensions = aspect ? mediaAspectSizes[aspect] : sourceDimensions;
+  const dimensions = aspect ? textOverlayVideoSizes[aspect] : sourceDimensions;
   const overlayBlob = await createOverlayPng(dimensions.width, dimensions.height, config);
   const ffmpeg = new FFmpeg();
   const inputExt = file.name.match(/\.([a-zA-Z0-9]+)$/)?.[1]?.toLowerCase() || "mp4";
@@ -366,9 +374,9 @@ export async function composeTextOnVideo(
 
     let filterComplex = `[0:v][1:v]overlay=0:0:format=auto${timing}`;
     if (aspect) {
-      const target = mediaAspectSizes[aspect];
+      const target = textOverlayVideoSizes[aspect];
       const targetRatio = target.width / target.height;
-      filterComplex = `[0:v]scale='if(gt(iw/ih,${targetRatio}),-2,${target.width})':'if(gt(iw/ih,${targetRatio}),${target.height},-2)',crop=${target.width}:${target.height}[base];[base][1:v]overlay=0:0:format=auto${timing}`;
+      filterComplex = `[0:v]scale='if(gt(iw/ih,${targetRatio}),-2,${target.width})':'if(gt(iw/ih,${targetRatio}),${target.height},-2)',crop=${target.width}:${target.height},fps=30[base];[base][1:v]overlay=0:0:format=auto${timing}`;
     }
 
     const exitCode = await withTimeout(
@@ -378,7 +386,8 @@ export async function composeTextOnVideo(
         "-filter_complex", filterComplex,
         "-c:v", "libx264",
         "-preset", "ultrafast",
-        "-crf", "25",
+        "-tune", "zerolatency",
+        "-crf", "26",
         "-c:a", "aac",
         "-b:a", "160k",
         "-pix_fmt", "yuv420p",
@@ -431,7 +440,7 @@ export async function composeTimedTextLayersOnVideo(
   ]);
 
   const sourceDimensions = await getVideoDimensions(file);
-  const dimensions = aspect ? mediaAspectSizes[aspect] : sourceDimensions;
+  const dimensions = aspect ? textOverlayVideoSizes[aspect] : sourceDimensions;
   const overlayBlobs = await Promise.all(activeLayers.map(layer => createOverlayPng(dimensions.width, dimensions.height, layer.config)));
   const ffmpeg = new FFmpeg();
   const inputExt = file.name.match(/\.([a-zA-Z0-9]+)$/)?.[1]?.toLowerCase() || "mp4";
@@ -465,9 +474,9 @@ export async function composeTimedTextLayersOnVideo(
 
     const filters: string[] = [];
     if (aspect) {
-      const target = mediaAspectSizes[aspect];
+      const target = textOverlayVideoSizes[aspect];
       const targetRatio = target.width / target.height;
-      filters.push(`[0:v]scale='if(gt(iw/ih,${targetRatio}),-2,${target.width})':'if(gt(iw/ih,${targetRatio}),${target.height},-2)',crop=${target.width}:${target.height}[base0]`);
+      filters.push(`[0:v]scale='if(gt(iw/ih,${targetRatio}),-2,${target.width})':'if(gt(iw/ih,${targetRatio}),${target.height},-2)',crop=${target.width}:${target.height},fps=30[base0]`);
     } else {
       filters.push("[0:v]null[base0]");
     }
@@ -494,7 +503,8 @@ export async function composeTimedTextLayersOnVideo(
       "-map", "0:a?",
       "-c:v", "libx264",
       "-preset", "ultrafast",
-      "-crf", "25",
+      "-tune", "zerolatency",
+      "-crf", "26",
       "-c:a", "aac",
       "-b:a", "160k",
       "-pix_fmt", "yuv420p",
