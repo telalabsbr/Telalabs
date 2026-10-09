@@ -1,6 +1,6 @@
 "use client";
 
-import { mediaAspectSizes, type MediaAspect } from "./image-transform";
+import { type MediaAspect } from "./image-transform";
 
 const FFMPEG_CORE_BASE = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/umd";
 const MAX_VIDEO_OVERLAY_BYTES = 350 * 1024 * 1024;
