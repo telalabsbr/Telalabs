@@ -32,7 +32,7 @@ import { useTenantData } from "@/components/tenant-provider";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { uploadMediaFile } from "@/lib/media/upload";
 import { prepareMediaFile, type PreparedMediaMetadata } from "@/lib/media/compatibility";
-import { composeTextOnMedia, composeTimedTextLayersOnVideo, defaultTextOverlay, type TextOverlayConfig } from "@/lib/media/text-overlay";
+import { composeTextOnMedia, composeTimedTextLayersOnVideo, defaultTextOverlay, textOverlayVideoSizes, type TextOverlayConfig } from "@/lib/media/text-overlay";
 import { VideoCoverEditor, type CoverAspect, type CoverSelection } from "./video-cover-editor";
 import { MediaTextEditor } from "./media-text-editor";
 import { InlineEmojiPicker, TextTimingControl } from "./text-overlay-controls";
@@ -69,6 +69,11 @@ function mediaMatchesAspect(metadata: PreparedMediaMetadata, aspect: CoverAspect
 
 function metadataForAspect(metadata: PreparedMediaMetadata, aspect: CoverAspect): PreparedMediaMetadata {
   const size = mediaAspectSizes[aspect];
+  return { ...metadata, width: size.width, height: size.height };
+}
+
+function metadataForTextOverlay(metadata: PreparedMediaMetadata, aspect: CoverAspect): PreparedMediaMetadata {
+  const size = textOverlayVideoSizes[aspect];
   return { ...metadata, width: size.width, height: size.height };
 }
 
@@ -1172,7 +1177,14 @@ export function PublicationEditor() {
         baseMediaFile = instagramPlacement === "story"
           ? await prepareStoryVariant()
           : await prepareFeedVariant(baseAspect);
-        baseMediaMetadata = baseMediaFile === selectedFile ? mediaMetadata : metadataForAspect(mediaMetadata, baseAspect);
+        const baseHasRenderedText = selectedKind === "video" && (instagramPlacement === "story"
+          ? (storyRangeHasText || !!storyTextConfig.text.trim())
+          : (feedRangeHasText || !!feedTextConfig.text.trim()));
+        baseMediaMetadata = baseMediaFile === selectedFile
+          ? mediaMetadata
+          : baseHasRenderedText
+            ? metadataForTextOverlay(mediaMetadata, baseAspect)
+            : metadataForAspect(mediaMetadata, baseAspect);
 
         if (instagramPlacement === "both") {
           const storyNeedsOwnFile = outputAspect !== "9:16"
@@ -1181,7 +1193,12 @@ export function PublicationEditor() {
             || JSON.stringify(feedTextConfig) !== JSON.stringify(storyTextConfig);
           if (storyNeedsOwnFile) {
             storyMediaFile = await prepareStoryVariant();
-            storyMediaMetadata = storyMediaFile === selectedFile ? mediaMetadata : metadataForAspect(mediaMetadata, "9:16");
+            const storyHasRenderedText = selectedKind === "video" && (storyRangeHasText || !!storyTextConfig.text.trim());
+            storyMediaMetadata = storyMediaFile === selectedFile
+              ? mediaMetadata
+              : storyHasRenderedText
+                ? metadataForTextOverlay(mediaMetadata, "9:16")
+                : metadataForAspect(mediaMetadata, "9:16");
           }
         }
       }
