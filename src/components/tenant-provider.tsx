@@ -49,6 +49,8 @@ interface TenantState {
   error: string | null;
   refresh: () => Promise<void>;
   bootstrapAccount: (brandName: string) => Promise<{ error?: string }>;
+  selectBrand: (brandId: string) => void;
+  createBrand: (name: string, timezone?: string) => Promise<{ brandId?: string; error?: string }>;
 }
 
 const demoBrand: TenantBrand = {
@@ -89,8 +91,9 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [organization, setOrganization] = useState<TenantState["organization"]>(null);
   const [brands, setBrands] = useState<TenantBrand[]>([]);
-  const [connections, setConnections] = useState<TenantConnection[]>([]);
-  const [commerceConnections, setCommerceConnections] = useState<TenantCommerceConnection[]>([]);
+  const [activeBrandId, setActiveBrandId] = useState<string | null>(null);
+  const [allConnections, setAllConnections] = useState<TenantConnection[]>([]);
+  const [allCommerceConnections, setAllCommerceConnections] = useState<TenantCommerceConnection[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   async function load() {
@@ -102,11 +105,13 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
       setUser(null);
       setOrganization(null);
       setBrands([demoBrand]);
-      setConnections(demoConnections.map((connection, index) => ({
+      setActiveBrandId(demoBrand.id);
+      setAllConnections(demoConnections.map((connection, index) => ({
         id: "demo-" + connection.platform + "-" + index,
         ...connection,
+        brandId: demoBrand.id,
       })));
-      setCommerceConnections([]);
+      setAllCommerceConnections([]);
       return;
     }
 
@@ -120,8 +125,9 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
       setSource("loading");
       setOrganization(null);
       setBrands([]);
-      setConnections([]);
-      setCommerceConnections([]);
+      setActiveBrandId(null);
+      setAllConnections([]);
+      setAllCommerceConnections([]);
       if (typeof window !== "undefined" && window.location.pathname !== "/login") {
         const next = window.location.pathname + window.location.search;
         window.location.replace("/login?next=" + encodeURIComponent(next));
@@ -141,8 +147,9 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
       setSource("needs_setup");
       setOrganization(null);
       setBrands([]);
-      setConnections([]);
-      setCommerceConnections([]);
+      setActiveBrandId(null);
+      setAllConnections([]);
+      setAllCommerceConnections([]);
       return;
     }
 
@@ -151,15 +158,16 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
       setSource("needs_setup");
       setOrganization(null);
       setBrands([]);
-      setConnections([]);
-      setCommerceConnections([]);
+      setActiveBrandId(null);
+      setAllConnections([]);
+      setAllCommerceConnections([]);
       return;
     }
 
     const organizationId = membership.organization_id;
     const [organizationResult, brandsResult, socialResult, commerceResult] = await Promise.all([
       client.from("organizations").select("id,name,plan_code").eq("id", organizationId).maybeSingle(),
-      client.from("brands").select("id,name,organization_id,status,timezone").eq("organization_id", organizationId).eq("status", "ACTIVE").order("created_at"),
+      client.from("brands").select("id,name,organization_id,status,timezone").eq("organization_id", organizationId).eq("status", "ACTIVE").is("deleted_at", null).order("created_at"),
       client.from("social_connections").select("id,provider,provider_account_id,connection_status,display_name,username,brand_id,metadata").eq("organization_id", organizationId).order("created_at"),
       client.from("commerce_connections").select("id,provider,connection_status,display_name,brand_id").eq("organization_id", organizationId).order("created_at"),
     ]);
@@ -179,6 +187,19 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
     }));
     setBrands(mappedBrands);
 
+    const storedBrandId = typeof window !== "undefined"
+      ? window.localStorage.getItem(`tela-active-brand:${organizationId}`)
+      : null;
+    const nextActiveBrandId = mappedBrands.some(brand => brand.id === activeBrandId)
+      ? activeBrandId
+      : mappedBrands.some(brand => brand.id === storedBrandId)
+        ? storedBrandId
+        : mappedBrands[0]?.id ?? null;
+    setActiveBrandId(nextActiveBrandId);
+    if (nextActiveBrandId && typeof window !== "undefined") {
+      window.localStorage.setItem(`tela-active-brand:${organizationId}`, nextActiveBrandId);
+    }
+
     const mappedConnections = (socialResult.data ?? []).flatMap(connection => {
       const platform = normalizePlatform(connection.provider);
       if (!platform) return [];
@@ -195,9 +216,9 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
         metadata: metadataRecord(connection.metadata),
       }];
     });
-    setConnections(mappedConnections);
+    setAllConnections(mappedConnections);
 
-    setCommerceConnections((commerceResult.data ?? []).map(connection => ({
+    setAllCommerceConnections((commerceResult.data ?? []).map(connection => ({
       id: connection.id,
       provider: connection.provider,
       status: connection.connection_status,
@@ -233,11 +254,49 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
     return {};
   }
 
-  const activeBrand = brands[0] ?? (source === "demo" ? demoBrand : {
+  function selectBrand(brandId: string) {
+    const brand = brands.find(item => item.id === brandId);
+    if (!brand) return;
+    setActiveBrandId(brand.id);
+    if (organization?.id && typeof window !== "undefined") {
+      window.localStorage.setItem(`tela-active-brand:${organization.id}`, brand.id);
+    }
+  }
+
+  async function createBrand(name: string, timezone = "America/Sao_Paulo") {
+    const client = createSupabaseBrowserClient();
+    if (!client) return { error: "Supabase não configurado." };
+
+    const cleanName = name.trim();
+    if (!cleanName) return { error: "Informe o nome da marca." };
+
+    const result = await client.rpc("create_brand", {
+      p_name: cleanName,
+      p_timezone: timezone,
+    });
+    if (result.error) return { error: result.error.message };
+
+    const brandId = typeof result.data === "string" ? result.data : undefined;
+    if (brandId && organization?.id && typeof window !== "undefined") {
+      window.localStorage.setItem(`tela-active-brand:${organization.id}`, brandId);
+      setActiveBrandId(brandId);
+    }
+    await load();
+    return { brandId };
+  }
+
+  const activeBrand = brands.find(brand => brand.id === activeBrandId) ?? brands[0] ?? (source === "demo" ? demoBrand : {
     id: "unconfigured",
     name: organization?.name ?? "Minha marca",
     initials: initials(organization?.name ?? "Minha marca"),
   });
+
+  const connections = source === "supabase"
+    ? allConnections.filter(connection => connection.brandId === activeBrand.id)
+    : allConnections;
+  const commerceConnections = source === "supabase"
+    ? allCommerceConnections.filter(connection => connection.brandId === activeBrand.id)
+    : allCommerceConnections;
 
   const value = useMemo<TenantState>(() => ({
     source,
@@ -251,6 +310,8 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
     error,
     refresh: load,
     bootstrapAccount,
+    selectBrand,
+    createBrand,
   }), [source, user, organization, brands, activeBrand, connections, commerceConnections, error]);
 
   return <TenantContext.Provider value={value}>{children}</TenantContext.Provider>;
