@@ -16,6 +16,10 @@ export type Database = Omit<GeneratedDatabase, "public"> & {
         Args: { p_post_id: string };
         Returns: number;
       };
+      create_brand: {
+        Args: { p_name: string; p_timezone?: string };
+        Returns: string;
+      };
       attach_cover_to_post: {
         Args: { p_media_asset_id: string; p_post_id: string };
         Returns: number;
