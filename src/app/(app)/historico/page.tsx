@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, Copy, Edit3, Filter, MoreHorizontal, RefreshCw, Search, Trash2, X } from "lucide-react";
+import { AlertTriangle, Copy, Edit3, Filter, MoreHorizontal, Pause, RefreshCw, Search, Trash2, X } from "lucide-react";
 import { platformLabels, socialPlatforms, type SocialPlatform } from "@/domain/social";
 import { publicationStatuses, type Publication, type PublicationStatus } from "@/domain/publication";
 import { PlatformIcon } from "@/components/ui/platform-icon";
@@ -29,7 +29,7 @@ function isAuthError(publication: Publication) {
 }
 
 export default function HistoryPage() {
-  const { publications, loading, error, source, retryPost, deletePost } = usePublicationsData();
+  const { publications, loading, error, source, retryPost, cancelPost, deletePost } = usePublicationsData();
   const [network, setNetwork] = useState<"all" | SocialPlatform>("all");
   const [status, setStatus] = useState<"all" | PublicationStatus>("all");
   const [query, setQuery] = useState("");
@@ -72,6 +72,28 @@ export default function HistoryPage() {
     setActionMessage(result.count > 0
       ? `${result.count} destino(s) com falha final foram recolocados na fila.`
       : "Nenhum destino com falha final está elegível para retentativa. Reconexão e reconciliação continuam separadas para evitar duplicidade.");
+    if (result.count > 0) setSelected(null);
+  }
+
+  async function handleCancelSelected() {
+    if (!selected) return;
+    if (source !== "supabase") {
+      setActionMessage("Cancelamento simulado no modo demonstração.");
+      return;
+    }
+
+    if (!window.confirm("Cancelar este agendamento? Os destinos que ainda não começaram a publicar serão interrompidos.")) return;
+
+    setActionMessage("Cancelando agendamento...");
+    const result = await cancelPost(selected.id);
+    if (result.error) {
+      setActionMessage(result.error);
+      return;
+    }
+
+    setActionMessage(result.count > 0
+      ? "Agendamento cancelado."
+      : "Nenhum destino pendente pôde ser cancelado.");
     if (result.count > 0) setSelected(null);
   }
 
@@ -171,9 +193,13 @@ export default function HistoryPage() {
     {actionMessage && <p className="rounded-xl bg-slate-50 p-3 text-sm leading-6 text-slate-700">{actionMessage}</p>}
 
     <div className="grid grid-cols-2 gap-2">
-      <Link href={"/publicacoes/nova?edit=" + selected.id} className="btn-secondary"><Edit3 size={15}/> Editar</Link>
+      {["draft", "scheduled"].includes(selected.status)
+        ? <Link href={"/publicacoes/nova?edit=" + selected.id} className="btn-secondary"><Edit3 size={15}/> Editar</Link>
+        : <button type="button" disabled className="btn-secondary opacity-45"><Edit3 size={15}/> Editar</button>}
       <button className="btn-secondary"><Copy size={15}/> Duplicar</button>
+      {selected.status === "scheduled" && <button onClick={() => void handleCancelSelected()} className="btn-secondary col-span-2 !text-red-600"><Pause size={15}/> Cancelar agendamento</button>}
     </div>
+    {!["draft", "scheduled"].includes(selected.status) && <p className="text-[11px] leading-4 text-slate-500">A edição é bloqueada depois que o envio começa, para evitar publicação duplicada ou inconsistências entre destinos.</p>}
   </div>;
 
   return <div className="w-full max-w-full space-y-4 overflow-x-hidden">
