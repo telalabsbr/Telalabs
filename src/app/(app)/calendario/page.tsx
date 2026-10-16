@@ -320,11 +320,14 @@ export default function CalendarPage() {
 
     <div className="grid grid-cols-2 gap-2">
       {selected.destinations.some(destination => destination.externalUrl) && <a href={selected.destinations.find(destination => destination.externalUrl)?.externalUrl} target="_blank" rel="noreferrer" className="btn-primary col-span-2"><ExternalLink size={15}/> Ver publicação</a>}
-      <Link href={"/publicacoes/nova?edit=" + selected.id} className="btn-secondary"><Edit3 size={15}/> Editar</Link>
+      {["draft", "scheduled"].includes(selected.status)
+        ? <Link href={"/publicacoes/nova?edit=" + selected.id} className="btn-secondary"><Edit3 size={15}/> Editar</Link>
+        : <button type="button" disabled className="btn-secondary opacity-45"><Edit3 size={15}/> Editar</button>}
       <button className="btn-secondary"><Copy size={15}/> Duplicar</button>
-      {selected.status === "scheduled" && <button onClick={() => void handleCancelSelected()} className="btn-secondary"><Pause size={15}/> Cancelar agendamento</button>}
+      {selected.status === "scheduled" && <button onClick={() => void handleCancelSelected()} className="btn-secondary col-span-2 !text-red-600"><Pause size={15}/> Cancelar agendamento</button>}
       <button className="btn-secondary"><MoreHorizontal size={15}/> Mais</button>
     </div>
+    {!["draft", "scheduled"].includes(selected.status) && <p className="text-[11px] leading-4 text-slate-500">A edição é bloqueada depois que o envio começa, para evitar publicação duplicada ou inconsistências.</p>}
   </div>;
 
   return <div className="w-full max-w-full space-y-4 overflow-x-hidden">
