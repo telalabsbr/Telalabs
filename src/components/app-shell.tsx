@@ -191,7 +191,7 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
                   tenant.selectBrand(brand.id);
                   setBrandOpen(false);
                   setMobileOpen(false);
-                  if (path.startsWith("/publicacoes/nova")) window.location.assign("/publicacoes/nova");
+                  window.location.assign(path.startsWith("/publicacoes/nova") ? "/publicacoes/nova" : path);
                 }}
                 className={`flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2.5 text-left hover:bg-slate-50 ${brand.id === activeBrand.id ? "bg-indigo-50" : ""}`}
               >
