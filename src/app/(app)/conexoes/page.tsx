@@ -67,6 +67,14 @@ export default function ConnectionsPage() {
   }, [tenant.connections]);
 
   useEffect(() => {
+    setOpenMenu(null);
+    setConnectOpen(false);
+    setMetaAssetsOpen(false);
+    setMetaAssets([]);
+    setNotice("");
+  }, [tenant.activeBrand.id]);
+
+  useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const oauth = params.get("oauth");
     if (!oauth) return;
@@ -362,7 +370,7 @@ export default function ConnectionsPage() {
       <div>
         <p className="eyebrow">Integrações</p>
         <h1 className="mt-2 text-2xl font-black tracking-tight text-slate-950 sm:text-3xl">Contas conectadas</h1>
-        <p className="mt-1 text-sm leading-6 text-slate-500">Conecte as contas que deseja usar. O Tela Social reaproveita autorizações do Facebook quando possível.</p>
+        <p className="mt-1 text-sm leading-6 text-slate-500">Conecte as contas que deseja usar em <strong className="text-slate-700">{tenant.activeBrand.name}</strong>. Cada marca mantém suas próprias conexões.</p>
       </div>
       <button onClick={() => setConnectOpen(true)} className="btn-primary self-start"><Plus size={16}/> Adicionar conta</button>
     </section>
@@ -490,8 +498,8 @@ export default function ConnectionsPage() {
 
         {!tenant.loading && !connections.length && <div className="card md:col-span-2 2xl:grid-cols-3 p-8 text-center">
           <Link2 className="mx-auto text-slate-400" size={28}/>
-          <p className="mt-3 font-black text-slate-900">Nenhuma conta social conectada</p>
-          <p className="mt-1 text-sm text-slate-500">Use “Adicionar conta” para escolher a primeira rede.</p>
+          <p className="mt-3 font-black text-slate-900">Nenhuma conta conectada em {tenant.activeBrand.name}</p>
+          <p className="mt-1 text-sm text-slate-500">Use “Adicionar conta” para conectar a primeira rede desta marca.</p>
           <button onClick={() => setConnectOpen(true)} className="btn-primary mt-4"><Plus size={16}/> Adicionar conta</button>
         </div>}
       </div>
