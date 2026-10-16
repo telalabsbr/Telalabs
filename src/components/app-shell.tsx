@@ -17,6 +17,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   PenLine,
+  Plus,
   Settings,
   UserRound,
   X,
@@ -53,9 +54,15 @@ const accountMenu = [
 
 function AppShellContent({ children }: { children: React.ReactNode }) {
   const path = usePathname();
-  const { connections, activeBrand, source, user } = useTenantData();
+  const tenant = useTenantData();
+  const { connections, activeBrand, source, user } = tenant;
   const [mobileOpen, setMobileOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [brandOpen, setBrandOpen] = useState(false);
+  const [brandCreateOpen, setBrandCreateOpen] = useState(false);
+  const [brandName, setBrandName] = useState("");
+  const [brandError, setBrandError] = useState("");
+  const [brandCreating, setBrandCreating] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const attentionItems = connections.filter(connection => connection.status === "expired" || connection.status === "error");
   const attentionSignature = attentionItems.map(connection => connection.platform + ":" + connection.status).sort().join("|");
@@ -72,6 +79,7 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     setMobileOpen(false);
     setProfileOpen(false);
+    setBrandOpen(false);
     if (path.startsWith("/conexoes") && attentionSignature) {
       window.localStorage.setItem("tela-seen-account-alert", attentionSignature);
       setSeenAttentionSignature(attentionSignature);
@@ -89,6 +97,31 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
   async function logout() {
     await createSupabaseBrowserClient()?.auth.signOut();
     window.location.href = "/login";
+  }
+
+  async function createBrand() {
+    const cleanName = brandName.trim();
+    if (!cleanName) {
+      setBrandError("Informe o nome da marca.");
+      return;
+    }
+
+    setBrandCreating(true);
+    setBrandError("");
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Sao_Paulo";
+    const result = await tenant.createBrand(cleanName, timezone);
+    setBrandCreating(false);
+
+    if (result.error) {
+      setBrandError(result.error);
+      return;
+    }
+
+    setBrandName("");
+    setBrandCreateOpen(false);
+    setBrandOpen(false);
+    setMobileOpen(false);
+    window.location.assign("/conexoes");
   }
 
   const pageTitle = useMemo(() => {
@@ -120,17 +153,58 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
         {!collapsed && <button onClick={() => setMobileOpen(false)} className="rounded-lg p-2 text-slate-500 md:hidden" aria-label="Fechar menu"><X size={19}/></button>}
       </div>
 
-      <div className="mx-3 mt-2 shrink-0">
-        <button className={`focusable flex w-full items-center rounded-xl border border-slate-200 bg-white text-left shadow-sm ${collapsed ? "justify-center p-2" : "gap-3 p-2.5"}`}>
+      <div className="relative mx-3 mt-2 shrink-0">
+        <button
+          onClick={() => setBrandOpen(value => !value)}
+          aria-expanded={brandOpen}
+          title={collapsed ? activeBrand.name : undefined}
+          className={`focusable flex w-full items-center rounded-xl border border-slate-200 bg-white text-left shadow-sm ${collapsed ? "justify-center p-2" : "gap-3 p-2.5"}`}
+        >
           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-xs font-bold text-indigo-700">{activeBrand.initials}</span>
           {!collapsed && <>
             <span className="min-w-0 flex-1">
               <span className="block truncate text-sm font-bold text-slate-800">{activeBrand.name}</span>
               <span className="block text-xs text-slate-500">{source === "supabase" ? "Marca atual" : source === "needs_setup" ? "Configuração pendente" : "Modo demonstração"}</span>
             </span>
-            <ChevronDown size={15} className="shrink-0 text-slate-400"/>
+            <ChevronDown size={15} className={`shrink-0 text-slate-400 transition-transform ${brandOpen ? "rotate-180" : ""}`}/>
           </>}
         </button>
+
+        {brandOpen && <>
+          <button className="fixed inset-0 z-40 cursor-default bg-transparent" aria-label="Fechar seletor de marca" onClick={() => setBrandOpen(false)}/>
+          <div className={`absolute top-12 z-50 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl ${collapsed ? "left-0 w-64" : "left-0 right-0 min-w-[220px]"}`}>
+            <div className="border-b border-slate-100 px-3 py-2.5">
+              <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Marcas</p>
+            </div>
+            <div className="app-scrollbar max-h-64 overflow-y-auto p-1.5">
+              {tenant.brands.map(brand => <button
+                key={brand.id}
+                type="button"
+                onClick={() => {
+                  tenant.selectBrand(brand.id);
+                  setBrandOpen(false);
+                  setMobileOpen(false);
+                }}
+                className={`flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2.5 text-left hover:bg-slate-50 ${brand.id === activeBrand.id ? "bg-indigo-50" : ""}`}
+              >
+                <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg text-xs font-black ${brand.id === activeBrand.id ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-600"}`}>{brand.initials}</span>
+                <span className="min-w-0 flex-1 truncate text-sm font-bold text-slate-800">{brand.name}</span>
+                {brand.id === activeBrand.id && <span className="text-[10px] font-black text-indigo-600">ATUAL</span>}
+              </button>)}
+            </div>
+            {source === "supabase" && <div className="border-t border-slate-100 p-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setBrandOpen(false);
+                  setBrandError("");
+                  setBrandCreateOpen(true);
+                }}
+                className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-black text-indigo-700 hover:bg-indigo-50"
+              ><Plus size={16}/> Adicionar marca</button>
+            </div>}
+          </div>
+        </>}
       </div>
 
       <nav className="app-scrollbar mt-4 flex-1 space-y-1 overflow-y-auto px-3 pb-4" aria-label="Principal">
@@ -214,6 +288,39 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
     <main className="mx-auto w-full max-w-[1560px] overflow-x-hidden p-3 sm:p-5 md:p-6 lg:p-8">
       {source === "needs_setup" ? <InitialSetup/> : children}
     </main>
+
+    {brandCreateOpen && <>
+      <button aria-label="Fechar cadastro de marca" className="fixed inset-0 z-[70] bg-slate-950/35 backdrop-blur-[1px]" onClick={() => !brandCreating && setBrandCreateOpen(false)}/>
+      <section className="fixed left-1/2 top-1/2 z-[80] w-[min(30rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-black uppercase tracking-wide text-indigo-600">Nova marca</p>
+            <h2 className="mt-1 text-xl font-black text-slate-950">Adicionar marca</h2>
+            <p className="mt-1 text-sm leading-6 text-slate-500">Cada marca terá suas próprias contas sociais, calendário, histórico e publicações.</p>
+          </div>
+          <button disabled={brandCreating} onClick={() => setBrandCreateOpen(false)} className="rounded-lg p-2 text-slate-500 disabled:opacity-40" aria-label="Fechar"><X size={18}/></button>
+        </div>
+        <label className="mt-5 block text-xs font-black text-slate-700">
+          Nome da marca
+          <input
+            autoFocus
+            value={brandName}
+            onChange={event => { setBrandName(event.target.value); setBrandError(""); }}
+            onKeyDown={event => { if (event.key === "Enter" && !brandCreating) void createBrand(); }}
+            className="field mt-2 w-full px-3 text-base sm:text-sm"
+            placeholder="Ex.: Estética Prisma"
+            maxLength={80}
+          />
+        </label>
+        {brandError && <p className="mt-3 rounded-lg bg-red-50 p-3 text-xs font-semibold leading-5 text-red-700">{brandError}</p>}
+        <div className="mt-5 grid grid-cols-2 gap-2">
+          <button type="button" disabled={brandCreating} onClick={() => setBrandCreateOpen(false)} className="btn-secondary disabled:opacity-40">Cancelar</button>
+          <button type="button" disabled={brandCreating || !brandName.trim()} onClick={() => void createBrand()} className="btn-primary disabled:opacity-40">
+            {brandCreating ? "Criando..." : "Criar e configurar"}
+          </button>
+        </div>
+      </section>
+    </>}
 
     <nav className="fixed inset-x-0 bottom-0 z-40 grid h-[72px] grid-cols-5 border-t border-slate-200 bg-white/96 px-1 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden" aria-label="Navegação móvel">
       {mobileNav.map(({ href, label, icon: Icon, primary }) => {
