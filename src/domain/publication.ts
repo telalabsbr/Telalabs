@@ -1,7 +1,17 @@
 import type { PublishingSurface } from "./providers/capabilities";
 import type { SocialPlatform } from "./social";
 
-export const publicationStatuses = ["draft", "scheduled", "processing", "published", "failed", "cancelled"] as const;
+export const publicationStatuses = [
+  "draft",
+  "scheduled",
+  "processing",
+  "retrying",
+  "verifying",
+  "needs_action",
+  "published",
+  "failed",
+  "cancelled",
+] as const;
 export type PublicationStatus = (typeof publicationStatuses)[number];
 export type DestinationStatus = PublicationStatus;
 
@@ -20,6 +30,7 @@ export interface PublicationDestination {
   lastError?: string;
   nextAttemptAt?: string;
   externalId?: string;
+  externalUrl?: string;
   publishedAt?: string;
 }
 
