@@ -190,10 +190,10 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
     const storedBrandId = typeof window !== "undefined"
       ? window.localStorage.getItem(`tela-active-brand:${organizationId}`)
       : null;
-    const nextActiveBrandId = mappedBrands.some(brand => brand.id === activeBrandId)
-      ? activeBrandId
-      : mappedBrands.some(brand => brand.id === storedBrandId)
-        ? storedBrandId
+    const nextActiveBrandId = mappedBrands.some(brand => brand.id === storedBrandId)
+      ? storedBrandId
+      : mappedBrands.some(brand => brand.id === activeBrandId)
+        ? activeBrandId
         : mappedBrands[0]?.id ?? null;
     setActiveBrandId(nextActiveBrandId);
     if (nextActiveBrandId && typeof window !== "undefined") {
