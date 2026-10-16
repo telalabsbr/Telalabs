@@ -144,7 +144,7 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
     .join("") || "TS";
 
   const sidebar = (
-    <div className="flex h-full flex-col overflow-hidden">
+    <div className="flex h-full flex-col overflow-visible">
       <div className={`flex h-16 shrink-0 items-center ${collapsed ? "justify-center px-3" : "justify-between px-4"}`}>
         <Link href="/publicacoes/nova" onClick={() => setMobileOpen(false)} className="focusable flex items-center gap-2 rounded-lg">
           <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-500 text-sm font-black text-white shadow-sm">TS</span>
